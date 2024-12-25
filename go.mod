@@ -1,4 +1,4 @@
-module gihhub.com/yosebyte/nodepass
+module github.com/yosebyte/nodepass
 
 go 1.23.4
 
