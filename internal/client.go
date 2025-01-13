@@ -44,9 +44,8 @@ func (c *Client) Start() error {
 }
 
 func (c *Client) Stop() {
-	close(c.done)
-	if c.tunnleConn != nil {
-		c.tunnleConn.Close()
+	if c.done != nil {
+		close(c.done)
 	}
 	if c.remoteTCPConn != nil {
 		c.remoteTCPConn.Close()
@@ -59,6 +58,13 @@ func (c *Client) Stop() {
 	}
 	if c.targetUDPConn != nil {
 		c.targetUDPConn.Close()
+	}
+}
+
+func (c *Client) Shutdown() {
+	c.Stop()
+	if c.tunnleConn != nil {
+		c.tunnleConn.Close()
 	}
 }
 

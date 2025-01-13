@@ -84,18 +84,8 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Stop() {
-	close(s.done)
-	if s.serverListen != nil {
-		s.serverListen.Close()
-	}
-	if s.targetTCPListen != nil {
-		s.targetTCPListen.Close()
-	}
-	if s.targetUDPListen != nil {
-		s.targetUDPListen.Close()
-	}
-	if s.tunnleConn != nil {
-		s.tunnleConn.Close()
+	if s.done != nil {
+		close(s.done)
 	}
 	if s.targetTCPConn != nil {
 		s.targetTCPConn.Close()
@@ -108,6 +98,22 @@ func (s *Server) Stop() {
 	}
 	if s.remoteUDPConn != nil {
 		s.remoteUDPConn.Close()
+	}
+}
+
+func (s *Server) Shutdown() {
+	s.Stop()
+	if s.serverListen != nil {
+		s.serverListen.Close()
+	}
+	if s.targetTCPListen != nil {
+		s.targetTCPListen.Close()
+	}
+	if s.targetUDPListen != nil {
+		s.targetUDPListen.Close()
+	}
+	if s.tunnleConn != nil {
+		s.tunnleConn.Close()
 	}
 }
 
