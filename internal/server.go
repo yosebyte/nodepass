@@ -111,30 +111,11 @@ func (s *Server) Stop() {
 
 func (s *Server) serverLaunch(errChan chan error) {
 	go func() {
-		errChan <- s.serverPing()
-	}()
-	go func() {
 		errChan <- s.handleServerTCP()
 	}()
-	/*
-		go func() {
-			errChan <- s.handleServerUDP()
-		}()
-	*/
-}
-
-func (s *Server) serverPing() error {
-	for {
-		time.Sleep(MaxReportInterval)
-		s.sharedMU.Lock()
-		_, err := s.tunnleConn.Write([]byte("[PING]\n"))
-		s.sharedMU.Unlock()
-		if err != nil {
-			s.logger.Error("Tunnel connection health check failed")
-			s.Stop()
-			return err
-		}
-	}
+	go func() {
+		errChan <- s.handleServerUDP()
+	}()
 }
 
 func (s *Server) handleServerTCP() error {
@@ -178,7 +159,6 @@ func (s *Server) handleServerTCP() error {
 	}
 }
 
-/*
 func (s *Server) handleServerUDP() error {
 	sem := make(chan struct{}, MaxSemaphoreLimit)
 	for {
@@ -228,4 +208,3 @@ func (s *Server) handleServerUDP() error {
 		}(buffer, n, remoteConn, clientAddr)
 	}
 }
-*/

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/url"
+	"time"
 
 	"github.com/yosebyte/x/io"
 	"github.com/yosebyte/x/log"
@@ -69,32 +70,16 @@ func (c *Client) clientLaunch(errChan chan error) {
 			break
 		}
 		switch string(buffer[:n]) {
-		case "[PING]\n":
-			go func() {
-				errChan <- c.clientPong()
-			}()
 		case "[NODEPASS]<TCP>\n":
 			go func() {
 				errChan <- c.handleClientTCP()
 			}()
-			/*
-				case "[NODEPASS]<UDP>\n":
-					go func() {
-						errChan <- c.handleClientUDP()
-					}()
-			*/
+		case "[NODEPASS]<UDP>\n":
+			go func() {
+				errChan <- c.handleClientUDP()
+			}()
 		}
 	}
-}
-
-func (c *Client) clientPong() error {
-	_, err := c.tunnleConn.Write([]byte("[PONG]\n"))
-	if err != nil {
-		c.logger.Error("Tunnel connection health check failed")
-		c.Stop()
-		return err
-	}
-	return nil
 }
 
 func (c *Client) handleClientTCP() error {
@@ -129,7 +114,6 @@ func (c *Client) handleClientTCP() error {
 	return nil
 }
 
-/*
 func (c *Client) handleClientUDP() error {
 	remoteConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
@@ -185,4 +169,3 @@ func (c *Client) handleClientUDP() error {
 	c.logger.Debug("Transfer completed successfully")
 	return nil
 }
-*/
