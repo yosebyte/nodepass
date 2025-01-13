@@ -43,6 +43,7 @@ func (c *Client) Start() error {
 }
 
 func (c *Client) Stop() {
+	close(c.done)
 	if c.tunnleConn != nil {
 		c.tunnleConn.Close()
 	}
@@ -65,11 +66,15 @@ func (c *Client) clientLaunch(errChan chan error) {
 	for {
 		n, err := c.tunnleConn.Read(buffer)
 		if err != nil {
-			c.logger.Error("Unable to read from server address: %v", err)
-			c.Stop()
-			break
+			c.logger.Error("Unable to read launch signal: %v", err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
 		switch string(buffer[:n]) {
+		case "[NODEPASS]<PING>\n":
+			go func() {
+				errChan <- c.clientPong()
+			}()
 		case "[NODEPASS]<TCP>\n":
 			go func() {
 				errChan <- c.handleClientTCP()
@@ -80,6 +85,16 @@ func (c *Client) clientLaunch(errChan chan error) {
 			}()
 		}
 	}
+}
+
+func (c *Client) clientPong() error {
+	_, err := c.tunnleConn.Write([]byte("[NODEPASS]<PONG>\n"))
+	if err != nil {
+		c.logger.Error("Tunnel connection health check failed")
+		c.Stop()
+		return err
+	}
+	return nil
 }
 
 func (c *Client) handleClientTCP() error {

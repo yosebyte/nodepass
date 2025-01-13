@@ -28,6 +28,7 @@ type Common struct {
 	targetUDPConn net.Conn
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
+	done          chan struct{}
 }
 
 func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {
