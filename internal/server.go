@@ -23,6 +23,7 @@ type Server struct {
 func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *Server {
 	common := &Common{
 		logger: logger,
+		done:   make(chan struct{}),
 	}
 	common.GetAddress(parsedURL, logger)
 	return &Server{
