@@ -6,46 +6,57 @@ import (
 	"time"
 
 	"github.com/yosebyte/nodepass/internal"
-	"github.com/yosebyte/x/log"
 	"github.com/yosebyte/x/tls"
 )
 
-func coreSelect(parsedURL *url.URL) {
+func coreDispatch(parsedURL *url.URL, stop chan os.Signal) {
 	switch parsedURL.Scheme {
 	case "server":
-		runServer(parsedURL)
+		runServer(parsedURL, stop)
 	case "client":
-		runClient(parsedURL)
+		runClient(parsedURL, stop)
 	default:
-		helpInfo()
-		os.Exit(1)
+		logger.Fatal("Invalid scheme: %v", parsedURL.Scheme)
+		getExitInfo()
 	}
 }
 
-func runServer(parsedURL *url.URL) {
-	log.Info("Server started: %v", parsedURL.String())
-	for {
-		tlsConfig, err := tls.NewTLSconfig("yosebyte/nodepass:" + version)
-		if err != nil {
-			log.Error("Unable to generate TLS config: %v", err)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		if err := internal.Server(parsedURL, tlsConfig); err != nil {
-			log.Error("Server error: %v", err)
-			time.Sleep(1 * time.Second)
-			log.Info("Server restarted")
-		}
+func runServer(parsedURL *url.URL, stop chan os.Signal) {
+	tlsConfig, err := tls.NewTLSconfig("yosebyte/nodepass:" + version)
+	if err != nil {
+		logger.Error("Unable to generate TLS config: %v", err)
 	}
+	server := internal.NewServer(parsedURL, tlsConfig, logger)
+	go func() {
+		logger.Info("Server started: %v", parsedURL.String())
+		for {
+			if err := server.Start(); err != nil {
+				logger.Error("Server error: %v", err)
+			}
+			time.Sleep(1 * time.Second)
+			logger.Info("Server restarted")
+		}
+	}()
+	<-stop
+	logger.Info("Server stopping")
+	server.Stop()
+	logger.Info("Server stopped")
 }
 
-func runClient(parsedURL *url.URL) {
-	log.Info("Client started: %v", parsedURL.String())
-	for {
-		if err := internal.Client(parsedURL); err != nil {
-			log.Error("Client error: %v", err)
+func runClient(parsedURL *url.URL, stop chan os.Signal) {
+	client := internal.NewClient(parsedURL, logger)
+	go func() {
+		logger.Info("Client started: %v", parsedURL.String())
+		for {
+			if err := client.Start(); err != nil {
+				logger.Error("Client error: %v", err)
+			}
 			time.Sleep(1 * time.Second)
-			log.Info("Client restarted")
+			logger.Info("Client restarted")
 		}
-	}
+	}()
+	<-stop
+	logger.Info("Client stopping")
+	client.Stop()
+	logger.Info("Client stopped")
 }
