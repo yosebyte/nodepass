@@ -137,6 +137,7 @@ func (s *Server) handleServerTCP() error {
 			s.sharedMU.Unlock()
 			if err != nil {
 				s.logger.Error("Unable to send signal: %v", err)
+				s.Stop()
 				return
 			}
 			remoteConn, err := s.serverListen.Accept()
@@ -174,8 +175,8 @@ func (s *Server) handleServerUDP() error {
 		s.sharedMU.Unlock()
 		if err != nil {
 			s.logger.Error("Unable to send signal: %v", err)
-			time.Sleep(1 * time.Second)
-			continue
+			s.Stop()
+			return err
 		}
 		remoteConn, err := s.serverListen.Accept()
 		if err != nil {
