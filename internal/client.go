@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/url"
-	"time"
 
 	"github.com/yosebyte/x/io"
 	"github.com/yosebyte/x/log"
@@ -78,10 +77,12 @@ func (c *Client) clientLaunch(errChan chan error) {
 			go func() {
 				errChan <- c.handleClientTCP()
 			}()
-		case "[NODEPASS]<UDP>\n":
-			go func() {
-				errChan <- c.handleClientUDP()
-			}()
+			/*
+				case "[NODEPASS]<UDP>\n":
+					go func() {
+						errChan <- c.handleClientUDP()
+					}()
+			*/
 		}
 	}
 }
@@ -128,6 +129,7 @@ func (c *Client) handleClientTCP() error {
 	return nil
 }
 
+/*
 func (c *Client) handleClientUDP() error {
 	remoteConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
@@ -183,3 +185,4 @@ func (c *Client) handleClientUDP() error {
 	c.logger.Debug("Transfer completed successfully")
 	return nil
 }
+*/

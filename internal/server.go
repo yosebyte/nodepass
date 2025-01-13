@@ -116,9 +116,11 @@ func (s *Server) serverLaunch(errChan chan error) {
 	go func() {
 		errChan <- s.handleServerTCP()
 	}()
-	go func() {
-		errChan <- s.handleServerUDP()
-	}()
+	/*
+		go func() {
+			errChan <- s.handleServerUDP()
+		}()
+	*/
 }
 
 func (s *Server) serverPing() error {
@@ -176,6 +178,7 @@ func (s *Server) handleServerTCP() error {
 	}
 }
 
+/*
 func (s *Server) handleServerUDP() error {
 	sem := make(chan struct{}, MaxSemaphoreLimit)
 	for {
@@ -225,3 +228,4 @@ func (s *Server) handleServerUDP() error {
 		}(buffer, n, remoteConn, clientAddr)
 	}
 }
+*/
