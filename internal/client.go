@@ -17,6 +17,7 @@ type Client struct {
 func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
 	common := &Common{
 		logger: logger,
+		done:   make(chan struct{}),
 	}
 	common.GetAddress(parsedURL, logger)
 	return &Client{
