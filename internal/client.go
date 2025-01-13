@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bufio"
 	"crypto/tls"
 	"net"
 	"net/url"
@@ -62,15 +61,15 @@ func (c *Client) Stop() {
 }
 
 func (c *Client) clientLaunch(errChan chan error) {
-	reader := bufio.NewReader(c.tunnleConn)
+	buffer := make([]byte, MaxSignalBuffer)
 	for {
-		line, err := reader.ReadString('\n')
+		n, err := c.tunnleConn.Read(buffer)
 		if err != nil {
 			c.logger.Error("Unable to read from server address: %v", err)
 			c.Stop()
 			break
 		}
-		switch line {
+		switch string(buffer[:n]) {
 		case "[PING]\n":
 			go func() {
 				errChan <- c.clientPong()
