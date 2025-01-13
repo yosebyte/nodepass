@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bufio"
 	"crypto/tls"
 	"net"
 	"net/url"
@@ -123,20 +122,12 @@ func (s *Server) serverLaunch(errChan chan error) {
 }
 
 func (s *Server) serverPing() error {
-	reader := bufio.NewReader(s.tunnleConn)
 	for {
 		time.Sleep(MaxReportInterval)
 		s.sharedMU.Lock()
 		_, err := s.tunnleConn.Write([]byte("[PING]\n"))
 		s.sharedMU.Unlock()
 		if err != nil {
-			s.logger.Error("Tunnel connection health check failed")
-			s.Stop()
-			return err
-		}
-		s.tunnleConn.SetReadDeadline(time.Now().Add(MaxReportTimeout))
-		line, err := reader.ReadString('\n')
-		if err != nil || line != "[PONG]\n" {
 			s.logger.Error("Tunnel connection health check failed")
 			s.Stop()
 			return err
