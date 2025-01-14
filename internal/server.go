@@ -2,6 +2,7 @@ package internal
 
 import (
 	"crypto/tls"
+	"errors"
 	"net"
 	"net/url"
 	"sync"
@@ -33,6 +34,15 @@ func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *S
 }
 
 func (s *Server) Start() error {
+	if err := s.initServer(); err != nil {
+		return err
+	}
+	errChan := make(chan error, 1)
+	go s.serverLaunch(errChan)
+	return <-errChan
+}
+
+func (s *Server) initServer() error {
 	serverListen, err := tls.Listen("tcp", s.serverAddr.String(), s.tlsConfig)
 	if err != nil {
 		s.logger.Error("Unable to listen server address: %v", s.serverAddr)
@@ -78,14 +88,27 @@ func (s *Server) Start() error {
 			s.targetUDPListen.Close()
 		}
 	}()
-	errChan := make(chan error, 1)
-	go s.serverLaunch(errChan)
-	return <-errChan
+	return nil
+}
+
+func (s *Server) serverLaunch(errChan chan error) {
+	go func() {
+		errChan <- s.serverPing()
+	}()
+	go func() {
+		errChan <- s.handleServerTCP()
+	}()
+	go func() {
+		errChan <- s.handleServerUDP()
+	}()
 }
 
 func (s *Server) Stop() {
 	if s.done != nil {
 		close(s.done)
+	}
+	if s.tunnleConn != nil {
+		s.tunnleConn.Close()
 	}
 	if s.targetTCPConn != nil {
 		s.targetTCPConn.Close()
@@ -112,43 +135,33 @@ func (s *Server) Shutdown() {
 	if s.targetUDPListen != nil {
 		s.targetUDPListen.Close()
 	}
-	if s.tunnleConn != nil {
-		s.tunnleConn.Close()
-	}
-}
-
-func (s *Server) serverLaunch(errChan chan error) {
-	go func() {
-		errChan <- s.serverPing()
-	}()
-	go func() {
-		errChan <- s.handleServerTCP(s.done)
-	}()
-	go func() {
-		errChan <- s.handleServerUDP(s.done)
-	}()
 }
 
 func (s *Server) serverPing() error {
 	for {
-		time.Sleep(MaxReportInterval)
-		s.sharedMU.Lock()
-		_, err := s.tunnleConn.Write([]byte("[NODEPASS]<PING>\n"))
-		s.sharedMU.Unlock()
-		if err != nil {
-			s.logger.Error("Tunnel connection health check failed")
-			s.Stop()
-			return err
+		select {
+		case <-s.done:
+			return errors.New("EOF")
+		default:
+			time.Sleep(MaxReportInterval)
+			s.sharedMU.Lock()
+			_, err := s.tunnleConn.Write([]byte("[NODEPASS]<PING>\n"))
+			s.sharedMU.Unlock()
+			if err != nil {
+				s.logger.Error("Tunnel connection health check failed")
+				s.Stop()
+				return err
+			}
 		}
 	}
 }
 
-func (s *Server) handleServerTCP(done <-chan struct{}) error {
+func (s *Server) handleServerTCP() error {
 	sem := make(chan struct{}, MaxSemaphoreLimit)
 	for {
 		select {
-		case <-done:
-			return nil
+		case <-s.done:
+			return errors.New("EOF")
 		default:
 			targetConn, err := s.targetTCPListen.AcceptTCP()
 			if err != nil {
@@ -189,12 +202,12 @@ func (s *Server) handleServerTCP(done <-chan struct{}) error {
 	}
 }
 
-func (s *Server) handleServerUDP(done <-chan struct{}) error {
+func (s *Server) handleServerUDP() error {
 	sem := make(chan struct{}, MaxSemaphoreLimit)
 	for {
 		select {
-		case <-done:
-			return nil
+		case <-s.done:
+			return errors.New("EOF")
 		default:
 			buffer := make([]byte, MaxUDPDataBuffer)
 			n, clientAddr, err := s.targetUDPListen.ReadFromUDP(buffer)

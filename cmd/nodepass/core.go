@@ -32,10 +32,10 @@ func runServer(parsedURL *url.URL, stop chan os.Signal) {
 		for {
 			if err := server.Start(); err != nil {
 				logger.Error("Server error: %v", err)
+				server.Shutdown()
+				time.Sleep(1 * time.Second)
+				logger.Info("Server restarted")
 			}
-			server.Shutdown()
-			time.Sleep(1 * time.Second)
-			logger.Info("Server restarted")
 		}
 	}()
 	<-stop
@@ -51,10 +51,10 @@ func runClient(parsedURL *url.URL, stop chan os.Signal) {
 		for {
 			if err := client.Start(); err != nil {
 				logger.Error("Client error: %v", err)
+				client.Shutdown()
+				time.Sleep(1 * time.Second)
+				logger.Info("Client restarted")
 			}
-			client.Shutdown()
-			time.Sleep(1 * time.Second)
-			logger.Info("Client restarted")
 		}
 	}()
 	<-stop
