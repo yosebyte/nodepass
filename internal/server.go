@@ -2,7 +2,6 @@ package internal
 
 import (
 	"crypto/tls"
-	"errors"
 	"net"
 	"net/url"
 	"sync"
@@ -120,7 +119,7 @@ func (s *Server) serverPing() error {
 	for {
 		select {
 		case <-s.done:
-			return errors.New("EOF")
+			return nil
 		default:
 			time.Sleep(MaxReportInterval)
 			s.sharedMU.Lock()
@@ -140,7 +139,7 @@ func (s *Server) handleServerTCP() error {
 	for {
 		select {
 		case <-s.done:
-			return errors.New("EOF")
+			return nil
 		default:
 			targetConn, err := s.targetTCPListen.AcceptTCP()
 			if err != nil {
@@ -196,7 +195,7 @@ func (s *Server) handleServerUDP() error {
 	for {
 		select {
 		case <-s.done:
-			return errors.New("EOF")
+			return nil
 		default:
 			buffer := make([]byte, MaxUDPDataBuffer)
 			n, clientAddr, err := s.targetUDPListen.ReadFromUDP(buffer)

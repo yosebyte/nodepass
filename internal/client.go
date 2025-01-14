@@ -2,7 +2,6 @@ package internal
 
 import (
 	"crypto/tls"
-	"errors"
 	"net"
 	"net/url"
 	"time"
@@ -136,9 +135,10 @@ func (c *Client) handleClientTCP() error {
 		if err := io.DataExchange(remoteConn, targetConn); err != nil {
 			c.logger.Debug("Connection closed: %v", err)
 		}
+		c.done <- struct{}{}
 	}()
 	<-c.done
-	return errors.New("EOF")
+	return nil
 }
 
 func (c *Client) handleClientUDP() error {
@@ -195,7 +195,8 @@ func (c *Client) handleClientUDP() error {
 			return
 		}
 		c.logger.Debug("Transfer completed successfully")
+		c.done <- struct{}{}
 	}()
 	<-c.done
-	return errors.New("EOF")
+	return nil
 }
