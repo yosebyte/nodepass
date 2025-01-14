@@ -104,33 +104,27 @@ func (s *Server) serverLaunch(errChan chan error) {
 }
 
 func (s *Server) Stop() {
-	defer func() {
-		if s.tunnelConn != nil {
-			s.tunnelConn.Close()
-		}
-		if s.targetTCPConn != nil {
-			s.targetTCPConn.Close()
-		}
-		if s.targetUDPConn != nil {
-			s.targetUDPConn.Close()
-		}
-		if s.remoteTCPConn != nil {
-			s.remoteTCPConn.Close()
-		}
-		if s.remoteUDPConn != nil {
-			s.remoteUDPConn.Close()
-		}
-	}()
-	select {
-	case <-s.done:
-		return
-	default:
-		close(s.done)
+	if s.tunnelConn != nil {
+		s.tunnelConn.Close()
 	}
+	if s.targetTCPConn != nil {
+		s.targetTCPConn.Close()
+	}
+	if s.targetUDPConn != nil {
+		s.targetUDPConn.Close()
+	}
+	if s.remoteTCPConn != nil {
+		s.remoteTCPConn.Close()
+	}
+	if s.remoteUDPConn != nil {
+		s.remoteUDPConn.Close()
+	}
+	s.done <- struct{}{}
 }
 
 func (s *Server) Shutdown() {
 	s.Stop()
+	close(s.done)
 	if s.serverListen != nil {
 		s.serverListen.Close()
 	}

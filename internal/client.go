@@ -78,33 +78,27 @@ func (c *Client) clientLaunch(errChan chan error) {
 }
 
 func (c *Client) Stop() {
-	defer func() {
-		if c.tunnelConn != nil {
-			c.tunnelConn.Close()
-		}
-		if c.remoteTCPConn != nil {
-			c.remoteTCPConn.Close()
-		}
-		if c.remoteUDPConn != nil {
-			c.remoteUDPConn.Close()
-		}
-		if c.targetTCPConn != nil {
-			c.targetTCPConn.Close()
-		}
-		if c.targetUDPConn != nil {
-			c.targetUDPConn.Close()
-		}
-	}()
-	select {
-	case <-c.done:
-		return
-	default:
-		close(c.done)
+	if c.tunnelConn != nil {
+		c.tunnelConn.Close()
 	}
+	if c.remoteTCPConn != nil {
+		c.remoteTCPConn.Close()
+	}
+	if c.remoteUDPConn != nil {
+		c.remoteUDPConn.Close()
+	}
+	if c.targetTCPConn != nil {
+		c.targetTCPConn.Close()
+	}
+	if c.targetUDPConn != nil {
+		c.targetUDPConn.Close()
+	}
+	c.done <- struct{}{}
 }
 
 func (c *Client) Shutdown() {
 	c.Stop()
+	close(c.done)
 }
 
 func (c *Client) clientPong() error {
