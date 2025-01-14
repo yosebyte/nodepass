@@ -42,11 +42,6 @@ func (c *Client) initClient() error {
 		return err
 	}
 	c.tunnelConn = tunnelConn
-	defer func() {
-		if c.tunnelConn != nil {
-			c.tunnelConn.Close()
-		}
-	}()
 	c.logger.Debug("Tunnel connection established to: %v", c.serverAddr)
 	return nil
 }
@@ -118,25 +113,25 @@ func (c *Client) handleClientTCP() error {
 			c.logger.Error("Unable to dial server address: %v", err)
 			return
 		}
-		c.remoteTCPConn = remoteConn
-		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
 		defer func() {
 			if remoteConn != nil {
 				remoteConn.Close()
 			}
 		}()
+		c.remoteTCPConn = remoteConn
+		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
 		targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
 		if err != nil {
 			c.logger.Error("Unable to dial target address: %v", err)
 			return
 		}
-		c.targetTCPConn = targetConn
-		c.logger.Debug("Target connection established to: %v", c.targetTCPAddr)
 		defer func() {
 			if targetConn != nil {
 				targetConn.Close()
 			}
 		}()
+		c.targetTCPConn = targetConn
+		c.logger.Debug("Target connection established to: %v", c.targetTCPAddr)
 		c.logger.Debug("Starting data exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
 		if err := io.DataExchange(remoteConn, targetConn); err != nil {
 			c.logger.Debug("Connection closed: %v", err)
@@ -153,13 +148,13 @@ func (c *Client) handleClientUDP() error {
 			c.logger.Error("Unable to dial target address: %v", err)
 			return
 		}
-		c.remoteUDPConn = remoteConn
-		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
 		defer func() {
 			if remoteConn != nil {
 				remoteConn.Close()
 			}
 		}()
+		c.remoteUDPConn = remoteConn
+		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
 		buffer := make([]byte, MaxUDPDataBuffer)
 		n, err := remoteConn.Read(buffer)
 		if err != nil {
@@ -171,13 +166,13 @@ func (c *Client) handleClientUDP() error {
 			c.logger.Error("Unable to dial target address: %v", err)
 			return
 		}
-		c.targetUDPConn = targetConn
-		c.logger.Debug("Target connection established to: %v", c.targetUDPAddr)
 		defer func() {
 			if targetConn != nil {
 				targetConn.Close()
 			}
 		}()
+		c.targetUDPConn = targetConn
+		c.logger.Debug("Target connection established to: %v", c.targetUDPAddr)
 		err = targetConn.SetDeadline(time.Now().Add(MaxUDPDataTimeout))
 		if err != nil {
 			c.logger.Error("Unable to set deadline: %v", err)

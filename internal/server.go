@@ -49,11 +49,6 @@ func (s *Server) initServer() error {
 		return err
 	}
 	s.serverListen = serverListen
-	defer func() {
-		if s.serverListen != nil {
-			s.serverListen.Close()
-		}
-	}()
 	tunnelConn, err := serverListen.Accept()
 	if err != nil {
 		s.logger.Error("Unable to accept connections form server address: %v", s.serverAddr)
@@ -61,33 +56,18 @@ func (s *Server) initServer() error {
 	}
 	s.logger.Debug("Tunnel connection established from: %v", tunnelConn.RemoteAddr().String())
 	s.tunnelConn = tunnelConn
-	defer func() {
-		if s.tunnelConn != nil {
-			s.tunnelConn.Close()
-		}
-	}()
 	targetTCPListen, err := net.ListenTCP("tcp", s.targetTCPAddr)
 	if err != nil {
 		s.logger.Error("Unable to listen target TCP address: [%v]", s.targetTCPAddr)
 		return err
 	}
 	s.targetTCPListen = targetTCPListen
-	defer func() {
-		if s.targetTCPListen != nil {
-			s.targetTCPListen.Close()
-		}
-	}()
 	targetUDPListen, err := net.ListenUDP("udp", s.targetUDPAddr)
 	if err != nil {
 		s.logger.Error("Unable to listen target UDP address: [%v]", s.targetUDPAddr)
 		return err
 	}
 	s.targetUDPListen = targetUDPListen
-	defer func() {
-		if s.targetUDPListen != nil {
-			s.targetUDPListen.Close()
-		}
-	}()
 	return nil
 }
 
@@ -168,6 +148,11 @@ func (s *Server) handleServerTCP() error {
 				time.Sleep(1 * time.Second)
 				continue
 			}
+			defer func() {
+				if targetConn != nil {
+					targetConn.Close()
+				}
+			}()
 			s.targetTCPConn = targetConn
 			s.logger.Debug("Target connection established from: %v", targetConn.RemoteAddr())
 			sem <- struct{}{}
@@ -185,6 +170,11 @@ func (s *Server) handleServerTCP() error {
 					s.logger.Error("Unable to accept connections form link address: %v %v", s.serverListen.Addr(), err)
 					return
 				}
+				defer func() {
+					if remoteConn != nil {
+						remoteConn.Close()
+					}
+				}()
 				s.remoteTCPConn = remoteConn
 				s.logger.Debug("Remote connection established from: %v", remoteConn.RemoteAddr())
 				defer func() {
@@ -229,6 +219,11 @@ func (s *Server) handleServerUDP() error {
 				time.Sleep(1 * time.Second)
 				continue
 			}
+			defer func() {
+				if remoteConn != nil {
+					remoteConn.Close()
+				}
+			}()
 			s.remoteUDPConn = remoteConn
 			s.logger.Debug("Remote connection established from: %v", remoteConn.RemoteAddr())
 			sem <- struct{}{}
