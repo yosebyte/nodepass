@@ -54,16 +54,16 @@ func (s *Server) initServer() error {
 			s.serverListen.Close()
 		}
 	}()
-	tunnleConn, err := serverListen.Accept()
+	tunnelConn, err := serverListen.Accept()
 	if err != nil {
 		s.logger.Error("Unable to accept connections form server address: %v", s.serverAddr)
 		return err
 	}
-	s.logger.Debug("Tunnel connection established from: %v", tunnleConn.RemoteAddr().String())
-	s.tunnleConn = tunnleConn
+	s.logger.Debug("Tunnel connection established from: %v", tunnelConn.RemoteAddr().String())
+	s.tunnelConn = tunnelConn
 	defer func() {
-		if s.tunnleConn != nil {
-			s.tunnleConn.Close()
+		if s.tunnelConn != nil {
+			s.tunnelConn.Close()
 		}
 	}()
 	targetTCPListen, err := net.ListenTCP("tcp", s.targetTCPAddr)
@@ -104,23 +104,28 @@ func (s *Server) serverLaunch(errChan chan error) {
 }
 
 func (s *Server) Stop() {
-	if s.done != nil {
+	defer func() {
+		if s.tunnelConn != nil {
+			s.tunnelConn.Close()
+		}
+		if s.targetTCPConn != nil {
+			s.targetTCPConn.Close()
+		}
+		if s.targetUDPConn != nil {
+			s.targetUDPConn.Close()
+		}
+		if s.remoteTCPConn != nil {
+			s.remoteTCPConn.Close()
+		}
+		if s.remoteUDPConn != nil {
+			s.remoteUDPConn.Close()
+		}
+	}()
+	select {
+	case <-s.done:
+		return
+	default:
 		close(s.done)
-	}
-	if s.tunnleConn != nil {
-		s.tunnleConn.Close()
-	}
-	if s.targetTCPConn != nil {
-		s.targetTCPConn.Close()
-	}
-	if s.targetUDPConn != nil {
-		s.targetUDPConn.Close()
-	}
-	if s.remoteTCPConn != nil {
-		s.remoteTCPConn.Close()
-	}
-	if s.remoteUDPConn != nil {
-		s.remoteUDPConn.Close()
 	}
 }
 
@@ -145,7 +150,7 @@ func (s *Server) serverPing() error {
 		default:
 			time.Sleep(MaxReportInterval)
 			s.sharedMU.Lock()
-			_, err := s.tunnleConn.Write([]byte("[NODEPASS]<PING>\n"))
+			_, err := s.tunnelConn.Write([]byte("[NODEPASS]<PING>\n"))
 			s.sharedMU.Unlock()
 			if err != nil {
 				s.logger.Error("Tunnel connection health check failed")
@@ -175,7 +180,7 @@ func (s *Server) handleServerTCP() error {
 			go func(targetConn *net.TCPConn) {
 				defer func() { <-sem }()
 				s.sharedMU.Lock()
-				_, err = s.tunnleConn.Write([]byte("[NODEPASS]<TCP>\n"))
+				_, err = s.tunnelConn.Write([]byte("[NODEPASS]<TCP>\n"))
 				s.sharedMU.Unlock()
 				if err != nil {
 					s.logger.Error("Unable to send TCP launch signal: %v", err)
@@ -217,7 +222,7 @@ func (s *Server) handleServerUDP() error {
 				continue
 			}
 			s.sharedMU.Lock()
-			_, err = s.tunnleConn.Write([]byte("[NODEPASS]<UDP>\n"))
+			_, err = s.tunnelConn.Write([]byte("[NODEPASS]<UDP>\n"))
 			s.sharedMU.Unlock()
 			if err != nil {
 				s.logger.Error("Unable to send UDP launch signal: %v", err)

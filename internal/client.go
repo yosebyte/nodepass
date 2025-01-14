@@ -36,15 +36,15 @@ func (c *Client) Start() error {
 }
 
 func (c *Client) initClient() error {
-	tunnleConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
+	tunnelConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		c.logger.Error("Unable to dial server address: %v", c.serverAddr)
 		return err
 	}
-	c.tunnleConn = tunnleConn
+	c.tunnelConn = tunnelConn
 	defer func() {
-		if c.tunnleConn != nil {
-			c.tunnleConn.Close()
+		if c.tunnelConn != nil {
+			c.tunnelConn.Close()
 		}
 	}()
 	c.logger.Debug("Tunnel connection established to: %v", c.serverAddr)
@@ -54,7 +54,7 @@ func (c *Client) initClient() error {
 func (c *Client) clientLaunch(errChan chan error) {
 	buffer := make([]byte, MaxSignalBuffer)
 	for {
-		n, err := c.tunnleConn.Read(buffer)
+		n, err := c.tunnelConn.Read(buffer)
 		if err != nil {
 			c.logger.Error("Unable to read launch signal: %v", err)
 			time.Sleep(1 * time.Second)
@@ -78,23 +78,28 @@ func (c *Client) clientLaunch(errChan chan error) {
 }
 
 func (c *Client) Stop() {
-	if c.done != nil {
+	defer func() {
+		if c.tunnelConn != nil {
+			c.tunnelConn.Close()
+		}
+		if c.remoteTCPConn != nil {
+			c.remoteTCPConn.Close()
+		}
+		if c.remoteUDPConn != nil {
+			c.remoteUDPConn.Close()
+		}
+		if c.targetTCPConn != nil {
+			c.targetTCPConn.Close()
+		}
+		if c.targetUDPConn != nil {
+			c.targetUDPConn.Close()
+		}
+	}()
+	select {
+	case <-c.done:
+		return
+	default:
 		close(c.done)
-	}
-	if c.tunnleConn != nil {
-		c.tunnleConn.Close()
-	}
-	if c.remoteTCPConn != nil {
-		c.remoteTCPConn.Close()
-	}
-	if c.remoteUDPConn != nil {
-		c.remoteUDPConn.Close()
-	}
-	if c.targetTCPConn != nil {
-		c.targetTCPConn.Close()
-	}
-	if c.targetUDPConn != nil {
-		c.targetUDPConn.Close()
 	}
 }
 
@@ -103,7 +108,7 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) clientPong() error {
-	_, err := c.tunnleConn.Write([]byte("[NODEPASS]<PONG>\n"))
+	_, err := c.tunnelConn.Write([]byte("[NODEPASS]<PONG>\n"))
 	if err != nil {
 		c.logger.Error("Tunnel connection health check failed")
 		c.Stop()

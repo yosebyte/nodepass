@@ -23,7 +23,7 @@ type Common struct {
 	serverAddr    *net.TCPAddr
 	targetTCPAddr *net.TCPAddr
 	targetUDPAddr *net.UDPAddr
-	tunnleConn    net.Conn
+	tunnelConn    net.Conn
 	targetTCPConn net.Conn
 	targetUDPConn net.Conn
 	remoteTCPConn net.Conn
