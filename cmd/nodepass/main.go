@@ -64,7 +64,7 @@ func getExitInfo() {
 	logger.Info(`Version: %v %v/%v
 
 Usage:
-    nodepass <core_mode>://<server_addr>/<target_addr>?<log=level>
+    nodepass <core_mode>://<tunnel_addr>/<target_addr>?<log=level>
 
 Examples:
     # Run as server

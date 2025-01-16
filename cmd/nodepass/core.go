@@ -24,16 +24,21 @@ func coreDispatch(parsedURL *url.URL, stop chan os.Signal) {
 func runServer(parsedURL *url.URL, stop chan os.Signal) {
 	tlsConfig, err := tls.NewTLSconfig("yosebyte/nodepass:" + version)
 	if err != nil {
-		logger.Error("Unable to generate TLS config: %v", err)
+		logger.Fatal("Unable to generate TLS config: %v", err)
+		getExitInfo()
 	}
 	server := internal.NewServer(parsedURL, tlsConfig, logger)
+	if err := server.Init(); err != nil {
+		logger.Error("Server init error: %v", err)
+		getExitInfo()
+	}
 	go func() {
 		logger.Info("Server started: %v", parsedURL.String())
 		for {
 			if err := server.Start(); err != nil {
 				logger.Error("Server error: %v", err)
-				server.Shutdown()
-				time.Sleep(1 * time.Second)
+				server.Stop()
+				time.Sleep(internal.MaxCooldownDelay)
 				logger.Info("Server restarted")
 			}
 		}
@@ -51,8 +56,8 @@ func runClient(parsedURL *url.URL, stop chan os.Signal) {
 		for {
 			if err := client.Start(); err != nil {
 				logger.Error("Client error: %v", err)
-				client.Shutdown()
-				time.Sleep(1 * time.Second)
+				client.Stop()
+				time.Sleep(internal.MaxCooldownDelay)
 				logger.Info("Client restarted")
 			}
 		}

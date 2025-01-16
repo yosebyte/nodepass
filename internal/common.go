@@ -11,16 +11,15 @@ import (
 
 const (
 	MaxSemaphoreLimit = 1024
-	MaxSignalBuffer   = 1024
 	MaxUDPDataBuffer  = 8192
-	MaxUDPDataTimeout = 5 * time.Second
-	MaxReportInterval = 5 * time.Second
-	MaxReportTimeout  = 5 * time.Second
+	MaxCooldownDelay  = 5 * time.Second
+	MaxUDPDataTimeout = 10 * time.Second
+	MaxReportInterval = 15 * time.Second
 )
 
 type Common struct {
 	logger        *log.Logger
-	serverAddr    *net.TCPAddr
+	tunnelAddr    *net.TCPAddr
 	targetTCPAddr *net.TCPAddr
 	targetUDPAddr *net.UDPAddr
 	tunnelConn    net.Conn
@@ -28,12 +27,12 @@ type Common struct {
 	targetUDPConn net.Conn
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
-	done          chan struct{}
+	errChan       chan error
 }
 
 func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {
-	if serverAddr, err := net.ResolveTCPAddr("tcp", parsedURL.Host); err == nil {
-		c.serverAddr = serverAddr
+	if tunnelAddr, err := net.ResolveTCPAddr("tcp", parsedURL.Host); err == nil {
+		c.tunnelAddr = tunnelAddr
 	} else {
 		c.logger.Error("Unable to resolve server address: %v", err)
 	}

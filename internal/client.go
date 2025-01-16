@@ -1,9 +1,11 @@
 package internal
 
 import (
+	"bufio"
 	"crypto/tls"
 	"net"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/yosebyte/x/io"
@@ -16,8 +18,8 @@ type Client struct {
 
 func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
 	common := &Common{
-		logger: logger,
-		done:   make(chan struct{}, 1),
+		logger:  logger,
+		errChan: make(chan error, 1),
 	}
 	common.GetAddress(parsedURL, logger)
 	return &Client{
@@ -26,46 +28,38 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
 }
 
 func (c *Client) Start() error {
-	if err := c.initClient(); err != nil {
-		return err
-	}
-	errChan := make(chan error, 1)
-	go c.clientLaunch(errChan)
-	return <-errChan
-}
-
-func (c *Client) initClient() error {
-	tunnelConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
+	tunnelConn, err := tls.Dial("tcp", c.tunnelAddr.String(), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
-		c.logger.Error("Unable to dial server address: %v", c.serverAddr)
+		c.logger.Error("Unable to dial server address: %v", c.tunnelAddr)
 		return err
 	}
 	c.tunnelConn = tunnelConn
-	c.logger.Debug("Tunnel connection established to: %v", c.serverAddr)
-	return nil
+	c.logger.Debug("Tunnel connection established to: %v", c.tunnelAddr)
+	go c.clientLaunch()
+	return <-c.errChan
 }
 
-func (c *Client) clientLaunch(errChan chan error) {
-	buffer := make([]byte, MaxSignalBuffer)
+func (c *Client) clientLaunch() {
+	reader := bufio.NewReader(c.tunnelConn)
 	for {
-		n, err := c.tunnelConn.Read(buffer)
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			c.logger.Error("Unable to read launch signal: %v", err)
-			time.Sleep(1 * time.Second)
-			continue
+			c.errChan <- err
+			return
 		}
-		switch string(buffer[:n]) {
-		case "[NODEPASS]<PING>\n":
+		switch strings.TrimSpace(line) {
+		case "[NODEPASS]<PING>":
+			c.logger.Debug("PING signal received: %v", c.tunnelConn.RemoteAddr())
+		case "[NODEPASS]<TCP>":
 			go func() {
-				errChan <- c.clientPong()
+				c.logger.Debug("TCP launch signal received: %v", c.tunnelConn.RemoteAddr())
+				c.errChan <- c.handleClientTCP()
 			}()
-		case "[NODEPASS]<TCP>\n":
+		case "[NODEPASS]<UDP>":
 			go func() {
-				errChan <- c.handleClientTCP()
-			}()
-		case "[NODEPASS]<UDP>\n":
-			go func() {
-				errChan <- c.handleClientUDP()
+				c.logger.Debug("UDP launch signal received: %v", c.tunnelConn.RemoteAddr())
+				c.errChan <- c.handleClientUDP()
 			}()
 		}
 	}
@@ -74,129 +68,115 @@ func (c *Client) clientLaunch(errChan chan error) {
 func (c *Client) Stop() {
 	if c.tunnelConn != nil {
 		c.tunnelConn.Close()
+		c.logger.Debug("Tunnel connection closed: %v", c.tunnelConn.RemoteAddr())
 	}
 	if c.remoteTCPConn != nil {
 		c.remoteTCPConn.Close()
+		c.logger.Debug("Remote TCP connection closed: %v", c.remoteTCPConn.RemoteAddr())
 	}
 	if c.remoteUDPConn != nil {
 		c.remoteUDPConn.Close()
+		c.logger.Debug("Remote UDP connection closed: %v", c.remoteUDPConn.RemoteAddr())
 	}
 	if c.targetTCPConn != nil {
 		c.targetTCPConn.Close()
+		c.logger.Debug("Target TCP connection closed: %v", c.targetTCPConn.RemoteAddr())
 	}
 	if c.targetUDPConn != nil {
 		c.targetUDPConn.Close()
+		c.logger.Debug("Target UDP connection closed: %v", c.targetUDPConn.RemoteAddr())
 	}
-	c.done <- struct{}{}
 }
 
 func (c *Client) Shutdown() {
 	c.Stop()
-	close(c.done)
-}
-
-func (c *Client) clientPong() error {
-	_, err := c.tunnelConn.Write([]byte("[NODEPASS]<PONG>\n"))
-	if err != nil {
-		c.logger.Error("Tunnel connection health check failed")
-		c.Stop()
-		return err
-	}
-	return nil
 }
 
 func (c *Client) handleClientTCP() error {
-	go func() {
-		remoteConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
-		if err != nil {
-			c.logger.Error("Unable to dial server address: %v", err)
-			return
+	remoteConn, err := tls.Dial("tcp", c.tunnelAddr.String(), &tls.Config{InsecureSkipVerify: true})
+	if err != nil {
+		c.logger.Error("Unable to dial server address: %v", err)
+		return err
+	}
+	defer func() {
+		if remoteConn != nil {
+			remoteConn.Close()
 		}
-		defer func() {
-			if remoteConn != nil {
-				remoteConn.Close()
-			}
-		}()
-		c.remoteTCPConn = remoteConn
-		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
-		targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
-		if err != nil {
-			c.logger.Error("Unable to dial target address: %v", err)
-			return
-		}
-		defer func() {
-			if targetConn != nil {
-				targetConn.Close()
-			}
-		}()
-		c.targetTCPConn = targetConn
-		c.logger.Debug("Target connection established to: %v", c.targetTCPAddr)
-		c.logger.Debug("Starting data exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
-		if err := io.DataExchange(remoteConn, targetConn); err != nil {
-			c.logger.Debug("Connection closed: %v", err)
-		}
-		c.done <- struct{}{}
 	}()
-	<-c.done
+	c.remoteTCPConn = remoteConn
+	c.logger.Debug("Remote connection established to: %v", remoteConn.RemoteAddr())
+	targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
+	if err != nil {
+		c.logger.Error("Unable to dial target address: %v", err)
+		return err
+	}
+	defer func() {
+		if targetConn != nil {
+			targetConn.Close()
+		}
+	}()
+	c.targetTCPConn = targetConn
+	c.logger.Debug("Target connection established to: %v", targetConn.RemoteAddr())
+	c.logger.Debug("Starting data exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
+	if err := io.DataExchange(remoteConn, targetConn); err != nil {
+		c.logger.Debug("Connection closed: %v", err)
+	}
+	c.logger.Debug("Data exchange completed")
 	return nil
 }
 
 func (c *Client) handleClientUDP() error {
-	go func() {
-		remoteConn, err := tls.Dial("tcp", c.serverAddr.String(), &tls.Config{InsecureSkipVerify: true})
-		if err != nil {
-			c.logger.Error("Unable to dial target address: %v", err)
-			return
+	remoteConn, err := tls.Dial("tcp", c.tunnelAddr.String(), &tls.Config{InsecureSkipVerify: true})
+	if err != nil {
+		c.logger.Error("Unable to dial target address: %v", err)
+		return err
+	}
+	defer func() {
+		if remoteConn != nil {
+			remoteConn.Close()
 		}
-		defer func() {
-			if remoteConn != nil {
-				remoteConn.Close()
-			}
-		}()
-		c.remoteUDPConn = remoteConn
-		c.logger.Debug("Remote connection established to: %v", c.serverAddr)
-		buffer := make([]byte, MaxUDPDataBuffer)
-		n, err := remoteConn.Read(buffer)
-		if err != nil {
-			c.logger.Error("Unable to read from remote address: %v", err)
-			return
-		}
-		targetConn, err := net.DialUDP("udp", nil, c.targetUDPAddr)
-		if err != nil {
-			c.logger.Error("Unable to dial target address: %v", err)
-			return
-		}
-		defer func() {
-			if targetConn != nil {
-				targetConn.Close()
-			}
-		}()
-		c.targetUDPConn = targetConn
-		c.logger.Debug("Target connection established to: %v", c.targetUDPAddr)
-		err = targetConn.SetDeadline(time.Now().Add(MaxUDPDataTimeout))
-		if err != nil {
-			c.logger.Error("Unable to set deadline: %v", err)
-			return
-		}
-		c.logger.Debug("Starting data transfer: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
-		_, err = targetConn.Write(buffer[:n])
-		if err != nil {
-			c.logger.Error("Unable to write to target address: %v", err)
-			return
-		}
-		n, _, err = targetConn.ReadFromUDP(buffer)
-		if err != nil {
-			c.logger.Error("Unable to read from target address: %v", err)
-			return
-		}
-		_, err = remoteConn.Write(buffer[:n])
-		if err != nil {
-			c.logger.Error("Unable to write to remote address: %v", err)
-			return
-		}
-		c.logger.Debug("Transfer completed successfully")
-		c.done <- struct{}{}
 	}()
-	<-c.done
+	c.remoteUDPConn = remoteConn
+	c.logger.Debug("Remote connection established to: %v", remoteConn.RemoteAddr())
+	buffer := make([]byte, MaxUDPDataBuffer)
+	n, err := remoteConn.Read(buffer)
+	if err != nil {
+		c.logger.Error("Unable to read from remote address: %v", err)
+		return err
+	}
+	targetConn, err := net.DialUDP("udp", nil, c.targetUDPAddr)
+	if err != nil {
+		c.logger.Error("Unable to dial target address: %v", err)
+		return err
+	}
+	defer func() {
+		if targetConn != nil {
+			targetConn.Close()
+		}
+	}()
+	c.targetUDPConn = targetConn
+	c.logger.Debug("Target connection established to: %v", targetConn.RemoteAddr())
+	err = targetConn.SetDeadline(time.Now().Add(MaxUDPDataTimeout))
+	if err != nil {
+		c.logger.Error("Unable to set deadline: %v", err)
+		return err
+	}
+	c.logger.Debug("Starting data transfer: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
+	_, err = targetConn.Write(buffer[:n])
+	if err != nil {
+		c.logger.Error("Unable to write to target address: %v", err)
+		return err
+	}
+	n, _, err = targetConn.ReadFromUDP(buffer)
+	if err != nil {
+		c.logger.Error("Unable to read from target address: %v", err)
+		return err
+	}
+	_, err = remoteConn.Write(buffer[:n])
+	if err != nil {
+		c.logger.Error("Unable to write to remote address: %v", err)
+		return err
+	}
+	c.logger.Debug("Data transfer completed")
 	return nil
 }
