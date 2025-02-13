@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"time"
@@ -9,28 +10,29 @@ import (
 	"github.com/yosebyte/x/tls"
 )
 
-func coreDispatch(parsedURL *url.URL, stop chan os.Signal) {
+func coreDispatch(parsedURL *url.URL, signalChan chan os.Signal) {
 	switch parsedURL.Scheme {
 	case "server":
-		runServer(parsedURL, stop)
+		runServer(parsedURL, signalChan)
 	case "client":
-		runClient(parsedURL, stop)
+		runClient(parsedURL, signalChan)
 	default:
 		logger.Fatal("Invalid scheme: %v", parsedURL.Scheme)
 		getExitInfo()
 	}
 }
 
-func runServer(parsedURL *url.URL, stop chan os.Signal) {
-	tlsConfig, err := tls.NewTLSconfig("yosebyte/nodepass:" + version)
+func runServer(parsedURL *url.URL, signalChan chan os.Signal) {
+	logger.Info("Apply RAM cert: %v", version)
+	tlsConfig, err := tls.GenerateTLSConfig("yosebyte/nodepass:" + version)
 	if err != nil {
-		logger.Fatal("Unable to generate TLS config: %v", err)
-		getExitInfo()
+		logger.Fatal("Generate failed: %v", err)
+		return
 	}
 	server := internal.NewServer(parsedURL, tlsConfig, logger)
 	if err := server.Init(); err != nil {
-		logger.Error("Server init error: %v", err)
-		getExitInfo()
+		logger.Fatal("Initialize failed: %v", err)
+		return
 	}
 	go func() {
 		logger.Info("Server started: %v", parsedURL.String())
@@ -38,18 +40,22 @@ func runServer(parsedURL *url.URL, stop chan os.Signal) {
 			if err := server.Start(); err != nil {
 				logger.Error("Server error: %v", err)
 				server.Stop()
-				time.Sleep(internal.MaxCooldownDelay)
+				time.Sleep(internal.ServerCooldownDelay)
 				logger.Info("Server restarted")
 			}
 		}
 	}()
-	<-stop
-	logger.Info("Server stopping")
-	server.Shutdown()
-	logger.Info("Server stopped")
+	<-signalChan
+	ctx, cancel := context.WithTimeout(context.Background(), internal.ShutdownTimeout)
+	defer cancel()
+	logger.Info("Server shutting down")
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Error("Server shutdown error: %v", err)
+	}
+	logger.Info("Server shutdown complete")
 }
 
-func runClient(parsedURL *url.URL, stop chan os.Signal) {
+func runClient(parsedURL *url.URL, signalChan chan os.Signal) {
 	client := internal.NewClient(parsedURL, logger)
 	go func() {
 		logger.Info("Client started: %v", parsedURL.String())
@@ -57,13 +63,17 @@ func runClient(parsedURL *url.URL, stop chan os.Signal) {
 			if err := client.Start(); err != nil {
 				logger.Error("Client error: %v", err)
 				client.Stop()
-				time.Sleep(internal.MaxCooldownDelay)
+				time.Sleep(internal.ClientCooldownDelay)
 				logger.Info("Client restarted")
 			}
 		}
 	}()
-	<-stop
-	logger.Info("Client stopping")
-	client.Shutdown()
-	logger.Info("Client stopped")
+	<-signalChan
+	ctx, cancel := context.WithTimeout(context.Background(), internal.ShutdownTimeout)
+	defer cancel()
+	logger.Info("Client shutting down")
+	if err := client.Shutdown(ctx); err != nil {
+		logger.Error("Client shutdown error: %v", err)
+	}
+	logger.Info("Client shutdown complete")
 }
