@@ -30,10 +30,6 @@ func runServer(parsedURL *url.URL, signalChan chan os.Signal) {
 		return
 	}
 	server := internal.NewServer(parsedURL, tlsConfig, logger)
-	if err := server.Init(); err != nil {
-		logger.Fatal("Initialize failed: %v", err)
-		return
-	}
 	go func() {
 		logger.Info("Server started: %v", parsedURL.String())
 		for {

@@ -24,9 +24,11 @@ type Server struct {
 }
 
 func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *Server {
+	enableTLS := parsedURL.Query().Get("tls") != "false"
 	common := &Common{
-		logger:  logger,
-		errChan: make(chan error, 1),
+		logger:    logger,
+		enableTLS: enableTLS,
+		errChan:   make(chan error, 1),
 	}
 	common.GetAddress(parsedURL, logger)
 	return &Server{
@@ -36,7 +38,23 @@ func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *S
 	}
 }
 
-func (s *Server) Init() error {
+func (s *Server) Start() error {
+	if err := s.initListener(); err != nil {
+		s.logger.Error("Initialize failed: %v", err)
+	}
+	if err := s.startTunnelConnection(); err != nil {
+		s.logger.Error("Tunnel connection error: %v", err)
+		return err
+	}
+	if err := s.startRemoteListener(); err != nil {
+		s.logger.Error("Remote listener error: %v", err)
+		return err
+	}
+	go s.serverLaunch()
+	return <-s.errChan
+}
+
+func (s *Server) initListener() error {
 	tunnelListen, err := tls.Listen("tcp", s.tunnelAddr.String(), s.tlsConfig)
 	if err != nil {
 		s.logger.Error("Listen failed: %v", err)
@@ -55,21 +73,8 @@ func (s *Server) Init() error {
 		return err
 	}
 	s.targetUDPListen = targetUDPListen
-	s.logger.Debug("Initialization completed")
+	s.logger.Debug("Waiting for connection: %v", s.tunnelListen.Addr())
 	return nil
-}
-
-func (s *Server) Start() error {
-	if err := s.startTunnelConnection(); err != nil {
-		s.logger.Error("Tunnel connection error: %v", err)
-		return err
-	}
-	if err := s.startRemoteListener(); err != nil {
-		s.logger.Error("Remote listener error: %v", err)
-		return err
-	}
-	go s.serverLaunch()
-	return <-s.errChan
 }
 
 func (s *Server) startTunnelConnection() error {
@@ -84,12 +89,22 @@ func (s *Server) startTunnelConnection() error {
 }
 
 func (s *Server) startRemoteListener() error {
-	remoteListen, err := tls.Listen("tcp", s.remoteAddr.String(), s.tlsConfig)
-	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
-		return err
+	if s.enableTLS {
+		s.logger.Debug("Remote TLS enabled: %v", s.remoteAddr)
+		remoteListen, err := tls.Listen("tcp", s.remoteAddr.String(), s.tlsConfig)
+		if err != nil {
+			s.logger.Error("Listen failed: %v", err)
+			return err
+		}
+		s.remoteListen = remoteListen
+	} else {
+		remoteListen, err := net.Listen("tcp", s.remoteAddr.String())
+		if err != nil {
+			s.logger.Error("Listen failed: %v", err)
+			return err
+		}
+		s.remoteListen = remoteListen
 	}
-	s.remoteListen = remoteListen
 	return nil
 }
 
@@ -100,7 +115,6 @@ func (s *Server) serverLaunch() {
 	go func() {
 		s.logger.Debug("Handling server TCP: %v", s.tunnelListen.Addr())
 		s.handleServerTCP()
-
 	}()
 	go func() {
 		s.logger.Debug("Handling server UDP: %v", s.tunnelListen.Addr())
@@ -109,6 +123,18 @@ func (s *Server) serverLaunch() {
 }
 
 func (s *Server) Stop() {
+	if s.targetTCPListen != nil {
+		s.targetTCPListen.Close()
+		s.logger.Debug("Target TCP listener closed: %v", s.targetTCPListen.Addr())
+	}
+	if s.targetUDPListen != nil {
+		s.targetUDPListen.Close()
+		s.logger.Debug("Target UDP listener closed: %v", s.targetUDPListen.LocalAddr())
+	}
+	if s.tunnelListen != nil {
+		s.tunnelListen.Close()
+		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
+	}
 	if s.remoteListen != nil {
 		s.remoteListen.Close()
 		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
@@ -139,18 +165,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if s.targetTCPListen != nil {
-			s.targetTCPListen.Close()
-			s.logger.Debug("Target TCP listener closed: %v", s.targetTCPListen.Addr())
-		}
-		if s.targetUDPListen != nil {
-			s.targetUDPListen.Close()
-			s.logger.Debug("Target UDP listener closed: %v", s.targetUDPListen.LocalAddr())
-		}
-		if s.tunnelListen != nil {
-			s.tunnelListen.Close()
-			s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
-		}
 		s.Stop()
 	}()
 	select {

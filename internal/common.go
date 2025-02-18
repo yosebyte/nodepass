@@ -35,6 +35,7 @@ type Common struct {
 	targetUDPConn net.Conn
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
+	enableTLS     bool
 	errChan       chan error
 }
 
@@ -44,10 +45,9 @@ func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
-	tunnelHost, _, _ := net.SplitHostPort(parsedURL.Host)
 	c.remoteAddr = &net.TCPAddr{
-		IP:   net.ParseIP(tunnelHost),
-		Port: getRemotePort(),
+		IP:   c.tunnelAddr.IP,
+		Port: c.tunnelAddr.Port + 1,
 	}
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
@@ -60,10 +60,4 @@ func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
-}
-
-func getRemotePort() int {
-	timestamp := time.Now().Truncate(time.Minute).Unix()
-	port := (timestamp % (7169)) + 1024
-	return int(port)
 }
