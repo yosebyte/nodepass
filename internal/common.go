@@ -10,13 +10,15 @@ import (
 )
 
 const (
-	MaxSemaphoreLimit   = 1024
-	MaxSignalQueueLimit = 1024
-	MaxSignalBuffer     = 1024
-	MaxUDPDataBuffer    = 8192
-	MaxUDPDataTimeout   = 10 * time.Second
-	MaxReportInterval   = 15 * time.Second
-	ServerCooldownDelay = 1 * time.Second
+	SemaphoreLimit      = 1024
+	SignalQueueLimit    = 1024
+	SignalBuffer        = 1024
+	UDPDataBuffer       = 8192
+	MinConnPoolCap      = 8
+	MaxConnPoolCap      = 1024
+	UDPDataTimeout      = 10 * time.Second
+	ReportInterval      = 5 * time.Second
+	ServerCooldownDelay = 5 * time.Second
 	ClientCooldownDelay = 5 * time.Second
 	ShutdownTimeout     = 5 * time.Second
 	CheckSignalPING     = "[NODEPASS]<PING>\n"
@@ -35,7 +37,6 @@ type Common struct {
 	targetUDPConn net.Conn
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
-	enableTLS     bool
 	errChan       chan error
 }
 

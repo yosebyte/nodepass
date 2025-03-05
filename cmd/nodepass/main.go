@@ -64,14 +64,14 @@ func getExitInfo() {
 	logger.Info(`Version: %v %v/%v
 
 Usage:
-    nodepass "<core_mode>://<tunnel_addr>/<target_addr>?<log=level>&<tls=bool>"
+    nodepass <core_mode>://<tunnel_addr>/<target_addr>?<log=level>
 
 Examples:
     # Run as server
-    nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=false"
+    nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug
 
     # Run as client
-    nodepass "client://10.1.0.1:10101/127.0.0.1:8080?log=warn&tls=false"
+    nodepass client://10.1.0.1:10101/127.0.0.1:8080?log=warn
 `, version, runtime.GOOS, runtime.GOARCH)
 	os.Exit(1)
 }

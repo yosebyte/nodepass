@@ -24,17 +24,15 @@ type Server struct {
 }
 
 func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *Server {
-	enableTLS := parsedURL.Query().Get("tls") != "false"
 	common := &Common{
-		logger:    logger,
-		enableTLS: enableTLS,
-		errChan:   make(chan error, 1),
+		logger:  logger,
+		errChan: make(chan error, 1),
 	}
 	common.GetAddress(parsedURL, logger)
 	return &Server{
 		Common:    *common,
 		tlsConfig: tlsConfig,
-		semaphore: make(chan struct{}, MaxSemaphoreLimit),
+		semaphore: make(chan struct{}, SemaphoreLimit),
 	}
 }
 
@@ -89,22 +87,12 @@ func (s *Server) startTunnelConnection() error {
 }
 
 func (s *Server) startRemoteListener() error {
-	if s.enableTLS {
-		s.logger.Debug("Remote TLS enabled: %v", s.remoteAddr)
-		remoteListen, err := tls.Listen("tcp", s.remoteAddr.String(), s.tlsConfig)
-		if err != nil {
-			s.logger.Error("Listen failed: %v", err)
-			return err
-		}
-		s.remoteListen = remoteListen
-	} else {
-		remoteListen, err := net.Listen("tcp", s.remoteAddr.String())
-		if err != nil {
-			s.logger.Error("Listen failed: %v", err)
-			return err
-		}
-		s.remoteListen = remoteListen
+	remoteListen, err := net.Listen("tcp", s.remoteAddr.String())
+	if err != nil {
+		s.logger.Error("Listen failed: %v", err)
+		return err
 	}
+	s.remoteListen = remoteListen
 	return nil
 }
 
@@ -177,7 +165,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) serverPingCheck() error {
 	for {
-		time.Sleep(MaxReportInterval)
+		time.Sleep(ReportInterval)
 		s.sharedMU.Lock()
 		_, err := s.tunnelConn.Write([]byte(CheckSignalPING))
 		s.sharedMU.Unlock()
@@ -185,7 +173,6 @@ func (s *Server) serverPingCheck() error {
 			s.logger.Error("PING check failed: %v", err)
 			return err
 		}
-		s.logger.Debug("PING check passed: %v", s.tunnelConn.RemoteAddr())
 	}
 }
 
@@ -227,16 +214,15 @@ func (s *Server) handleServerTCP() {
 			s.remoteTCPConn = remoteConn
 			s.logger.Debug("Remote connection established from: %v", remoteConn.RemoteAddr())
 			s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
-			if err := io.DataExchange(remoteConn, targetConn); err != nil {
-				s.logger.Debug("Exchange complete: %v", err)
-			}
+			_, _, err = io.DataExchange(remoteConn, targetConn)
+			s.logger.Debug("Exchange complete: %v", err)
 		}(targetConn)
 	}
 }
 
 func (s *Server) handleServerUDP() {
 	for {
-		buffer := make([]byte, MaxUDPDataBuffer)
+		buffer := make([]byte, UDPDataBuffer)
 		n, clientAddr, err := s.targetUDPListen.ReadFromUDP(buffer)
 		if err != nil {
 			s.logger.Error("Read failed: %v", err)
