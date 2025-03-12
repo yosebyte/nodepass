@@ -3,27 +3,29 @@ package internal
 import (
 	"net"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/yosebyte/x/log"
 )
 
-const (
-	SemaphoreLimit      = 1024
-	SignalQueueLimit    = 1024
-	SignalBuffer        = 1024
-	UDPDataBuffer       = 8192
-	MinConnPoolCap      = 8
-	MaxConnPoolCap      = 1024
-	UDPDataTimeout      = 10 * time.Second
-	ReportInterval      = 5 * time.Second
-	ServerCooldownDelay = 5 * time.Second
-	ClientCooldownDelay = 5 * time.Second
-	ShutdownTimeout     = 5 * time.Second
-	CheckSignalPING     = "[NODEPASS]<PING>\n"
-	LaunchSignalTCP     = "[NODEPASS]<TCP>\n"
-	LaunchSignalUDP     = "[NODEPASS]<UDP>\n"
+var (
+	SemaphoreLimit   = getEnvAsInt("SEMAPHORE_LIMIT", 1024)
+	SignalQueueLimit = getEnvAsInt("SIGNAL_QUEUE_LIMIT", 1024)
+	SignalBuffer     = getEnvAsInt("SIGNAL_BUFFER", 1024)
+	UDPDataBuffer    = getEnvAsInt("UDP_DATA_BUFFER", 8192)
+	MinPoolCapacity  = getEnvAsInt("MIN_POOL_CAPACITY", 8)
+	MaxPoolCapacity  = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
+	UDPDataTimeout   = getEnvAsDuration("UDP_DATA_TIMEOUT", 10*time.Second)
+	ReportInterval   = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
+	ServerCooldown   = getEnvAsDuration("SERVER_COOLDOWN", 5*time.Second)
+	ClientCooldown   = getEnvAsDuration("CLIENT_COOLDOWN", 5*time.Second)
+	ShutdownTimeout  = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
+	CheckSignalPING  = getEnv("CHECK_SIGNAL_PING", "[NODEPASS]<PING>\n")
+	LaunchSignalTCP  = getEnv("LAUNCH_SIGNAL_TCP", "[NODEPASS]<TCP>\n")
+	LaunchSignalUDP  = getEnv("LAUNCH_SIGNAL_UDP", "[NODEPASS]<UDP>\n")
 )
 
 type Common struct {
@@ -38,6 +40,31 @@ type Common struct {
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
 	errChan       chan error
+}
+
+func getEnv(key string, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsInt(name string, defaultValue int) int {
+	if valueStr, exists := os.LookupEnv(name); exists {
+		if value, err := strconv.Atoi(valueStr); err == nil {
+			return value
+		}
+	}
+	return defaultValue
+}
+
+func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
+	if valueStr, exists := os.LookupEnv(name); exists {
+		if value, err := time.ParseDuration(valueStr); err == nil {
+			return value
+		}
+	}
+	return defaultValue
 }
 
 func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {

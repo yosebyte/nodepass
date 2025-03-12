@@ -10,10 +10,12 @@ import (
 
 	"github.com/yosebyte/x/io"
 	"github.com/yosebyte/x/log"
+	"github.com/yosebyte/x/pool"
 )
 
 type Server struct {
 	Common
+	pool            *pool.Pool
 	sharedMU        sync.Mutex
 	tunnelListen    net.Listener
 	remoteListen    net.Listener
@@ -48,6 +50,8 @@ func (s *Server) Start() error {
 		s.logger.Error("Remote listener error: %v", err)
 		return err
 	}
+	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteListen)
+	go s.pool.ServerManager()
 	go s.serverLaunch()
 	return <-s.errChan
 }
@@ -127,14 +131,6 @@ func (s *Server) Stop() {
 		s.remoteListen.Close()
 		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
 	}
-	if s.remoteTCPConn != nil {
-		s.remoteTCPConn.Close()
-		s.logger.Debug("Remote TCP connection closed: %v", s.remoteTCPConn.LocalAddr())
-	}
-	if s.remoteUDPConn != nil {
-		s.remoteUDPConn.Close()
-		s.logger.Debug("Remote UDP connection closed: %v", s.remoteUDPConn.LocalAddr())
-	}
 	if s.targetTCPConn != nil {
 		s.targetTCPConn.Close()
 		s.logger.Debug("Target TCP connection closed: %v", s.targetTCPConn.LocalAddr())
@@ -146,6 +142,10 @@ func (s *Server) Stop() {
 	if s.tunnelConn != nil {
 		s.tunnelConn.Close()
 		s.logger.Debug("Tunnel connection closed: %v", s.tunnelConn.LocalAddr())
+	}
+	if s.pool != nil {
+		s.pool.Close()
+		s.logger.Debug("Remote connection pool closed")
 	}
 }
 
@@ -201,11 +201,12 @@ func (s *Server) handleServerTCP() {
 				return
 			}
 			s.logger.Debug("TCP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-			remoteConn, err := s.remoteListen.Accept()
-			if err != nil {
-				s.logger.Error("Accept failed: %v", err)
+			id, remoteConn := s.pool.Get()
+			if id == "" {
+				s.logger.Error("Get failed: %v", remoteConn)
 				return
 			}
+			s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
 			defer func() {
 				if remoteConn != nil {
 					remoteConn.Close()
@@ -236,11 +237,17 @@ func (s *Server) handleServerUDP() {
 			return
 		}
 		s.logger.Debug("UDP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-		remoteConn, err := s.remoteListen.Accept()
-		if err != nil {
-			s.logger.Error("Accept failed: %v", err)
+		id, remoteConn := s.pool.Get()
+		if id == "" {
+			s.logger.Error("Get failed: %v", remoteConn)
 			return
 		}
+		s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
+		defer func() {
+			if remoteConn != nil {
+				remoteConn.Close()
+			}
+		}()
 		s.remoteUDPConn = remoteConn
 		s.logger.Debug("Remote connection established from: %v", remoteConn.RemoteAddr())
 		s.semaphore <- struct{}{}

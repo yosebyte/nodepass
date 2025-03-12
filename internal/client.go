@@ -24,12 +24,8 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
 		errChan: make(chan error, 1),
 	}
 	common.GetAddress(parsedURL, logger)
-	pool := pool.NewPool(MinConnPoolCap, MaxConnPoolCap, func() (net.Conn, error) {
-		return net.Dial("tcp", common.remoteAddr.String())
-	})
 	return &Client{
 		Common:     *common,
-		pool:       pool,
 		signalChan: make(chan string, SignalQueueLimit),
 	}
 }
@@ -39,7 +35,10 @@ func (c *Client) Start() error {
 		c.logger.Error("Tunnel connection error: %v", err)
 		return err
 	}
-	go c.pool.Manager()
+	c.pool = pool.NewClientPool(MinPoolCapacity, MaxPoolCapacity, func() (net.Conn, error) {
+		return net.Dial("tcp", c.remoteAddr.String())
+	})
+	go c.pool.ClientManager()
 	go c.clientLaunch()
 	return <-c.errChan
 }
@@ -103,9 +102,9 @@ func (c *Client) Stop() {
 		c.tunnelConn.Close()
 		c.logger.Debug("Tunnel connection closed: %v", c.tunnelConn.LocalAddr())
 	}
-	if c.pool.Active() > 0 {
-		c.pool.Stop()
-		c.logger.Debug("Remote connections: %v closed", c.pool.Capacity())
+	if c.pool != nil {
+		c.pool.Close()
+		c.logger.Debug("Remote connection pool closed")
 	}
 }
 
@@ -114,7 +113,6 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	go func() {
 		defer close(done)
 		c.Stop()
-		c.pool.Close()
 	}()
 	select {
 	case <-ctx.Done():
@@ -125,12 +123,12 @@ func (c *Client) Shutdown(ctx context.Context) error {
 }
 
 func (c *Client) handleClientTCP() {
-	c.logger.Debug("Available connections: %v in %v per %v", c.pool.Active(), c.pool.Capacity(), c.pool.Interval())
-	remoteConn, err := c.pool.Get()
-	if err != nil {
-		c.logger.Error("Get failed: %v", err)
+	id, remoteConn := c.pool.Get()
+	if id == "" {
+		c.logger.Error("Get failed: %v", remoteConn)
 		return
 	}
+	c.logger.Debug("Remote connection ID: %v <- active %v / %v", id, c.pool.Active(), c.pool.Capacity())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()
@@ -156,12 +154,12 @@ func (c *Client) handleClientTCP() {
 }
 
 func (c *Client) handleClientUDP() {
-	c.logger.Debug("Available connections: %v in %v per %v", c.pool.Active(), c.pool.Capacity(), c.pool.Interval())
-	remoteConn, err := c.pool.Get()
-	if err != nil {
-		c.logger.Error("Get failed: %v", err)
+	id, remoteConn := c.pool.Get()
+	if id == "" {
+		c.logger.Error("Get failed: %v", remoteConn)
 		return
 	}
+	c.logger.Debug("Remote connection ID: %v <- active %v / %v", id, c.pool.Active(), c.pool.Capacity())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()
