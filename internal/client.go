@@ -36,7 +36,7 @@ func (c *Client) Start() error {
 		return err
 	}
 	c.pool = pool.NewClientPool(MinPoolCapacity, MaxPoolCapacity, func() (net.Conn, error) {
-		return net.Dial("tcp", c.remoteAddr.String())
+		return net.Dial("tcp", c.remoteTCPAddr.String())
 	})
 	go c.pool.ClientManager()
 	go c.clientLaunch()
@@ -156,12 +156,11 @@ func (c *Client) handleClientTCP() {
 }
 
 func (c *Client) handleClientUDP() {
-	id, remoteConn := c.pool.Get()
-	if id == "" {
-		c.logger.Error("Get failed: %v", remoteConn)
+	remoteConn, err := net.Dial("tcp", c.remoteUDPAddr.String())
+	if err != nil {
+		c.logger.Error("Dial failed: %v", err)
 		return
 	}
-	c.logger.Debug("Remote connection ID: %v <- active %v / %v", id, c.pool.Active(), c.pool.Capacity())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()

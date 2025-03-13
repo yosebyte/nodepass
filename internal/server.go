@@ -18,7 +18,8 @@ type Server struct {
 	pool            *pool.Pool
 	sharedMU        sync.Mutex
 	tunnelListen    net.Listener
-	remoteListen    net.Listener
+	remoteTCPListen net.Listener
+	remoteUDPListen net.Listener
 	targetTCPListen *net.TCPListener
 	tlsConfig       *tls.Config
 	semaphore       chan struct{}
@@ -49,7 +50,7 @@ func (s *Server) Start() error {
 		s.logger.Error("Remote listener error: %v", err)
 		return err
 	}
-	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteListen)
+	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteTCPListen)
 	go s.pool.ServerManager()
 	go s.serverLaunch()
 	return <-s.errChan
@@ -90,12 +91,18 @@ func (s *Server) startTunnelConnection() error {
 }
 
 func (s *Server) startRemoteListener() error {
-	remoteListen, err := net.Listen("tcp", s.remoteAddr.String())
+	remoteTCPListen, err := net.Listen("tcp", s.remoteTCPAddr.String())
 	if err != nil {
 		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
-	s.remoteListen = remoteListen
+	s.remoteTCPListen = remoteTCPListen
+	remoteUDPListen, err := net.Listen("tcp", s.remoteUDPAddr.String())
+	if err != nil {
+		s.logger.Error("Listen failed: %v", err)
+		return err
+	}
+	s.remoteUDPListen = remoteUDPListen
 	return nil
 }
 
@@ -122,9 +129,13 @@ func (s *Server) Stop() {
 		s.tunnelListen.Close()
 		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
 	}
-	if s.remoteListen != nil {
-		s.remoteListen.Close()
-		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
+	if s.remoteTCPListen != nil {
+		s.remoteTCPListen.Close()
+		s.logger.Debug("Remote listener closed: %v", s.remoteTCPListen.Addr())
+	}
+	if s.remoteUDPListen != nil {
+		s.remoteUDPListen.Close()
+		s.logger.Debug("Remote listener closed: %v", s.remoteUDPListen.Addr())
 	}
 	if s.targetTCPConn != nil {
 		s.targetTCPConn.Close()
@@ -235,12 +246,11 @@ func (s *Server) handleServerUDP() {
 			return
 		}
 		s.logger.Debug("UDP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-		id, remoteConn := s.pool.Get()
-		if id == "" {
-			s.logger.Error("Get failed: %v", remoteConn)
+		remoteConn, err := s.remoteUDPListen.Accept()
+		if err != nil {
+			s.logger.Error("Accept failed: %v", err)
 			return
 		}
-		s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
 		defer func() {
 			if remoteConn != nil {
 				remoteConn.Close()

@@ -32,7 +32,8 @@ var (
 type Common struct {
 	logger        *log.Logger
 	tunnelAddr    *net.TCPAddr
-	remoteAddr    *net.TCPAddr
+	remoteTCPAddr *net.TCPAddr
+	remoteUDPAddr *net.TCPAddr
 	targetTCPAddr *net.TCPAddr
 	targetUDPAddr *net.UDPAddr
 	tunnelConn    *tls.Conn
@@ -74,9 +75,13 @@ func (c *Common) GetAddress(parsedURL *url.URL, logger *log.Logger) {
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
-	c.remoteAddr = &net.TCPAddr{
+	c.remoteTCPAddr = &net.TCPAddr{
 		IP:   c.tunnelAddr.IP,
 		Port: c.tunnelAddr.Port + 1,
+	}
+	c.remoteUDPAddr = &net.TCPAddr{
+		IP:   c.tunnelAddr.IP,
+		Port: c.tunnelAddr.Port + 2,
 	}
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
