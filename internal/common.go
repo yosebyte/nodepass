@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"crypto/tls"
 	"net"
 	"net/url"
 	"os"
@@ -34,9 +35,9 @@ type Common struct {
 	remoteAddr    *net.TCPAddr
 	targetTCPAddr *net.TCPAddr
 	targetUDPAddr *net.UDPAddr
-	tunnelConn    net.Conn
-	targetTCPConn net.Conn
-	targetUDPConn net.Conn
+	tunnelConn    *tls.Conn
+	targetTCPConn *net.TCPConn
+	targetUDPConn *net.UDPConn
 	remoteTCPConn net.Conn
 	remoteUDPConn net.Conn
 	errChan       chan error
