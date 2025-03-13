@@ -226,7 +226,7 @@ func (s *Server) handleServerUDP() {
 			s.logger.Error("Read failed: %v", err)
 			return
 		}
-		s.logger.Debug("Target connection: %v --- %v", s.targetUDPConn.LocalAddr(), s.targetUDPConn.RemoteAddr())
+		s.logger.Debug("Target connection: %v --- %v", s.targetUDPConn.LocalAddr(), clientAddr)
 		s.sharedMU.Lock()
 		_, err = s.tunnelConn.Write([]byte(LaunchSignalUDP))
 		s.sharedMU.Unlock()
@@ -235,11 +235,12 @@ func (s *Server) handleServerUDP() {
 			return
 		}
 		s.logger.Debug("UDP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-		remoteConn, err := s.remoteListen.Accept()
-		if err != nil {
-			s.logger.Error("Accept failed: %v", err)
+		id, remoteConn := s.pool.Get()
+		if id == "" {
+			s.logger.Error("Get failed: %v", remoteConn)
 			return
 		}
+		s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
 		defer func() {
 			if remoteConn != nil {
 				remoteConn.Close()
@@ -268,7 +269,7 @@ func (s *Server) handleServerUDP() {
 			}
 			remoteConn.Close()
 			s.logger.Debug("Remote connection: %v -/- %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-			s.logger.Debug("Target connection: %v -/- %v", s.targetUDPConn.LocalAddr(), s.targetUDPConn.RemoteAddr())
+			s.logger.Debug("Target connection: %v -/- %v", s.targetUDPConn.LocalAddr(), clientAddr)
 			s.logger.Debug("Transfer complete: %v -/- %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
 		}(buffer, n, remoteConn, clientAddr)
 	}

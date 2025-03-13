@@ -156,11 +156,12 @@ func (c *Client) handleClientTCP() {
 }
 
 func (c *Client) handleClientUDP() {
-	remoteConn, err := net.Dial("tcp", c.remoteAddr.String())
-	if err != nil {
-		c.logger.Error("Dial failed: %v", err)
+	id, remoteConn := c.pool.Get()
+	if id == "" {
+		c.logger.Error("Get failed: %v", remoteConn)
 		return
 	}
+	c.logger.Debug("Remote connection ID: %v <- active %v / %v", id, c.pool.Active(), c.pool.Capacity())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()
