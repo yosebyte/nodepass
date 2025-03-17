@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -15,14 +16,12 @@ import (
 
 type Server struct {
 	Common
-	pool            *pool.Pool
-	sharedMU        sync.Mutex
-	tunnelListen    net.Listener
-	remoteTCPListen net.Listener
-	remoteUDPListen net.Listener
-	targetTCPListen *net.TCPListener
-	tlsConfig       *tls.Config
-	semaphore       chan struct{}
+	sharedMU     sync.Mutex
+	tunnelListen net.Listener
+	remoteListen net.Listener
+	targetListen net.Listener
+	tlsConfig    *tls.Config
+	semaphore    chan struct{}
 }
 
 func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *Server {
@@ -30,7 +29,7 @@ func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *S
 		logger:  logger,
 		errChan: make(chan error, 1),
 	}
-	common.GetAddress(parsedURL, logger)
+	common.getAddress(parsedURL)
 	return &Server{
 		Common:    *common,
 		tlsConfig: tlsConfig,
@@ -39,18 +38,17 @@ func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *S
 }
 
 func (s *Server) Start() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	if err := s.initListener(); err != nil {
-		s.logger.Error("Initialize failed: %v", err)
-	}
-	if err := s.startTunnelConnection(); err != nil {
-		s.logger.Error("Tunnel connection error: %v", err)
 		return err
 	}
-	if err := s.startRemoteListener(); err != nil {
-		s.logger.Error("Remote listener error: %v", err)
+	if err := s.getTunnelConnection(); err != nil {
 		return err
 	}
-	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteTCPListen)
+	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteListen)
 	go s.pool.ServerManager()
 	go s.serverLaunch()
 	return <-s.errChan
@@ -59,91 +57,69 @@ func (s *Server) Start() error {
 func (s *Server) initListener() error {
 	tunnelListen, err := tls.Listen("tcp", s.tunnelAddr.String(), s.tlsConfig)
 	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
 	s.tunnelListen = tunnelListen
-	targetTCPListen, err := net.ListenTCP("tcp", s.targetTCPAddr)
+	remoteListen, err := net.Listen("tcp", s.remoteAddr.String())
 	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
-	s.targetTCPListen = targetTCPListen
-	targetUDPConn, err := net.ListenUDP("udp", s.targetUDPAddr)
+	s.remoteListen = remoteListen
+	targetListen, err := net.Listen("tcp", s.targetAddr.String())
 	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
-	s.targetUDPConn = targetUDPConn
-	s.logger.Debug("Waiting for connection: %v", s.tunnelListen.Addr())
+	s.targetListen = targetListen
 	return nil
 }
 
-func (s *Server) startTunnelConnection() error {
+func (s *Server) getTunnelConnection() error {
 	tunnelConn, err := s.tunnelListen.Accept()
 	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
 	s.tunnelConn = tunnelConn.(*tls.Conn)
-	s.logger.Debug("Tunnel connection established from: %v", tunnelConn.RemoteAddr())
-	return nil
-}
-
-func (s *Server) startRemoteListener() error {
-	remoteTCPListen, err := net.Listen("tcp", s.remoteTCPAddr.String())
+	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelConn.LocalAddr(), s.tunnelConn.RemoteAddr())
+	remoteSignal := []byte(strconv.Itoa(s.remoteAddr.Port))
+	s.sharedMU.Lock()
+	_, err = s.tunnelConn.Write(remoteSignal)
+	s.sharedMU.Unlock()
 	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
 		return err
 	}
-	s.remoteTCPListen = remoteTCPListen
-	remoteUDPListen, err := net.Listen("tcp", s.remoteUDPAddr.String())
-	if err != nil {
-		s.logger.Error("Listen failed: %v", err)
-		return err
-	}
-	s.remoteUDPListen = remoteUDPListen
+	s.logger.Debug("Remote signal sent: %v", s.remoteAddr)
 	return nil
 }
 
 func (s *Server) serverLaunch() {
 	go func() {
-		s.errChan <- s.serverPingCheck()
+		s.errChan <- s.healthCheck()
 	}()
 	go func() {
-		s.logger.Debug("Handling server TCP: %v", s.tunnelListen.Addr())
-		s.handleServerTCP()
-	}()
-	go func() {
-		s.logger.Debug("Handling server UDP: %v", s.tunnelListen.Addr())
-		s.handleServerUDP()
+		s.logger.Debug("Handling server: %v", s.tunnelListen.Addr())
+		s.handleServer()
 	}()
 }
 
 func (s *Server) Stop() {
-	if s.targetTCPListen != nil {
-		s.targetTCPListen.Close()
-		s.logger.Debug("Target TCP listener closed: %v", s.targetTCPListen.Addr())
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.targetListen != nil {
+		s.targetListen.Close()
+		s.logger.Debug("Target listener closed: %v", s.targetListen.Addr())
 	}
 	if s.tunnelListen != nil {
 		s.tunnelListen.Close()
 		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
 	}
-	if s.remoteTCPListen != nil {
-		s.remoteTCPListen.Close()
-		s.logger.Debug("Remote listener closed: %v", s.remoteTCPListen.Addr())
+	if s.remoteListen != nil {
+		s.remoteListen.Close()
+		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
 	}
-	if s.remoteUDPListen != nil {
-		s.remoteUDPListen.Close()
-		s.logger.Debug("Remote listener closed: %v", s.remoteUDPListen.Addr())
-	}
-	if s.targetTCPConn != nil {
-		s.targetTCPConn.Close()
-		s.logger.Debug("Target TCP connection closed: %v", s.targetTCPConn.LocalAddr())
-	}
-	if s.targetUDPConn != nil {
-		s.targetUDPConn.Close()
-		s.logger.Debug("Target UDP connection closed: %v", s.targetUDPConn.LocalAddr())
+	if s.targetConn != nil {
+		s.targetConn.Close()
+		s.logger.Debug("Target connection closed: %v", s.targetConn.LocalAddr())
 	}
 	if s.tunnelConn != nil {
 		s.tunnelConn.Close()
@@ -169,118 +145,70 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (s *Server) serverPingCheck() error {
+func (s *Server) healthCheck() error {
 	for {
-		time.Sleep(ReportInterval)
-		s.sharedMU.Lock()
-		_, err := s.tunnelConn.Write([]byte(CheckSignalPING))
-		s.sharedMU.Unlock()
-		if err != nil {
-			s.logger.Error("PING check failed: %v", err)
-			return err
-		}
-	}
-}
-
-func (s *Server) handleServerTCP() {
-	for {
-		targetConn, err := s.targetTCPListen.AcceptTCP()
-		if err != nil {
-			s.logger.Error("Accept failed: %v", err)
-			return
-		}
-		defer func() {
-			if targetConn != nil {
-				targetConn.Close()
-			}
-		}()
-		s.targetTCPConn = targetConn
-		s.logger.Debug("Target connection: %v --- %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-		s.semaphore <- struct{}{}
-		go func(targetConn *net.TCPConn) {
-			defer func() { <-s.semaphore }()
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		default:
+			time.Sleep(ReportInterval)
 			s.sharedMU.Lock()
-			_, err = s.tunnelConn.Write([]byte(LaunchSignalTCP))
+			_, err := s.tunnelConn.Write([]byte(ReportSignal))
 			s.sharedMU.Unlock()
 			if err != nil {
-				s.logger.Error("Write failed: %v", err)
-				return
+				s.logger.Error("Health check failed: %v", err)
+				return err
 			}
-			s.logger.Debug("TCP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-			id, remoteConn := s.pool.Get()
-			if id == "" {
-				s.logger.Error("Get failed: %v", remoteConn)
-				return
-			}
-			s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
-			defer func() {
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
-			}()
-			s.remoteTCPConn = remoteConn
-			s.logger.Debug("Remote connection: %v --- %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-			s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-			_, _, err = io.DataExchange(remoteConn, targetConn)
-			s.logger.Debug("Remote connection: %v -/- %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-			s.logger.Debug("Target connection: %v -/- %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-			s.logger.Debug("Exchange complete: %v", err)
-		}(targetConn)
+		}
 	}
 }
 
-func (s *Server) handleServerUDP() {
+func (s *Server) handleServer() {
 	for {
-		buffer := make([]byte, UDPDataBuffer)
-		n, clientAddr, err := s.targetUDPConn.ReadFromUDP(buffer)
-		if err != nil {
-			s.logger.Error("Read failed: %v", err)
+		select {
+		case <-s.ctx.Done():
 			return
-		}
-		s.logger.Debug("Target connection: %v --- %v", s.targetUDPConn.LocalAddr(), clientAddr)
-		s.sharedMU.Lock()
-		_, err = s.tunnelConn.Write([]byte(LaunchSignalUDP))
-		s.sharedMU.Unlock()
-		if err != nil {
-			s.logger.Error("Write failed: %v", err)
-			return
-		}
-		s.logger.Debug("UDP launch signal sent: %v", s.tunnelConn.RemoteAddr())
-		remoteConn, err := s.remoteUDPListen.Accept()
-		if err != nil {
-			s.logger.Error("Accept failed: %v", err)
-			return
-		}
-		defer func() {
-			if remoteConn != nil {
-				remoteConn.Close()
-			}
-		}()
-		s.remoteUDPConn = remoteConn
-		s.logger.Debug("Remote connection: %v --- %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-		s.semaphore <- struct{}{}
-		go func(buffer []byte, n int, remoteConn net.Conn, clientAddr *net.UDPAddr) {
-			defer func() { <-s.semaphore }()
-			s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
-			_, err = remoteConn.Write(buffer[:n])
+		default:
+			targetConn, err := s.targetListen.Accept()
 			if err != nil {
-				s.logger.Error("Write failed: %v", err)
+				s.logger.Error("Accept failed: %v", err)
 				return
 			}
-			n, err = remoteConn.Read(buffer)
-			if err != nil {
-				s.logger.Error("Read failed: %v", err)
-				return
-			}
-			_, err = s.targetUDPConn.WriteToUDP(buffer[:n], clientAddr)
-			if err != nil {
-				s.logger.Error("Write failed: %v", err)
-				return
-			}
-			remoteConn.Close()
-			s.logger.Debug("Remote connection: %v -/- %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-			s.logger.Debug("Target connection: %v -/- %v", s.targetUDPConn.LocalAddr(), clientAddr)
-			s.logger.Debug("Transfer complete: %v -/- %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
-		}(buffer, n, remoteConn, clientAddr)
+			defer func() {
+				if targetConn != nil {
+					targetConn.Close()
+				}
+			}()
+			s.targetConn = targetConn
+			s.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+			s.semaphore <- struct{}{}
+			go func(targetConn net.Conn) {
+				defer func() { <-s.semaphore }()
+				s.sharedMU.Lock()
+				_, err = s.tunnelConn.Write([]byte(LaunchSignal))
+				s.sharedMU.Unlock()
+				if err != nil {
+					s.logger.Error("Write failed: %v", err)
+					return
+				}
+				s.logger.Debug("Launch signal sent: %v", s.tunnelConn.RemoteAddr())
+				id, remoteConn := s.pool.Get()
+				if id == "" {
+					s.logger.Error("Get failed: %v", remoteConn)
+					return
+				}
+				s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
+				defer func() {
+					if remoteConn != nil {
+						remoteConn.Close()
+					}
+				}()
+				s.remoteConn = remoteConn
+				s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+				s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
+				_, _, err = io.DataExchange(remoteConn, targetConn)
+				s.logger.Debug("Exchange complete: %v", err)
+			}(targetConn)
+		}
 	}
 }
