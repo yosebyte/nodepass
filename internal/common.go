@@ -40,8 +40,7 @@ type Common struct {
 	tunnelConn *tls.Conn
 	targetConn net.Conn
 	remoteConn net.Conn
-	pool       *pool.Pool
-	errChan    chan error
+	remotePool *pool.Pool
 	ctx        context.Context
 	cancel     context.CancelFunc
 }

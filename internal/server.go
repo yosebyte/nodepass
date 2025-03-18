@@ -26,8 +26,7 @@ type Server struct {
 
 func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *Server {
 	common := &Common{
-		logger:  logger,
-		errChan: make(chan error, 1),
+		logger: logger,
 	}
 	common.getAddress(parsedURL)
 	return &Server{
@@ -48,10 +47,54 @@ func (s *Server) Start() error {
 	if err := s.getTunnelConnection(); err != nil {
 		return err
 	}
-	s.pool = pool.NewServerPool(MaxPoolCapacity, s.remoteListen)
-	go s.pool.ServerManager()
-	go s.serverLaunch()
-	return <-s.errChan
+	s.remotePool = pool.NewServerPool(MaxPoolCapacity, s.remoteListen)
+	go s.remotePool.ServerManager()
+	go s.serverLoop()
+	return s.healthCheck()
+}
+
+func (s *Server) Stop() {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.targetListen != nil {
+		s.targetListen.Close()
+		s.logger.Debug("Target listener closed: %v", s.targetListen.Addr())
+	}
+	if s.tunnelListen != nil {
+		s.tunnelListen.Close()
+		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
+	}
+	if s.remoteListen != nil {
+		s.remoteListen.Close()
+		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
+	}
+	if s.targetConn != nil {
+		s.targetConn.Close()
+		s.logger.Debug("Target connection closed: %v", s.targetConn.LocalAddr())
+	}
+	if s.tunnelConn != nil {
+		s.tunnelConn.Close()
+		s.logger.Debug("Tunnel connection closed: %v", s.tunnelConn.LocalAddr())
+	}
+	if s.remotePool != nil {
+		s.remotePool.Close()
+		s.logger.Debug("Remote connections closed")
+	}
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.Stop()
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }
 
 func (s *Server) initListener() error {
@@ -87,83 +130,31 @@ func (s *Server) getTunnelConnection() error {
 	if err != nil {
 		return err
 	}
-	s.logger.Debug("Remote signal sent: %v", s.remoteAddr)
+	s.logger.Debug("Remote signal -> : %v", s.remoteAddr)
 	return nil
-}
-
-func (s *Server) serverLaunch() {
-	go func() {
-		s.errChan <- s.healthCheck()
-	}()
-	go func() {
-		s.logger.Debug("Handling server: %v", s.tunnelListen.Addr())
-		s.handleServer()
-	}()
-}
-
-func (s *Server) Stop() {
-	if s.cancel != nil {
-		s.cancel()
-	}
-	if s.targetListen != nil {
-		s.targetListen.Close()
-		s.logger.Debug("Target listener closed: %v", s.targetListen.Addr())
-	}
-	if s.tunnelListen != nil {
-		s.tunnelListen.Close()
-		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListen.Addr())
-	}
-	if s.remoteListen != nil {
-		s.remoteListen.Close()
-		s.logger.Debug("Remote listener closed: %v", s.remoteListen.Addr())
-	}
-	if s.targetConn != nil {
-		s.targetConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetConn.LocalAddr())
-	}
-	if s.tunnelConn != nil {
-		s.tunnelConn.Close()
-		s.logger.Debug("Tunnel connection closed: %v", s.tunnelConn.LocalAddr())
-	}
-	if s.pool != nil {
-		s.pool.Close()
-		s.logger.Debug("Remote connection pool closed")
-	}
-}
-
-func (s *Server) Shutdown(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.Stop()
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
 }
 
 func (s *Server) healthCheck() error {
 	for {
+		timer := time.NewTimer(ReportInterval)
 		select {
 		case <-s.ctx.Done():
+			timer.Stop()
 			return s.ctx.Err()
-		default:
-			time.Sleep(ReportInterval)
-			s.sharedMU.Lock()
+		case <-timer.C:
+			if !s.sharedMU.TryLock() {
+				continue
+			}
 			_, err := s.tunnelConn.Write([]byte(ReportSignal))
 			s.sharedMU.Unlock()
 			if err != nil {
-				s.logger.Error("Health check failed: %v", err)
 				return err
 			}
 		}
 	}
 }
 
-func (s *Server) handleServer() {
+func (s *Server) serverLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -171,8 +162,7 @@ func (s *Server) handleServer() {
 		default:
 			targetConn, err := s.targetListen.Accept()
 			if err != nil {
-				s.logger.Error("Accept failed: %v", err)
-				return
+				continue
 			}
 			defer func() {
 				if targetConn != nil {
@@ -191,13 +181,13 @@ func (s *Server) handleServer() {
 					s.logger.Error("Write failed: %v", err)
 					return
 				}
-				s.logger.Debug("Launch signal sent: %v", s.tunnelConn.RemoteAddr())
-				id, remoteConn := s.pool.Get()
+				s.logger.Debug("Launch signal -> : %v", s.tunnelConn.RemoteAddr())
+				id, remoteConn := s.remotePool.Get()
 				if id == "" {
 					s.logger.Error("Get failed: %v", remoteConn)
 					return
 				}
-				s.logger.Debug("Remote connection ID: %v <- active %v", id, s.pool.Active())
+				s.logger.Debug("Remote connection: %v <- active %v", id, s.remotePool.Active())
 				defer func() {
 					if remoteConn != nil {
 						remoteConn.Close()
