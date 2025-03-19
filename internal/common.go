@@ -15,10 +15,9 @@ import (
 	"github.com/yosebyte/x/pool"
 )
 
-const (
-	ReportSignal = "[NODEPASS]<REPORT>\n"
-	LaunchSignal = "[NODEPASS]<LAUNCH>\n"
-)
+const LaunchSignal = "[NODEPASS]<LAUNCH>\n"
+
+var remoteSignal []byte
 
 var (
 	SemaphoreLimit   = getEnvAsInt("SEMAPHORE_LIMIT", 1024)

@@ -16,7 +16,7 @@ import (
 
 type Server struct {
 	Common
-	sharedMU     sync.Mutex
+	serverMU     sync.Mutex
 	tunnelListen net.Listener
 	remoteListen net.Listener
 	targetListen net.Listener
@@ -78,8 +78,9 @@ func (s *Server) Stop() {
 		s.logger.Debug("Tunnel connection closed: %v", s.tunnelConn.LocalAddr())
 	}
 	if s.remotePool != nil {
+		active := s.remotePool.Active()
 		s.remotePool.Close()
-		s.logger.Debug("Remote connections closed")
+		s.logger.Debug("Remote connection closed: active %v", active)
 	}
 }
 
@@ -123,33 +124,24 @@ func (s *Server) getTunnelConnection() error {
 	}
 	s.tunnelConn = tunnelConn.(*tls.Conn)
 	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelConn.LocalAddr(), s.tunnelConn.RemoteAddr())
-	remoteSignal := []byte(strconv.Itoa(s.remoteAddr.Port))
-	s.sharedMU.Lock()
-	_, err = s.tunnelConn.Write(remoteSignal)
-	s.sharedMU.Unlock()
-	if err != nil {
-		return err
-	}
+	remoteSignal = []byte(strconv.Itoa(s.remoteAddr.Port))
 	s.logger.Debug("Remote signal -> : %v", s.remoteAddr)
 	return nil
 }
 
 func (s *Server) healthCheck() error {
 	for {
-		timer := time.NewTimer(ReportInterval)
 		select {
 		case <-s.ctx.Done():
-			timer.Stop()
 			return s.ctx.Err()
-		case <-timer.C:
-			if !s.sharedMU.TryLock() {
-				continue
-			}
-			_, err := s.tunnelConn.Write([]byte(ReportSignal))
-			s.sharedMU.Unlock()
+		default:
+			s.serverMU.Lock()
+			_, err := s.tunnelConn.Write(remoteSignal)
+			s.serverMU.Unlock()
 			if err != nil {
 				return err
 			}
+			time.Sleep(ReportInterval)
 		}
 	}
 }
@@ -174,9 +166,9 @@ func (s *Server) serverLoop() {
 			s.semaphore <- struct{}{}
 			go func(targetConn net.Conn) {
 				defer func() { <-s.semaphore }()
-				s.sharedMU.Lock()
+				s.serverMU.Lock()
 				_, err = s.tunnelConn.Write([]byte(LaunchSignal))
-				s.sharedMU.Unlock()
+				s.serverMU.Unlock()
 				if err != nil {
 					s.logger.Error("Write failed: %v", err)
 					return

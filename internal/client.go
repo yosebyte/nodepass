@@ -57,8 +57,9 @@ func (c *Client) Stop() {
 		c.logger.Debug("Tunnel connection closed: %v", c.tunnelConn.LocalAddr())
 	}
 	if c.remotePool != nil {
+		active := c.remotePool.Active()
 		c.remotePool.Close()
-		c.logger.Debug("Remote connections closed")
+		c.logger.Debug("Remote connection closed: active %v", active)
 	}
 	for {
 		select {
@@ -91,6 +92,7 @@ func (c *Client) startTunnelConnection() error {
 	c.tunnelConn = tunnelConn
 	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelConn.LocalAddr(), c.tunnelConn.RemoteAddr())
 	buf := make([]byte, 4)
+	remoteSignal = buf
 	if _, err := c.tunnelConn.Read(buf); err != nil {
 		return err
 	}
@@ -109,9 +111,9 @@ func (c *Client) clientLaunch() {
 			return
 		case signal := <-c.signalChan:
 			switch signal {
-			case ReportSignal:
 			case LaunchSignal:
 				go c.clientOnce()
+			default:
 			}
 		}
 	}
