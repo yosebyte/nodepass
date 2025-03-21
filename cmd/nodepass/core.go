@@ -35,7 +35,7 @@ func runServer(parsedURL *url.URL, signalChan chan os.Signal) {
 		for {
 			if err := server.Start(); err != nil {
 				logger.Error("Server error: %v", err)
-				time.Sleep(internal.ServerCooldown)
+				time.Sleep(internal.ServiceCooldown)
 				server.Stop()
 				logger.Info("Server restarted")
 			}
@@ -58,7 +58,7 @@ func runClient(parsedURL *url.URL, signalChan chan os.Signal) {
 		for {
 			if err := client.Start(); err != nil {
 				logger.Error("Client error: %v", err)
-				time.Sleep(internal.ClientCooldown)
+				time.Sleep(internal.ServiceCooldown)
 				client.Stop()
 				logger.Info("Client restarted")
 			}

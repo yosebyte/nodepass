@@ -1,34 +1,35 @@
 package internal
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 
-	"github.com/yosebyte/x/io"
+	"github.com/yosebyte/x/conn"
 	"github.com/yosebyte/x/log"
-	"github.com/yosebyte/x/pool"
 )
 
-type Client struct {
-	Common
+type client struct {
+	common
 	signalChan chan string
 }
 
-func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
-	common := &Common{
+func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
+	common := &common{
 		logger: logger,
 	}
 	common.getAddress(parsedURL)
-	return &Client{
-		Common:     *common,
-		signalChan: make(chan string, SignalQueueLimit),
+	return &client{
+		common:     *common,
+		signalChan: make(chan string, semaphoreLimit),
 	}
 }
 
-func (c *Client) Start() error {
+func (c *client) Start() error {
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -36,7 +37,7 @@ func (c *Client) Start() error {
 	if err := c.startTunnelConnection(); err != nil {
 		return err
 	}
-	c.remotePool = pool.NewClientPool(MinPoolCapacity, MaxPoolCapacity, func() (net.Conn, error) {
+	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, func() (net.Conn, error) {
 		return net.Dial("tcp", c.remoteAddr.String())
 	})
 	go c.remotePool.ClientManager()
@@ -44,9 +45,14 @@ func (c *Client) Start() error {
 	return c.signalQueue()
 }
 
-func (c *Client) Stop() {
+func (c *client) Stop() {
 	if c.cancel != nil {
 		c.cancel()
+	}
+	if c.remotePool != nil {
+		active := c.remotePool.Active()
+		c.remotePool.Close()
+		c.logger.Debug("Remote connection closed: active %v", active)
 	}
 	if c.targetConn != nil {
 		c.targetConn.Close()
@@ -55,11 +61,6 @@ func (c *Client) Stop() {
 	if c.tunnelConn != nil {
 		c.tunnelConn.Close()
 		c.logger.Debug("Tunnel connection closed: %v", c.tunnelConn.LocalAddr())
-	}
-	if c.remotePool != nil {
-		active := c.remotePool.Active()
-		c.remotePool.Close()
-		c.logger.Debug("Remote connection closed: active %v", active)
 	}
 	for {
 		select {
@@ -70,7 +71,7 @@ func (c *Client) Stop() {
 	}
 }
 
-func (c *Client) Shutdown(ctx context.Context) error {
+func (c *client) Shutdown(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -84,98 +85,90 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	}
 }
 
-func (c *Client) startTunnelConnection() error {
+func (c *client) startTunnelConnection() error {
 	tunnelConn, err := tls.Dial("tcp", c.tunnelAddr.String(), &tls.Config{InsecureSkipVerify: true})
 	if err != nil {
 		return err
 	}
 	c.tunnelConn = tunnelConn
 	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelConn.LocalAddr(), c.tunnelConn.RemoteAddr())
-	buf := make([]byte, 4)
-	remoteSignal = buf
-	if _, err := c.tunnelConn.Read(buf); err != nil {
-		return err
-	}
-	c.remoteAddr.Port, err = strconv.Atoi(string(buf))
-	if err != nil {
-		return err
-	}
-	c.logger.Debug("Remote signal <- : %v", c.remoteAddr)
 	return nil
 }
 
-func (c *Client) clientLaunch() {
+func (c *client) clientLaunch() {
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		case signal := <-c.signalChan:
-			switch signal {
-			case LaunchSignal:
-				go c.clientOnce()
+			signalURL, err := url.Parse(signal)
+			if err != nil {
+				c.logger.Error("Parse failed: %v", err)
+				return
+			}
+			switch signalURL.Scheme {
+			case "remote":
+				c.remoteAddr.Port, err = strconv.Atoi(signalURL.Host)
+				if err != nil {
+					c.logger.Error("Convert failed: %v", err)
+					return
+				}
+			case "launch":
+				go c.clientOnce(signalURL.Host)
 			default:
 			}
 		}
 	}
 }
 
-func (c *Client) signalQueue() error {
-	buffer := make([]byte, SignalBuffer)
+func (c *client) signalQueue() error {
+	reader := bufio.NewReader(c.tunnelConn)
 	for {
 		select {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
-			n, err := c.tunnelConn.Read(buffer)
+			rawSignal, err := reader.ReadBytes('\n')
 			if err != nil {
 				return err
 			}
-			signal := string(buffer[:n])
+			signal := strings.TrimSpace(string(rawSignal))
 			select {
 			case c.signalChan <- signal:
 			default:
-				c.logger.Debug("Signal queue limit reached: %v", SignalQueueLimit)
+				c.logger.Debug("Semaphore limit reached: %v", semaphoreLimit)
 			}
 		}
 	}
 }
 
-func (c *Client) clientOnce() {
-	c.logger.Debug("Launch signal <- : %v", c.tunnelConn.RemoteAddr())
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-			id, remoteConn := c.remotePool.Get()
-			if id == "" {
-				c.logger.Error("Get failed: %v", remoteConn)
-				return
-			}
-			c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
-			defer func() {
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
-			}()
-			c.remoteConn = remoteConn
-			c.logger.Debug("Remote connection: %v <-> %v", c.remoteConn.LocalAddr(), c.remoteConn.RemoteAddr())
-			targetConn, err := net.Dial("tcp", c.targetAddr.String())
-			if err != nil {
-				c.logger.Error("Dial failed: %v", err)
-				return
-			}
-			defer func() {
-				if targetConn != nil {
-					targetConn.Close()
-				}
-			}()
-			c.targetConn = targetConn
-			c.logger.Debug("Target connection: %v <-> %v", c.targetConn.LocalAddr(), c.targetConn.RemoteAddr())
-			c.logger.Debug("Starting exchange: %v <-> %v", c.remoteConn.LocalAddr(), c.targetConn.LocalAddr())
-			_, _, err = io.DataExchange(c.remoteConn, c.targetConn)
-			c.logger.Debug("Exchange complete: %v", err)
-			return
-		}
+func (c *client) clientOnce(id string) {
+	c.logger.Debug("Launch signal <- : %v <- %v", id, c.tunnelConn.RemoteAddr())
+	remoteConn := c.remotePool.ClientGet(id)
+	if remoteConn == nil {
+		c.logger.Error("Get failed: %v", id)
+		return
 	}
+	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
+	defer func() {
+		if remoteConn != nil {
+			remoteConn.Close()
+		}
+	}()
+	c.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+	targetConn, err := net.Dial("tcp", c.targetAddr.String())
+	if err != nil {
+		c.logger.Error("Dial failed: %v", err)
+		return
+	}
+	defer func() {
+		if targetConn != nil {
+			targetConn.Close()
+		}
+	}()
+	c.targetConn = targetConn
+	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
+	_, _, err = conn.DataExchange(remoteConn, targetConn)
+	c.logger.Debug("Exchange complete: %v", err)
 }

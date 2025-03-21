@@ -11,38 +11,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yosebyte/x/conn"
 	"github.com/yosebyte/x/log"
-	"github.com/yosebyte/x/pool"
 )
 
-const LaunchSignal = "[NODEPASS]<LAUNCH>\n"
-
-var remoteSignal []byte
-
-var (
-	SemaphoreLimit   = getEnvAsInt("SEMAPHORE_LIMIT", 1024)
-	SignalQueueLimit = getEnvAsInt("SIGNAL_QUEUE_LIMIT", 1024)
-	SignalBuffer     = getEnvAsInt("SIGNAL_BUFFER", 1024)
-	MinPoolCapacity  = getEnvAsInt("MIN_POOL_CAPACITY", 8)
-	MaxPoolCapacity  = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
-	ReportInterval   = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
-	ServerCooldown   = getEnvAsDuration("SERVER_COOLDOWN", 5*time.Second)
-	ClientCooldown   = getEnvAsDuration("CLIENT_COOLDOWN", 5*time.Second)
-	ShutdownTimeout  = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
-)
-
-type Common struct {
+type common struct {
 	logger     *log.Logger
 	tunnelAddr *net.TCPAddr
 	remoteAddr *net.TCPAddr
 	targetAddr *net.TCPAddr
 	tunnelConn *tls.Conn
 	targetConn net.Conn
-	remoteConn net.Conn
-	remotePool *pool.Pool
+	remotePool *conn.Pool
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
+
+var (
+	semaphoreLimit  = getEnvAsInt("SEMAPHORE_LIMIT", 1024)
+	minPoolCapacity = getEnvAsInt("MIN_POOL_CAPACITY", 16)
+	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
+	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
+	ServiceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
+	ShutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
+)
 
 func getEnvAsInt(name string, defaultValue int) int {
 	if valueStr, exists := os.LookupEnv(name); exists {
@@ -66,7 +58,7 @@ func getRandPort() int {
 	return rand.Intn(7169) + 1024
 }
 
-func (c *Common) getAddress(parsedURL *url.URL) {
+func (c *common) getAddress(parsedURL *url.URL) {
 	if tunnelAddr, err := net.ResolveTCPAddr("tcp", parsedURL.Host); err == nil {
 		c.tunnelAddr = tunnelAddr
 	} else {
@@ -77,8 +69,8 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 		Port: getRandPort(),
 	}
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
-	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
-		c.targetAddr = targetTCPAddr
+	if targetAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
+		c.targetAddr = targetAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
