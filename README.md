@@ -4,7 +4,11 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/yosebyte/nodepass)](https://golang.org/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
 
-**Language**: [English](README.md) | [中文](README_zh.md)
+<div align="center">
+  <img src="https://cdn.yobc.de/assets/nodepass.png" alt="nodepass">
+</div>
+
+**Language**: [English](README.md) | [简体中文](README_zh.md)
 
 NodePass is an elegant, efficient TCP tunneling solution that creates secure communication bridges between network endpoints. By establishing a control channel secured with TLS encryption, NodePass facilitates seamless data transfer through otherwise restricted network environments. Its server-client architecture allows for flexible deployment scenarios, enabling access to services across firewalls, NATs, and other network barriers. With its intelligent connection pooling, minimal resource footprint, and straightforward command syntax, NodePass provides developers and system administrators with a powerful yet easy-to-use tool for solving complex networking challenges without compromising on security or performance.
 
