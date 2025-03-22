@@ -204,7 +204,7 @@ export MAX_POOL_CAPACITY=2048
 nodepass client://10.1.0.1:10101/127.0.0.1:3000?log=debug
 ```
 
-### 🗄️ 通过防火墙访问数据库
+### 🗄 通过防火墙访问数据库
 
 ```bash
 # 服务器端(位于安全网络内)
@@ -623,6 +623,6 @@ NodePass实现高效的连接池系统来管理网络连接:
 
 本项目根据MIT许可证授权 - 详见[LICENSE](LICENSE)文件。
 
-## ⭐️ 星星
+## ⭐ 星星
 
 [![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
