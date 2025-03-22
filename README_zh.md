@@ -208,10 +208,10 @@ nodepass client://10.1.0.1:10101/127.0.0.1:3000?log=debug
 
 ```bash
 # 服务器端(位于安全网络内)
-nodepass server://0.0.0.0:10101/db.internal:5432?log=info
+nodepass client://server.example.com:10101/db.internal:5432
 
 # 客户端(位于防火墙外)
-nodepass client://server.example.com:10101/127.0.0.1:5432
+nodepass server://:10101/127.0.0.1:5432
 
 # 本地连接到数据库
 psql -h 127.0.0.1 -p 5432 -U dbuser -d mydatabase
