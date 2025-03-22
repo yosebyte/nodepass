@@ -45,7 +45,9 @@ NodePass是一个优雅、高效的TCP隧道解决方案，可在网络端点之
   - [连接问题](#-连接问题)
   - [性能优化](#-性能优化)
 - [贡献指南](#-贡献指南)
+- [特别鸣谢](#-特别鸣谢)
 - [许可协议](#-许可协议)
+- [星星](#-星星)
 
 ## ✨ 功能特点
 
@@ -613,6 +615,14 @@ NodePass实现高效的连接池系统来管理网络连接:
 4. 推送到分支 (`git push origin feature/amazing-feature`)
 5. 打开Pull Request
 
+## 🎉 特别鸣谢
+
+感谢[NodeSeek](https://www.nodeseek.com/post-295115-1)社区各位开发者和用户的意见反馈，有任何技术问题欢迎随时交流。
+
 ## 📄 许可协议
 
 本项目根据MIT许可证授权 - 详见[LICENSE](LICENSE)文件。
+
+## ⭐️ 星星
+
+[![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
