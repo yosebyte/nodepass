@@ -204,7 +204,7 @@ export MAX_POOL_CAPACITY=2048
 nodepass client://10.1.0.1:10101/127.0.0.1:3000?log=debug
 ```
 
-### 🗄️ Database Access Through Firewall
+### 🗄 Database Access Through Firewall
 
 ```bash
 # Server side (inside secured network)
@@ -623,7 +623,7 @@ Thank you to all the developers and users in the [NodeSeek](https://www.nodeseek
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## ⭐️ Stargazers
+## ⭐ Stargazers
 
 [![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
 
