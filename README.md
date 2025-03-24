@@ -52,6 +52,7 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 ## ✨ Features
 
 - **🔄 Dual Operating Modes**: Run as a server to accept connections or as a client to initiate them
+- **🌐 TCP/UDP Protocol Support**: Tunnels both TCP and UDP traffic for complete application compatibility
 - **🔒 TLS Encrypted Communication**: All tunnel traffic is secured using TLS encryption
 - **🔌 Efficient Connection Pooling**: Optimized connection management with configurable pool sizes
 - **📊 Flexible Logging System**: Configurable verbosity with five distinct logging levels
@@ -119,12 +120,12 @@ docker run -d --name nodepass-client \
   -e MIN_POOL_CAPACITY=32 \
   -e MAX_POOL_CAPACITY=512 \
   -p 8080:8080 \
-  ghcr.io/yosebyte/nodepass client://server.example.com:10101/127.0.0.1:8080
+  ghcr.io/yosebyte/nodepass client://nodepass-server:10101/127.0.0.1:8080
 ```
 
 ## 🚀 Usage
 
-NodePass can be run in either server mode or client mode with a single, intuitive URL-style command:
+NodePass creates a secure tunnel with TLS encryption for control signals and efficient TCP/UDP connections for data transfer. It operates in two complementary modes:
 
 ### 🖥️ Server Mode
 
@@ -132,9 +133,15 @@ NodePass can be run in either server mode or client mode with a single, intuitiv
 nodepass server://<tunnel_addr>/<target_addr>?log=<level>
 ```
 
-- `tunnel_addr`: Address for the TLS tunnel endpoint (e.g., 10.1.0.1:10101)
-- `target_addr`: Address of the service to be tunneled (e.g., 10.1.0.1:8080)
+- `tunnel_addr`: Address for the TLS tunnel endpoint that clients will connect to (e.g., 10.1.0.1:10101)
+- `target_addr`: Address where the server listens for incoming connections (TCP and UDP) that will be tunneled to clients (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, fatal)
+
+In server mode, NodePass:
+1. Listens for TLS tunnel connections on `tunnel_addr`
+2. Listens for incoming TCP and UDP traffic on `target_addr` 
+3. When a connection arrives at `target_addr`, it signals the connected client through the secure tunnel
+4. Creates a data channel for each connection and forwards traffic to the client
 
 Example:
 ```bash
@@ -147,9 +154,15 @@ nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug
 nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 ```
 
-- `tunnel_addr`: Address of the NodePass server's tunnel endpoint (e.g., 10.1.0.1:10101)
-- `target_addr`: Local address to connect to (e.g., 127.0.0.1:8080)
+- `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
+- `target_addr`: Local address where traffic will be forwarded to (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, fatal)
+
+In client mode, NodePass:
+1. Connects to the server's TLS tunnel endpoint at `tunnel_addr`
+2. Listens for signals from the server through the secure tunnel
+3. When a signal is received, connects to the server's remote endpoint
+4. Establishes a local connection at `target_addr` and forwards traffic
 
 Example:
 ```bash
@@ -175,6 +188,8 @@ NodePass uses a minimalist approach with command-line parameters and environment
 | `SEMAPHORE_LIMIT` | Maximum number of concurrent connections | 1024 | `export SEMAPHORE_LIMIT=2048` |
 | `MIN_POOL_CAPACITY` | Minimum connection pool size | 16 | `export MIN_POOL_CAPACITY=32` |
 | `MAX_POOL_CAPACITY` | Maximum connection pool size | 1024 | `export MAX_POOL_CAPACITY=4096` |
+| `UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export UDP_DATA_BUF_SIZE=16384` |
+| `UDP_READ_TIMEOUT` | Timeout for UDP read operations | 5s | `export UDP_READ_TIMEOUT=10s` |
 | `REPORT_INTERVAL` | Interval for health check reports | 5s | `export REPORT_INTERVAL=10s` |
 | `SERVICE_COOLDOWN` | Cooldown period before restart attempts | 5s | `export SERVICE_COOLDOWN=3s` |
 | `SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export SHUTDOWN_TIMEOUT=10s` |
@@ -292,9 +307,9 @@ docker run -d --name nodepass-client \
 NodePass creates a network tunnel with a secure control channel:
 
 1. **Server Mode**:
-   - Sets up three listeners: tunnel (TLS-encrypted), remote (unencrypted), and target
+   - Sets up listeners: tunnel (TLS-encrypted), remote (unencrypted), and target (for both TCP and UDP)
    - Accepts incoming connections on the tunnel endpoint
-   - When a client connects to the target, signals the client through the secure tunnel
+   - When a client connects to the target (via TCP) or sends data (via UDP), it signals the client through the secure tunnel
    - The client then establishes a connection to the remote endpoint (unencrypted)
    - Data is exchanged between the target and remote connections
 
@@ -302,14 +317,13 @@ NodePass creates a network tunnel with a secure control channel:
    - Connects to the server's tunnel endpoint using TLS (encrypted control channel)
    - Listens for signals from the server through this secure channel
    - When a signal is received, connects to the server's remote endpoint (unencrypted data channel)
-   - Establishes a connection to the local target address
+   - Establishes a connection to the local target address (TCP or UDP as needed)
    - Data is exchanged between the remote and local target connections
 
-3. **Security Architecture**:
-   - Only the tunnel connection (`tunnelConn`) between server and client is TLS-encrypted
-   - The remote connections (`remoteConn`) that carry actual data are unencrypted TCP
-   - The signaling and coordination happens over the secure TLS tunnel
-   - This design balances security with performance for high-throughput scenarios
+3. **Protocol Support**:
+   - **TCP**: Full bidirectional streaming with persistent connections
+   - **UDP**: Datagram forwarding with configurable buffer sizes and timeouts
+   - Both protocols use the same signaling mechanism but different handling patterns
 
 ## 🏗 Architectural Principles
 
@@ -343,55 +357,75 @@ The codebase maintains clear separation between:
 
 ## 🔄 Data Transmission Flow
 
-NodePass establishes a bidirectional data flow through its tunnel architecture:
+NodePass establishes a bidirectional data flow through its tunnel architecture, supporting both TCP and UDP protocols:
 
 ### Server-Side Flow
 1. **Connection Initiation**:
    ```
    [Target Client] → [Target Listener] → [Server: Target Connection Created]
    ```
+   - For TCP: Client establishes persistent connection to target listener
+   - For UDP: Server receives datagrams on UDP socket bound to target address
 
 2. **Signal Generation**:
    ```
    [Server] → [Generate Unique Connection ID] → [Signal Client via TLS-Encrypted Tunnel]
    ```
+   - For TCP: Generates a `tcp://<connection_id>` signal
+   - For UDP: Generates a `udp://<connection_id>` signal when datagram is received
 
 3. **Connection Preparation**:
    ```
    [Server] → [Create Unencrypted Remote Connection in Pool] → [Wait for Client Connection]
    ```
+   - Both protocols use the same connection pool mechanism with unique connection IDs
 
 4. **Data Exchange**:
    ```
-   [Target Connection] ⟷ [conn.DataExchange] ⟷ [Remote Connection (Unencrypted)]
+   [Target Connection] ⟷ [Exchange/Transfer] ⟷ [Remote Connection (Unencrypted)]
    ```
+   - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
+   - For UDP: Individual datagrams are forwarded with configurable buffer sizes
 
 ### Client-Side Flow
 1. **Signal Reception**:
    ```
    [Client] → [Read Signal from TLS-Encrypted Tunnel] → [Parse Connection ID]
    ```
+   - Client differentiates between TCP and UDP signals based on URL scheme
 
 2. **Connection Establishment**:
    ```
    [Client] → [Retrieve Connection from Pool] → [Connect to Remote Endpoint (Unencrypted)]
    ```
+   - Connection management is protocol-agnostic at this stage
 
 3. **Local Connection**:
    ```
    [Client] → [Connect to Local Target] → [Establish Local Connection]
    ```
+   - For TCP: Establishes persistent TCP connection to local target
+   - For UDP: Creates UDP socket for datagram exchange with local target
 
 4. **Data Exchange**:
    ```
-   [Remote Connection (Unencrypted)] ⟷ [conn.DataExchange] ⟷ [Local Target Connection]
+   [Remote Connection (Unencrypted)] ⟷ [Exchange/Transfer] ⟷ [Local Target Connection]
    ```
+   - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
+   - For UDP: Reads single datagram, forwards it, waits for response with timeout, then returns response
 
-### Bidirectional Exchange
-The `conn.DataExchange()` function implements a concurrent bidirectional data pipe:
-- Uses separate goroutines for each direction
-- Efficiently handles data transfer in both directions simultaneously
-- Properly propagates connection termination events
+### Protocol-Specific Characteristics
+- **TCP Exchange**: 
+  - Persistent connections for full-duplex communication
+  - Continuous data streaming until connection termination
+  - Error handling with automatic reconnection
+
+- **UDP Exchange**:
+  - One-time datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
+  - Read timeout control for response waiting (`UDP_READ_TIMEOUT`)
+  - Optimized for low-latency, stateless communications
+
+Both protocols benefit from the same secure signaling mechanism through the TLS tunnel, ensuring protocol-agnostic control flow with protocol-specific data handling.
 
 ## 📡 Signal Communication Mechanism
 
@@ -403,10 +437,15 @@ NodePass uses a sophisticated URL-based signaling protocol through the TLS tunne
    - Purpose: Informs the client about the server's remote endpoint port
    - Timing: Sent periodically during health checks
 
-2. **Launch Signal**:
-   - Format: `launch://<connection_id>`
-   - Purpose: Requests the client to establish a connection for a specific ID
-   - Timing: Sent when a new connection to the target service is received
+2. **TCP Launch Signal**:
+   - Format: `tcp://<connection_id>`
+   - Purpose: Requests the client to establish a TCP connection for a specific ID
+   - Timing: Sent when a new TCP connection to the target service is received
+
+3. **UDP Launch Signal**:
+   - Format: `udp://<connection_id>`
+   - Purpose: Requests the client to handle UDP traffic for a specific ID
+   - Timing: Sent when UDP data is received on the target port
 
 ### Signal Flow
 1. **Signal Generation**:
@@ -535,11 +574,14 @@ NodePass implements an efficient connection pooling system for managing network 
 ## 🔧 Troubleshooting
 
 ### 📜 Connection Issues
-- Verify firewall settings allow traffic on the specified ports
+- Verify firewall settings allow both TCP and UDP traffic on the specified ports
 - Check that the tunnel address is correctly specified in client mode
 - Ensure TLS certificates are properly generated
 - Increase log level to debug for more detailed connection information
 - Verify network stability between client and server endpoints
+- For UDP tunneling issues, check if your application requires specific UDP packet size configurations
+- For high-volume UDP applications, consider increasing the UDP_DATA_BUF_SIZE
+- If UDP packets seem to be lost, try adjusting the UDP_READ_TIMEOUT value
 - Check for NAT traversal issues if operating across different networks
 - Inspect system resource limits (file descriptors, etc.) if experiencing connection failures under load
 - Verify DNS resolution if using hostnames for tunnel or target addresses

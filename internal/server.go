@@ -17,8 +17,8 @@ type server struct {
 	common
 	serverMU       sync.Mutex
 	tunnelListener net.Listener
-	remoteListener net.Listener
-	targetListener net.Listener
+	remoteListener *net.TCPListener
+	targetListener *net.TCPListener
 	tlsConfig      *tls.Config
 	semaphore      chan struct{}
 }
@@ -36,10 +36,7 @@ func NewServer(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *s
 }
 
 func (s *server) Start() error {
-	if s.cancel != nil {
-		s.cancel()
-	}
-	s.ctx, s.cancel = context.WithCancel(context.Background())
+	s.initContext()
 	if err := s.initListener(); err != nil {
 		return err
 	}
@@ -48,7 +45,8 @@ func (s *server) Start() error {
 	}
 	s.remotePool = conn.NewServerPool(maxPoolCapacity, s.remoteListener)
 	go s.remotePool.ServerManager()
-	go s.serverLoop()
+	go s.serverTCPLoop()
+	go s.serverUDPLoop()
 	return s.healthCheck()
 }
 
@@ -61,9 +59,13 @@ func (s *server) Stop() {
 		s.remotePool.Close()
 		s.logger.Debug("Remote connection closed: active %v", active)
 	}
-	if s.targetConn != nil {
-		s.targetConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetConn.LocalAddr())
+	if s.targetUDPConn != nil {
+		s.targetUDPConn.Close()
+		s.logger.Debug("Target connection closed: %v", s.targetUDPConn.LocalAddr())
+	}
+	if s.targetTCPConn != nil {
+		s.targetTCPConn.Close()
+		s.logger.Debug("Target connection closed: %v", s.targetTCPConn.LocalAddr())
 	}
 	if s.tunnelConn != nil {
 		s.tunnelConn.Close()
@@ -84,17 +86,7 @@ func (s *server) Stop() {
 }
 
 func (s *server) Shutdown(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.Stop()
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
+	return s.shutdown(ctx, s.Stop)
 }
 
 func (s *server) initListener() error {
@@ -103,16 +95,21 @@ func (s *server) initListener() error {
 		return err
 	}
 	s.tunnelListener = tunnelListener
-	remoteListener, err := net.Listen("tcp", s.remoteAddr.String())
+	remoteListener, err := net.ListenTCP("tcp", s.remoteAddr)
 	if err != nil {
 		return err
 	}
 	s.remoteListener = remoteListener
-	targetListener, err := net.Listen("tcp", s.targetAddr.String())
+	targetListener, err := net.ListenTCP("tcp", s.targetTCPAddr)
 	if err != nil {
 		return err
 	}
 	s.targetListener = targetListener
+	targetUDPConn, err := net.ListenUDP("udp", s.targetUDPAddr)
+	if err != nil {
+		return err
+	}
+	s.targetUDPConn = targetUDPConn
 	return nil
 }
 
@@ -149,7 +146,7 @@ func (s *server) healthCheck() error {
 	}
 }
 
-func (s *server) serverLoop() {
+func (s *server) serverTCPLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -164,7 +161,7 @@ func (s *server) serverLoop() {
 					targetConn.Close()
 				}
 			}()
-			s.targetConn = targetConn
+			s.targetTCPConn = targetConn.(*net.TCPConn)
 			s.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 			s.semaphore <- struct{}{}
 			go func(targetConn net.Conn) {
@@ -182,7 +179,7 @@ func (s *server) serverLoop() {
 				}()
 				s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 				launchURL := &url.URL{
-					Scheme: "launch",
+					Scheme: "tcp",
 					Host:   id,
 				}
 				s.serverMU.Lock()
@@ -197,6 +194,66 @@ func (s *server) serverLoop() {
 				_, _, err = conn.DataExchange(remoteConn, targetConn)
 				s.logger.Debug("Exchange complete: %v", err)
 			}(targetConn)
+		}
+	}
+}
+
+func (s *server) serverUDPLoop() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+			buffer := make([]byte, udpDataBufSize)
+			n, clientAddr, err := s.targetUDPConn.ReadFromUDP(buffer)
+			if err != nil {
+				continue
+			}
+			s.logger.Debug("Target connection: %v <-> %v", s.targetUDPConn.LocalAddr(), clientAddr)
+			id, remoteConn := s.remotePool.ServerGet()
+			if remoteConn == nil {
+				continue
+			}
+			s.logger.Debug("Remote connection: %v <- active %v", id, s.remotePool.Active())
+			defer func() {
+				if remoteConn != nil {
+					remoteConn.Close()
+				}
+			}()
+			s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+			s.semaphore <- struct{}{}
+			go func(buffer []byte, n int, clientAddr *net.UDPAddr, remoteConn net.Conn) {
+				defer func() { <-s.semaphore }()
+				launchURL := &url.URL{
+					Scheme: "udp",
+					Host:   id,
+				}
+				s.serverMU.Lock()
+				_, err = s.tunnelConn.Write([]byte(launchURL.String() + "\n"))
+				s.serverMU.Unlock()
+				if err != nil {
+					s.logger.Error("Write failed: %v", err)
+					return
+				}
+				s.logger.Debug("Launch signal -> : %v -> %v", id, s.tunnelConn.RemoteAddr())
+				s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
+				_, err = remoteConn.Write(buffer[:n])
+				if err != nil {
+					s.logger.Error("Write failed: %v", err)
+					return
+				}
+				n, err = remoteConn.Read(buffer)
+				if err != nil {
+					s.logger.Error("Read failed: %v", err)
+					return
+				}
+				_, err = s.targetUDPConn.WriteToUDP(buffer[:n], clientAddr)
+				if err != nil {
+					s.logger.Error("Write failed: %v", err)
+					return
+				}
+				s.logger.Debug("Transfer complete: %v", n)
+			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
 }

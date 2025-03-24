@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yosebyte/x/conn"
 	"github.com/yosebyte/x/log"
@@ -30,15 +31,12 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
 }
 
 func (c *client) Start() error {
-	if c.cancel != nil {
-		c.cancel()
-	}
-	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.initContext()
 	if err := c.startTunnelConnection(); err != nil {
 		return err
 	}
 	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, func() (net.Conn, error) {
-		return net.Dial("tcp", c.remoteAddr.String())
+		return net.DialTCP("tcp", nil, c.remoteAddr)
 	})
 	go c.remotePool.ClientManager()
 	go c.clientLaunch()
@@ -54,9 +52,13 @@ func (c *client) Stop() {
 		c.remotePool.Close()
 		c.logger.Debug("Remote connection closed: active %v", active)
 	}
-	if c.targetConn != nil {
-		c.targetConn.Close()
-		c.logger.Debug("Target connection closed: %v", c.targetConn.LocalAddr())
+	if c.targetUDPConn != nil {
+		c.targetUDPConn.Close()
+		c.logger.Debug("Target connection closed: %v", c.targetUDPConn.LocalAddr())
+	}
+	if c.targetTCPConn != nil {
+		c.targetTCPConn.Close()
+		c.logger.Debug("Target connection closed: %v", c.targetTCPConn.LocalAddr())
 	}
 	if c.tunnelConn != nil {
 		c.tunnelConn.Close()
@@ -72,17 +74,7 @@ func (c *client) Stop() {
 }
 
 func (c *client) Shutdown(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		c.Stop()
-	}()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-done:
-		return nil
-	}
+	return c.shutdown(ctx, c.Stop)
 }
 
 func (c *client) startTunnelConnection() error {
@@ -113,8 +105,10 @@ func (c *client) clientLaunch() {
 					c.logger.Error("Convert failed: %v", err)
 					return
 				}
-			case "launch":
-				go c.clientOnce(signalURL.Host)
+			case "tcp":
+				go c.clientTCPOnce(signalURL.Host)
+			case "udp":
+				go c.clientUDPOnce(signalURL.Host)
 			default:
 			}
 		}
@@ -142,7 +136,7 @@ func (c *client) signalQueue() error {
 	}
 }
 
-func (c *client) clientOnce(id string) {
+func (c *client) clientTCPOnce(id string) {
 	c.logger.Debug("Launch signal <- : %v <- %v", id, c.tunnelConn.RemoteAddr())
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
@@ -156,7 +150,7 @@ func (c *client) clientOnce(id string) {
 		}
 	}()
 	c.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-	targetConn, err := net.Dial("tcp", c.targetAddr.String())
+	targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
 	if err != nil {
 		c.logger.Error("Dial failed: %v", err)
 		return
@@ -166,9 +160,63 @@ func (c *client) clientOnce(id string) {
 			targetConn.Close()
 		}
 	}()
-	c.targetConn = targetConn
+	c.targetTCPConn = targetConn
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 	_, _, err = conn.DataExchange(remoteConn, targetConn)
 	c.logger.Debug("Exchange complete: %v", err)
+}
+
+func (c *client) clientUDPOnce(id string) {
+	c.logger.Debug("Launch signal <- : %v <- %v", id, c.tunnelConn.RemoteAddr())
+	remoteConn := c.remotePool.ClientGet(id)
+	if remoteConn == nil {
+		c.logger.Error("Get failed: %v", id)
+		return
+	}
+	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
+	defer func() {
+		if remoteConn != nil {
+			remoteConn.Close()
+		}
+	}()
+	c.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+	buffer := make([]byte, udpDataBufSize)
+	n, err := remoteConn.Read(buffer)
+	if err != nil {
+		c.logger.Error("Read failed: %v", err)
+		return
+	}
+	targetUDPConn, err := net.DialUDP("udp", nil, c.targetUDPAddr)
+	if err != nil {
+		c.logger.Error("Dial failed: %v", err)
+		return
+	}
+	defer func() {
+		if targetUDPConn != nil {
+			targetUDPConn.Close()
+		}
+	}()
+	c.targetUDPConn = targetUDPConn
+	c.logger.Debug("Target connection: %v <-> %v", targetUDPConn.LocalAddr(), targetUDPConn.RemoteAddr())
+	_, err = targetUDPConn.Write(buffer[:n])
+	if err != nil {
+		c.logger.Error("Write failed: %v", err)
+		return
+	}
+	if err := targetUDPConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
+		c.logger.Error("Set deadline failed: %v", err)
+		return
+	}
+	n, _, err = targetUDPConn.ReadFromUDP(buffer)
+	if err != nil {
+		c.logger.Error("Read failed: %v", err)
+		return
+	}
+	_, err = remoteConn.Write(buffer[:n])
+	if err != nil {
+		c.logger.Error("Write failed: %v", err)
+		return
+	}
+	c.logger.Debug("Transfer complete: %v", n)
 }

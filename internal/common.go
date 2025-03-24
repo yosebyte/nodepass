@@ -16,21 +16,25 @@ import (
 )
 
 type common struct {
-	logger     *log.Logger
-	tunnelAddr *net.TCPAddr
-	remoteAddr *net.TCPAddr
-	targetAddr *net.TCPAddr
-	tunnelConn *tls.Conn
-	targetConn net.Conn
-	remotePool *conn.Pool
-	ctx        context.Context
-	cancel     context.CancelFunc
+	logger        *log.Logger
+	tunnelAddr    *net.TCPAddr
+	remoteAddr    *net.TCPAddr
+	targetTCPAddr *net.TCPAddr
+	targetUDPAddr *net.UDPAddr
+	tunnelConn    *tls.Conn
+	targetTCPConn *net.TCPConn
+	targetUDPConn *net.UDPConn
+	remotePool    *conn.Pool
+	ctx           context.Context
+	cancel        context.CancelFunc
 }
 
 var (
 	semaphoreLimit  = getEnvAsInt("SEMAPHORE_LIMIT", 1024)
 	minPoolCapacity = getEnvAsInt("MIN_POOL_CAPACITY", 16)
 	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
+	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)
+	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)
 	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
 	ServiceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
 	ShutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
@@ -68,10 +72,36 @@ func (c *common) getAddress(parsedURL *url.URL) {
 		IP:   c.tunnelAddr.IP,
 		Port: getRandPort(),
 	}
-	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
-	if targetAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
-		c.targetAddr = targetAddr
+	targetTCPAddr := strings.TrimPrefix(parsedURL.Path, "/")
+	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetTCPAddr); err == nil {
+		c.targetTCPAddr = targetTCPAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
+	}
+	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetTCPAddr); err == nil {
+		c.targetUDPAddr = targetUDPAddr
+	} else {
+		c.logger.Error("Resolve failed: %v", err)
+	}
+}
+
+func (c *common) initContext() {
+	if c.cancel != nil {
+		c.cancel()
+	}
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+}
+
+func (c *common) shutdown(ctx context.Context, stopFunc func()) error {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		stopFunc()
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
 	}
 }
