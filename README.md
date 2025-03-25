@@ -45,7 +45,7 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
   - [Connection Issues](#-connection-issues)
   - [Performance Optimization](#-performance-optimization)
 - [Contributing](#-contributing)
-- [Special Thanks](#-special-thanks)
+- [Discussion](#-discussion)
 - [License](#-license)
 - [Stargazers](#-stargazers)
 
@@ -657,7 +657,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 🎉 Special Thanks
+## 💬 Discussion
 
 Thank you to all the developers and users in the [NodeSeek](https://www.nodeseek.com/post-295115-1) community for your feedbacks. Feel free to reach out anytime with any technical issues.
 
