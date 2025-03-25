@@ -45,8 +45,7 @@ func (s *server) Start() error {
 	}
 	s.remotePool = conn.NewServerPool(maxPoolCapacity, s.remoteListener)
 	go s.remotePool.ServerManager()
-	go s.serverTCPLoop()
-	go s.serverUDPLoop()
+	go s.serverLaunch()
 	return s.healthCheck()
 }
 
@@ -121,6 +120,17 @@ func (s *server) getTunnelConnection() error {
 	s.tunnelConn = tunnelConn.(*tls.Conn)
 	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelConn.LocalAddr(), s.tunnelConn.RemoteAddr())
 	return nil
+}
+
+func (s *server) serverLaunch() {
+	for {
+		if s.remotePool.Ready() {
+			go s.serverTCPLoop()
+			go s.serverUDPLoop()
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func (s *server) healthCheck() error {

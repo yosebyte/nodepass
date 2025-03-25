@@ -89,6 +89,10 @@ func (c *client) startTunnelConnection() error {
 
 func (c *client) clientLaunch() {
 	for {
+		if !c.remotePool.Ready() {
+			time.Sleep(time.Millisecond)
+			continue
+		}
 		select {
 		case <-c.ctx.Done():
 			return
