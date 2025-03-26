@@ -21,6 +21,7 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
   - [Option 2: Using Go Install](#-option-2-using-go-install)
   - [Option 3: Building from Source](#️-option-3-building-from-source)
   - [Option 4: Using Container Image](#-option-4-using-container-image)
+  - [Option 5: Using Management Script](#-option-5-using-management-script)
 - [Usage](#-usage)
   - [Server Mode](#️-server-mode)
   - [Client Mode](#-client-mode)
@@ -122,6 +123,21 @@ docker run -d --name nodepass-client \
   -p 8080:8080 \
   ghcr.io/yosebyte/nodepass client://nodepass-server:10101/127.0.0.1:8080
 ```
+
+### 📜 Option 5: Using Management Script
+
+For Linux systems, you can use our interactive management script for easy installation and service management:
+
+```bash
+bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)
+```
+
+This script provides an interactive menu to:
+- Install or update NodePass
+- Create and configure multiple nodepass services
+- Manage (start/stop/restart/delete) nodepass services
+- Set up systemd services automatically
+- Configure client and server modes with customizable options
 
 ## 🚀 Usage
 
