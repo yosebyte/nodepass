@@ -150,6 +150,7 @@ func (c *client) clientTCPOnce(id string) {
 		if c.errorCount > c.remotePool.Capacity()*1/3 {
 			c.logger.Error("Too many errors: %v", c.errorCount)
 			c.remotePool.Flush()
+			c.errorCount = 0
 		}
 		return
 	}
@@ -183,9 +184,10 @@ func (c *client) clientUDPOnce(id string) {
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
 		c.errorCount++
-		if c.errorCount > c.remotePool.Capacity()*1/2 {
+		if c.errorCount > c.remotePool.Capacity()*1/3 {
 			c.logger.Error("Too many errors: %v", c.errorCount)
 			c.remotePool.Flush()
+			c.errorCount = 0
 		}
 		return
 	}
