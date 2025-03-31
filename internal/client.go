@@ -17,6 +17,7 @@ import (
 type client struct {
 	common
 	signalChan chan string
+	errorCount int
 }
 
 func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
@@ -145,6 +146,11 @@ func (c *client) clientTCPOnce(id string) {
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
+		c.errorCount++
+		if c.errorCount > c.remotePool.Capacity()*1/3 {
+			c.logger.Error("Too many errors: %v", c.errorCount)
+			c.remotePool.Flush()
+		}
 		return
 	}
 	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
@@ -176,6 +182,11 @@ func (c *client) clientUDPOnce(id string) {
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
+		c.errorCount++
+		if c.errorCount > c.remotePool.Capacity()*1/2 {
+			c.logger.Error("Too many errors: %v", c.errorCount)
+			c.remotePool.Flush()
+		}
 		return
 	}
 	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
