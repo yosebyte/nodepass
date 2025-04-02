@@ -3,7 +3,6 @@ package internal
 import (
 	"bufio"
 	"context"
-	"crypto/tls"
 	"net"
 	"net/url"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 
 type client struct {
 	common
+	bufReader  *bufio.Reader
 	signalChan chan string
 	errorCount int
 }
@@ -33,10 +33,10 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
 
 func (c *client) Start() error {
 	c.initContext()
-	if err := c.startTunnelConnection(); err != nil {
+	if err := c.tunnelHandshake(); err != nil {
 		return err
 	}
-	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, func() (net.Conn, error) {
+	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, c.tlsCode, func() (net.Conn, error) {
 		return net.DialTCP("tcp", nil, c.remoteAddr)
 	})
 	go c.remotePool.ClientManager()
@@ -61,9 +61,9 @@ func (c *client) Stop() {
 		c.targetTCPConn.Close()
 		c.logger.Debug("Target connection closed: %v", c.targetTCPConn.LocalAddr())
 	}
-	if c.tunnelConn != nil {
-		c.tunnelConn.Close()
-		c.logger.Debug("Tunnel connection closed: %v", c.tunnelConn.LocalAddr())
+	if c.tunnelTCPConn != nil {
+		c.tunnelTCPConn.Close()
+		c.logger.Debug("Tunnel connection closed: %v", c.tunnelTCPConn.LocalAddr())
 	}
 	for {
 		select {
@@ -78,13 +78,29 @@ func (c *client) Shutdown(ctx context.Context) error {
 	return c.shutdown(ctx, c.Stop)
 }
 
-func (c *client) startTunnelConnection() error {
-	tunnelConn, err := tls.Dial("tcp", c.tunnelAddr.String(), &tls.Config{InsecureSkipVerify: true})
+func (c *client) tunnelHandshake() error {
+	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
 	if err != nil {
 		return err
 	}
-	c.tunnelConn = tunnelConn
-	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelConn.LocalAddr(), c.tunnelConn.RemoteAddr())
+	c.tunnelTCPConn = tunnelTCPConn
+	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
+	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
+	if err != nil {
+		return err
+	}
+	tunnelSignal := strings.TrimSpace(string(rawTunnelURL))
+	c.logger.Debug("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
+	tunnelURL, err := url.Parse(tunnelSignal)
+	if err != nil {
+		return err
+	}
+	c.remoteAddr.Port, err = strconv.Atoi(tunnelURL.Host)
+	if err != nil {
+		return err
+	}
+	c.tlsCode = tunnelURL.Fragment
+	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 	return nil
 }
 
@@ -101,18 +117,12 @@ func (c *client) clientLaunch() {
 			signalURL, err := url.Parse(signal)
 			if err != nil {
 				c.logger.Error("Parse failed: %v", err)
-				return
+				continue
 			}
-			switch signalURL.Scheme {
-			case "remote":
-				c.remoteAddr.Port, err = strconv.Atoi(signalURL.Host)
-				if err != nil {
-					c.logger.Error("Convert failed: %v", err)
-					return
-				}
-			case "tcp":
+			switch signalURL.Fragment {
+			case "1":
 				go c.clientTCPOnce(signalURL.Host)
-			case "udp":
+			case "2":
 				go c.clientUDPOnce(signalURL.Host)
 			default:
 			}
@@ -121,13 +131,12 @@ func (c *client) clientLaunch() {
 }
 
 func (c *client) signalQueue() error {
-	reader := bufio.NewReader(c.tunnelConn)
 	for {
 		select {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
-			rawSignal, err := reader.ReadBytes('\n')
+			rawSignal, err := c.bufReader.ReadBytes('\n')
 			if err != nil {
 				return err
 			}
@@ -142,7 +151,7 @@ func (c *client) signalQueue() error {
 }
 
 func (c *client) clientTCPOnce(id string) {
-	c.logger.Debug("Launch signal <- : %v <- %v", id, c.tunnelConn.RemoteAddr())
+	c.logger.Debug("TCP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
@@ -179,7 +188,7 @@ func (c *client) clientTCPOnce(id string) {
 }
 
 func (c *client) clientUDPOnce(id string) {
-	c.logger.Debug("Launch signal <- : %v <- %v", id, c.tunnelConn.RemoteAddr())
+	c.logger.Debug("UDP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)

@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"net/url"
 	"os"
 	"time"
 
 	"github.com/yosebyte/nodepass/internal"
-	"github.com/yosebyte/x/tls"
+	x "github.com/yosebyte/x/tls"
 )
 
 func coreDispatch(parsedURL *url.URL, signalChan chan os.Signal) {
@@ -17,19 +18,14 @@ func coreDispatch(parsedURL *url.URL, signalChan chan os.Signal) {
 	case "client":
 		runClient(parsedURL, signalChan)
 	default:
-		logger.Fatal("Invalid scheme: %v", parsedURL.Scheme)
+		logger.Fatal("Unknown core: %v", parsedURL.Scheme)
 		getExitInfo()
 	}
 }
 
 func runServer(parsedURL *url.URL, signalChan chan os.Signal) {
-	logger.Info("Apply RAM cert: %v", version)
-	tlsConfig, err := tls.GenerateTLSConfig("yosebyte/nodepass:" + version)
-	if err != nil {
-		logger.Fatal("Generate failed: %v", err)
-		return
-	}
-	server := internal.NewServer(parsedURL, tlsConfig, logger)
+	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
+	server := internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
 	go func() {
 		logger.Info("Server started: %v", parsedURL.String())
 		for {
@@ -72,4 +68,40 @@ func runClient(parsedURL *url.URL, signalChan chan os.Signal) {
 		logger.Error("Client shutdown error: %v", err)
 	}
 	logger.Info("Client shutdown complete")
+}
+
+func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
+	tlsConfig, err := x.GenerateTLSConfig("yosebyte/nodepass:" + version)
+	if err != nil {
+		logger.Error("Generate failed: %v", err)
+		logger.Warn("TLS code-0: nil cert")
+		return "0", nil
+	}
+	tlsCode := parsedURL.Query().Get("tls")
+	switch tlsCode {
+	case "0":
+		logger.Info("TLS code-0: selected")
+		return tlsCode, nil
+	case "1":
+		logger.Info("TLS code-1: RAM cert")
+		return tlsCode, tlsConfig
+	case "2":
+		crtFile, keyFile := parsedURL.Query().Get("crt"), parsedURL.Query().Get("key")
+		if cert, err := tls.LoadX509KeyPair(crtFile, keyFile); err != nil {
+			logger.Error("Load failed: %v", err)
+			logger.Warn("TLS code-1: RAM cert")
+			return "1", tlsConfig
+		} else {
+			tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
+			if cert.Leaf != nil {
+				logger.Info("TLS code-2: %v", cert.Leaf.Subject.CommonName)
+			} else {
+				logger.Warn("TLS code-2: unknown")
+			}
+			return tlsCode, tlsConfig
+		}
+	default:
+		logger.Warn("TLS code-0: unencrypted")
+		return "0", nil
+	}
 }

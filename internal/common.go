@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"crypto/tls"
 	"math/rand"
 	"net"
 	"net/url"
@@ -16,12 +15,13 @@ import (
 )
 
 type common struct {
+	tlsCode       string
 	logger        *log.Logger
 	tunnelAddr    *net.TCPAddr
 	remoteAddr    *net.TCPAddr
 	targetTCPAddr *net.TCPAddr
 	targetUDPAddr *net.UDPAddr
-	tunnelConn    *tls.Conn
+	tunnelTCPConn *net.TCPConn
 	targetTCPConn *net.TCPConn
 	targetUDPConn *net.UDPConn
 	remotePool    *conn.Pool

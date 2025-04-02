@@ -63,15 +63,27 @@ func getExitInfo() {
 	logger.SetLogLevel(log.Info)
 	logger.Info(`Version: %v %v/%v
 
-Usage:
-    nodepass <core_mode>://<tunnel_addr>/<target_addr>?<log=level>
-
-Examples:
-    # Run as server
-    nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug
-
-    # Run as client
-    nodepass client://10.1.0.1:10101/127.0.0.1:8080?log=warn
+╭─────────────────────────────────────────────────────────────╮
+│             ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░             │
+│             ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░             │
+│             ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░             │
+├─────────────────────────────────────────────────────────────┤
+│                 Universal TCP/UDP Tunneling                 │
+│            @https://github.com/yosebyte/nodepass            │
+├─────────────────────────────────────────────────────────────┤
+│ Usage:                                                      │
+│ nodepass <core>://<tunnel>/<target>?<log>&<tls>&<crt>&<key> │
+├───────────┬──────────────────────────┬──────────────────────┤
+│ Parameter │ Values                   │ Description          │
+├───────────┼──────────────────────────┼──────────────────────┤
+│ <core>    │ server | client | ****** │ Operating mode       │
+│ <tunnel>  │ domain:port | ip:port    │ Tunnel address       │
+│ <target>  │ domain:port | ip:port    │ Target address       │
+│ <log>     │ debug | info | warn | .. │ Default level info   │
+│ <tls> *   │ 0 off | 1 on | 2 verify  │ Default TLS code-0   │
+│ <crt> *   │ <path/to/crt.file>       │ Custom certificate   │
+│ <key> *   │ <path/to/key.file>       │ Custom private key   │
+╰───────────┴──────────────────────────┴──────────────────────╯
 `, version, runtime.GOOS, runtime.GOARCH)
 	os.Exit(1)
 }
