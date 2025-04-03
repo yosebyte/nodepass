@@ -10,7 +10,7 @@
 
 **Language**: [English](README.md) | [简体中文](README_zh.md)
 
-NodePass is an elegant, efficient TCP tunneling solution that creates secure communication bridges between network endpoints. By establishing a control channel secured with TLS encryption, NodePass facilitates seamless data transfer through otherwise restricted network environments. Its server-client architecture allows for flexible deployment scenarios, enabling access to services across firewalls, NATs, and other network barriers. With its intelligent connection pooling, minimal resource footprint, and straightforward command syntax, NodePass provides developers and system administrators with a powerful yet easy-to-use tool for solving complex networking challenges without compromising on security or performance.
+NodePass is an elegant, efficient TCP tunneling solution that creates secure communication bridges between network endpoints. By establishing an unencrypted TCP control channel, NodePass facilitates seamless data transfer through otherwise restricted network environments while offering configurable security options for the data channel. Its server-client architecture allows for flexible deployment scenarios, enabling access to services across firewalls, NATs, and other network barriers. With its intelligent connection pooling, minimal resource footprint, and straightforward command syntax, NodePass provides developers and system administrators with a powerful yet easy-to-use tool for solving complex networking challenges without compromising on security or performance.
 
 ## 📋 Table of Contents
 
@@ -29,7 +29,7 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
   - [Log Levels](#-log-levels)
   - [Environment Variables](#-environment-variables)
 - [Examples](#-examples)
-  - [Basic Server Setup](#-basic-server-setup)
+  - [Basic Server Setup with TLS Options](#-basic-server-setup-with-tls-options)
   - [Connecting to a NodePass Server](#-connecting-to-a-nodepass-server)
   - [Database Access Through Firewall](#-database-access-through-firewall)
   - [Secure Microservice Communication](#-secure-microservice-communication)
@@ -37,7 +37,6 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
   - [Multi-environment Development](#-multi-environment-development)
   - [Container Deployment](#-container-deployment)
 - [How It Works](#-how-it-works)
-- [Architectural Principles](#-architectural-principles)
 - [Data Transmission Flow](#-data-transmission-flow)
 - [Signal Communication Mechanism](#-signal-communication-mechanism)
 - [Connection Pool Architecture](#-connection-pool-architecture)
@@ -54,7 +53,8 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 
 - **🔄 Dual Operating Modes**: Run as a server to accept connections or as a client to initiate them
 - **🌐 TCP/UDP Protocol Support**: Tunnels both TCP and UDP traffic for complete application compatibility
-- **🔒 TLS Encrypted Communication**: All tunnel traffic is secured using TLS encryption
+- **🔒 Flexible TLS Options**: Three security modes for data channel encryption
+- **🔐 Automatic TLS Policy Adoption**: Client automatically adopts the server's TLS security policy
 - **🔌 Efficient Connection Pooling**: Optimized connection management with configurable pool sizes
 - **📊 Flexible Logging System**: Configurable verbosity with five distinct logging levels
 - **🛡️ Resilient Error Handling**: Automatic connection recovery and graceful shutdowns
@@ -67,7 +67,6 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 - **⚡ High-Performance Data Exchange**: Optimized bidirectional data transfer mechanism
 - **🧠 Smart Connection Management**: Intelligent handling of connection states and lifecycles
 - **📈 Scalable Semaphore System**: Prevents resource exhaustion during high traffic
-- **🔄 URL-Based Signaling Protocol**: Elegant and extensible communication between endpoints
 - **🛠️ Configurable Pool Dynamics**: Adjust connection pool behavior based on workload
 - **🔌 One-Time Connection Pattern**: Enhanced security through non-reused connections
 - **📡 Dynamic Port Allocation**: Automatically manages port assignments for secure communication
@@ -141,27 +140,40 @@ This script provides an interactive menu to:
 
 ## 🚀 Usage
 
-NodePass creates a secure tunnel with TLS encryption for control signals and efficient TCP/UDP connections for data transfer. It operates in two complementary modes:
+NodePass creates a tunnel with an unencrypted TCP control channel and configurable TLS encryption options for the data exchange channel. It operates in two complementary modes:
 
 ### 🖥️ Server Mode
 
 ```bash
-nodepass server://<tunnel_addr>/<target_addr>?log=<level>
+nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
 ```
 
-- `tunnel_addr`: Address for the TLS tunnel endpoint that clients will connect to (e.g., 10.1.0.1:10101)
+- `tunnel_addr`: Address for the TCP tunnel endpoint (control channel) that clients will connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: Address where the server listens for incoming connections (TCP and UDP) that will be tunneled to clients (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, fatal)
+- `tls`: TLS encryption mode for the target data channel (0, 1, 2)
+  - `0`: No TLS encryption (plain TCP/UDP)
+  - `1`: Self-signed certificate (automatically generated)
+  - `2`: Custom certificate (requires `crt` and `key` parameters)
+- `crt`: Path to certificate file (required when `tls=2`)
+- `key`: Path to private key file (required when `tls=2`)
 
 In server mode, NodePass:
-1. Listens for TLS tunnel connections on `tunnel_addr`
+1. Listens for TCP tunnel connections (control channel) on `tunnel_addr`
 2. Listens for incoming TCP and UDP traffic on `target_addr` 
-3. When a connection arrives at `target_addr`, it signals the connected client through the secure tunnel
-4. Creates a data channel for each connection and forwards traffic to the client
+3. When a connection arrives at `target_addr`, it signals the connected client through the unencrypted TCP tunnel
+4. Creates a data channel for each connection with the specified TLS encryption level
 
 Example:
 ```bash
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug
+# No TLS encryption for data channel
+nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0
+
+# Self-signed certificate (auto-generated)
+nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1
+
+# Custom domain certificate
+nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
 ```
 
 ### 📱 Client Mode
@@ -175,13 +187,14 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 - `log`: Log level (debug, info, warn, error, fatal)
 
 In client mode, NodePass:
-1. Connects to the server's TLS tunnel endpoint at `tunnel_addr`
-2. Listens for signals from the server through the secure tunnel
-3. When a signal is received, connects to the server's remote endpoint
-4. Establishes a local connection at `target_addr` and forwards traffic
+1. Connects to the server's unencrypted TCP tunnel endpoint (control channel) at `tunnel_addr`
+2. Listens for signals from the server through this control channel
+3. When a signal is received, establishes a data connection with the TLS security level specified by the server
+4. Creates a local connection to `target_addr` and forwards traffic
 
 Example:
 ```bash
+# Connect to a NodePass server and automatically adopt its TLS security policy
 nodepass client://10.1.0.1:10101/127.0.0.1:8080?log=info
 ```
 
@@ -212,85 +225,72 @@ NodePass uses a minimalist approach with command-line parameters and environment
 
 ## 📚 Examples
 
-### 🔐 Basic Server Setup
+### 🔐 Basic Server Setup with TLS Options
 
 ```bash
-# Start a server tunneling traffic to a local web server
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug
+# Start a server with no TLS encryption for data channel
+nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0
 
-# Start a server with increased connection limit
-export SEMAPHORE_LIMIT=2048
-nodepass server://10.1.0.1:10101/10.1.0.1:5432?log=info
+# Start a server with auto-generated self-signed certificate
+nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1
+
+# Start a server with custom domain certificate
+nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
 ```
 
 ### 🔌 Connecting to a NodePass Server
 
 ```bash
-# Connect to a remote NodePass server and expose a service locally
+# Connect to a server (automatically adopts the server's TLS security policy)
 nodepass client://server.example.com:10101/127.0.0.1:8080
 
-# Connect with optimized pool settings for high-throughput scenarios
-export MIN_POOL_CAPACITY=32
-export MAX_POOL_CAPACITY=2048
-nodepass client://10.1.0.1:10101/127.0.0.1:3000?log=debug
+# Connect with debug logging
+nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
 ```
 
 ### 🗄 Database Access Through Firewall
 
 ```bash
-# Server side (inside secured network)
-nodepass client://server.example.com:10101/db.internal:5432
+# Server side (outside secured network) with TLS encryption
+nodepass server://:10101/127.0.0.1:5432?tls=1
 
-# Client side (outside the firewall)
-nodepass server://:10101/127.0.0.1:5432
+# Client side (inside the firewall)
+nodepass client://server.example.com:10101/127.0.0.1:5432
 
-# Connect to database locally
-psql -h 127.0.0.1 -p 5432 -U dbuser -d mydatabase
 ```
 
 ### 🔒 Secure Microservice Communication
 
 ```bash
-# Service A (providing API)
-nodepass server://0.0.0.0:10101/127.0.0.1:8081?log=warn
+# Service A (providing API) with custom certificate
+nodepass server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key
 
 # Service B (consuming API)
 nodepass client://service-a:10101/127.0.0.1:8082
 
-# Service C (consuming API)
-nodepass client://service-a:10101/127.0.0.1:8083
-
-# All services communicate through encrypted channel
 ```
 
 ### 📡 IoT Device Management
 
 ```bash
 # Central management server
-nodepass server://0.0.0.0:10101/127.0.0.1:8888?log=info
+nodepass server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1
 
-# IoT device 1 
+# IoT device
 nodepass client://mgmt.example.com:10101/127.0.0.1:80
-
-# IoT device 2
-nodepass client://mgmt.example.com:10101/127.0.0.1:80
-
-# All devices securely accessible from management interface
 ```
 
 ### 🧪 Multi-environment Development
 
 ```bash
 # Production API access tunnel
-nodepass server://0.0.0.0:10101/api.production:443?log=warn
+nodepass client://tunnel.example.com:10101/127.0.0.1:3443
 
 # Development environment
-nodepass client://tunnel.example.com:10101/127.0.0.1:3000
+nodepass server://tunnel.example.com:10101/127.0.0.1:3000
 
 # Testing environment
-nodepass client://tunnel.example.com:10101/127.0.0.1:3001
-
-# Both environments can access production API securely
+nodepass server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1
 ```
 
 ### 🐳 Container Deployment
@@ -299,11 +299,11 @@ nodepass client://tunnel.example.com:10101/127.0.0.1:3001
 # Create a network for the containers
 docker network create nodepass-net
 
-# Deploy NodePass server
+# Deploy NodePass server with self-signed certificate
 docker run -d --name nodepass-server \
   --network nodepass-net \
   -p 10101:10101 \
-  ghcr.io/yosebyte/nodepass server://0.0.0.0:10101/web-service:80?log=info
+  ghcr.io/yosebyte/nodepass server://0.0.0.0:10101/web-service:80?log=info&tls=1
 
 # Deploy a web service as target
 docker run -d --name web-service \
@@ -320,56 +320,35 @@ docker run -d --name nodepass-client \
 
 ## 🔍 How It Works
 
-NodePass creates a network tunnel with a secure control channel:
+NodePass creates a network architecture with separate channels for control and data:
 
-1. **Server Mode**:
-   - Sets up listeners: tunnel (TLS-encrypted), remote (unencrypted), and target (for both TCP and UDP)
-   - Accepts incoming connections on the tunnel endpoint
-   - When a client connects to the target (via TCP) or sends data (via UDP), it signals the client through the secure tunnel
-   - The client then establishes a connection to the remote endpoint (unencrypted)
-   - Data is exchanged between the target and remote connections
+1. **Control Channel (Tunnel)**:
+   - Unencrypted TCP connection between client and server
+   - Used exclusively for signaling and coordination
+   - Maintains persistent connection for the lifetime of the tunnel
 
-2. **Client Mode**:
-   - Connects to the server's tunnel endpoint using TLS (encrypted control channel)
-   - Listens for signals from the server through this secure channel
-   - When a signal is received, connects to the server's remote endpoint (unencrypted data channel)
-   - Establishes a connection to the local target address (TCP or UDP as needed)
-   - Data is exchanged between the remote and local target connections
+2. **Data Channel (Target)**:
+   - Configurable TLS encryption options:
+     - **Mode 0**: Unencrypted data transfer (fastest, least secure)
+     - **Mode 1**: Self-signed certificate encryption (good security, no verification)
+     - **Mode 2**: Verified certificate encryption (highest security, requires valid certificates)
+   - Created on-demand for each connection or datagram
+   - Used for actual application data transfer
 
-3. **Protocol Support**:
+3. **Server Mode Operation**:
+   - Listens for control connections on the tunnel endpoint
+   - When traffic arrives at the target endpoint, signals the client via the control channel
+   - Establishes data channels with the specified TLS mode when needed
+
+4. **Client Mode Operation**:
+   - Connects to the server's control channel
+   - Listens for signals indicating incoming connections
+   - Creates data connections using the TLS security level specified by the server
+   - Forwards data between the secure channel and local target
+
+5. **Protocol Support**:
    - **TCP**: Full bidirectional streaming with persistent connections
    - **UDP**: Datagram forwarding with configurable buffer sizes and timeouts
-   - Both protocols use the same signaling mechanism but different handling patterns
-
-## 🏗 Architectural Principles
-
-NodePass is built on several core architectural principles that ensure its reliability, security, and performance:
-
-### 1. Separation of Concerns
-The codebase maintains clear separation between:
-- **Command Layer**: Handles user input and configuration (in `cmd/nodepass`)
-- **Service Layer**: Implements the core client and server logic (in `internal`)
-- **Common Layer**: Provides shared functionality between client and server components
-
-### 2. Context-Based Flow Control
-- Uses Go's context package for proper cancellation propagation
-- Enables clean shutdown of all components when termination is requested
-- Prevents resource leaks during service termination
-
-### 3. Resilient Error Handling
-- Implements automatic reconnection with configurable cooldown periods
-- Gracefully handles network interruptions without user intervention
-- Uses comprehensive error logging for troubleshooting
-
-### 4. Security-First Design
-- Employs TLS encryption for all tunnel traffic
-- Generates in-memory TLS certificates when needed
-- Follows principle of least privilege in network communications
-
-### 5. Resource Efficiency
-- Uses connection pooling to minimize connection establishment overhead
-- Implements semaphore patterns for concurrency control
-- Provides configurable limits to prevent resource exhaustion
 
 ## 🔄 Data Transmission Flow
 
@@ -385,20 +364,21 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
 
 2. **Signal Generation**:
    ```
-   [Server] → [Generate Unique Connection ID] → [Signal Client via TLS-Encrypted Tunnel]
+   [Server] → [Generate Unique Connection ID] → [Signal Client via Unencrypted TCP Tunnel]
    ```
    - For TCP: Generates a `tcp://<connection_id>` signal
    - For UDP: Generates a `udp://<connection_id>` signal when datagram is received
 
 3. **Connection Preparation**:
    ```
-   [Server] → [Create Unencrypted Remote Connection in Pool] → [Wait for Client Connection]
+   [Server] → [Create Remote Connection in Pool with Configured TLS Mode] → [Wait for Client Connection]
    ```
    - Both protocols use the same connection pool mechanism with unique connection IDs
+   - TLS configuration applied based on the specified mode (0, 1, or 2)
 
 4. **Data Exchange**:
    ```
-   [Target Connection] ⟷ [Exchange/Transfer] ⟷ [Remote Connection (Unencrypted)]
+   [Target Connection] ⟷ [Exchange/Transfer] ⟷ [Remote Connection]
    ```
    - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
    - For UDP: Individual datagrams are forwarded with configurable buffer sizes
@@ -406,13 +386,13 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
 ### Client-Side Flow
 1. **Signal Reception**:
    ```
-   [Client] → [Read Signal from TLS-Encrypted Tunnel] → [Parse Connection ID]
+   [Client] → [Read Signal from TCP Tunnel] → [Parse Connection ID]
    ```
    - Client differentiates between TCP and UDP signals based on URL scheme
 
 2. **Connection Establishment**:
    ```
-   [Client] → [Retrieve Connection from Pool] → [Connect to Remote Endpoint (Unencrypted)]
+   [Client] → [Retrieve Connection from Pool] → [Connect to Remote Endpoint]
    ```
    - Connection management is protocol-agnostic at this stage
 
@@ -425,7 +405,7 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
 
 4. **Data Exchange**:
    ```
-   [Remote Connection (Unencrypted)] ⟷ [Exchange/Transfer] ⟷ [Local Target Connection]
+   [Remote Connection] ⟷ [Exchange/Transfer] ⟷ [Local Target Connection]
    ```
    - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
    - For UDP: Reads single datagram, forwards it, waits for response with timeout, then returns response
@@ -441,11 +421,11 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
   - Read timeout control for response waiting (`UDP_READ_TIMEOUT`)
   - Optimized for low-latency, stateless communications
 
-Both protocols benefit from the same secure signaling mechanism through the TLS tunnel, ensuring protocol-agnostic control flow with protocol-specific data handling.
+Both protocols benefit from the same secure signaling mechanism through the TCP tunnel, ensuring protocol-agnostic control flow with protocol-specific data handling.
 
 ## 📡 Signal Communication Mechanism
 
-NodePass uses a sophisticated URL-based signaling protocol through the TLS tunnel:
+NodePass uses a sophisticated URL-based signaling protocol through the TCP tunnel:
 
 ### Signal Types
 1. **Remote Signal**:
@@ -469,7 +449,7 @@ NodePass uses a sophisticated URL-based signaling protocol through the TLS tunne
    - Signal is terminated with a newline character for proper parsing
 
 2. **Signal Transmission**:
-   - Server writes signals to the TLS tunnel connection
+   - Server writes signals to the TCP tunnel connection
    - Uses a mutex to prevent concurrent writes to the tunnel
 
 3. **Signal Reception**:
@@ -684,4 +664,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## ⭐ Stargazers
 
 [![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
-
