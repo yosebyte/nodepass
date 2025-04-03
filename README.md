@@ -51,6 +51,10 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 
 ## ✨ Features
 
+<div align="center">
+  <img src="https://cdn.yobc.de/assets/np-cli.png" alt="nodepass">
+</div>
+
 - **🔄 Dual Operating Modes**: Run as a server to accept connections or as a client to initiate them
 - **🌐 TCP/UDP Protocol Support**: Tunnels both TCP and UDP traffic for complete application compatibility
 - **🔒 Flexible TLS Options**: Three security modes for data channel encryption
