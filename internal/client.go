@@ -15,6 +15,7 @@ import (
 
 type client struct {
 	common
+	tunnelName string
 	bufReader  *bufio.Reader
 	signalChan chan string
 	errorCount int
@@ -27,6 +28,7 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
 	common.getAddress(parsedURL)
 	return &client{
 		common:     *common,
+		tunnelName: parsedURL.Hostname(),
 		signalChan: make(chan string, semaphoreLimit),
 	}
 }
@@ -36,7 +38,7 @@ func (c *client) Start() error {
 	if err := c.tunnelHandshake(); err != nil {
 		return err
 	}
-	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, c.tlsCode, func() (net.Conn, error) {
+	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, c.tlsCode, c.tunnelName, func() (net.Conn, error) {
 		return net.DialTCP("tcp", nil, c.remoteAddr)
 	})
 	go c.remotePool.ClientManager()
