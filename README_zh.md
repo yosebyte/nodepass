@@ -51,6 +51,10 @@ NodePass是一个优雅、高效的TCP隧道解决方案，可在网络端点之
 
 ## ✨ 功能特点
 
+<div align="center">
+  <img src="https://cdn.yobc.de/assets/np-cli.png" alt="nodepass">
+</div>
+
 - **🔄 双重操作模式**: 可作为服务器接受连接或作为客户端发起连接
 - **🌐 TCP/UDP协议支持**: 支持TCP和UDP流量隧道传输，确保完整的应用程序兼容性
 - **🔒 灵活的TLS选项**: 数据通道加密的三种安全模式
