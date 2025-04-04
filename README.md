@@ -432,18 +432,18 @@ Both protocols benefit from the same secure signaling mechanism through the TCP 
 NodePass uses a sophisticated URL-based signaling protocol through the TCP tunnel:
 
 ### Signal Types
-1. **Remote Signal**:
-   - Format: `remote://<port>`
-   - Purpose: Informs the client about the server's remote endpoint port
-   - Timing: Sent periodically during health checks
+1. **Tunnel Signal**:
+   - Format: `//<port>#<tls>`
+   - Purpose: Informs the client about the server's remote endpoint port and tls code
+   - Timing: Sent on tunnel handshake
 
 2. **TCP Launch Signal**:
-   - Format: `tcp://<connection_id>`
+   - Format: `//<connection_id>#1`
    - Purpose: Requests the client to establish a TCP connection for a specific ID
    - Timing: Sent when a new TCP connection to the target service is received
 
 3. **UDP Launch Signal**:
-   - Format: `udp://<connection_id>`
+   - Format: `//<connection_id>#2`
    - Purpose: Requests the client to handle UDP traffic for a specific ID
    - Timing: Sent when UDP data is received on the target port
 
