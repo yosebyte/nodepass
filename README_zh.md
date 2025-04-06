@@ -368,8 +368,8 @@ NodePass通过其隧道架构建立双向数据流，支持TCP和UDP协议:
    ```
    [服务器] → [生成唯一连接ID] → [通过TLS加密隧道向客户端发送信号]
    ```
-   - 对于TCP: 生成`tcp://<connection_id>`信号
-   - 对于UDP: 当接收到数据报时生成`udp://<connection_id>`信号
+   - 对于TCP: 生成`//<connection_id>#1`信号
+   - 对于UDP: 当接收到数据报时生成`//<connection_id>#2`信号
 
 3. **连接准备**:
    ```
