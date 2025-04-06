@@ -370,8 +370,8 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
    ```
    [Server] → [Generate Unique Connection ID] → [Signal Client via Unencrypted TCP Tunnel]
    ```
-   - For TCP: Generates a `tcp://<connection_id>` signal
-   - For UDP: Generates a `udp://<connection_id>` signal when datagram is received
+   - For TCP: Generates a `//<connection_id>#1` signal
+   - For UDP: Generates a `//<connection_id>#2` signal when datagram is received
 
 3. **Connection Preparation**:
    ```
