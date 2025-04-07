@@ -3,6 +3,7 @@ package internal
 import (
 	"bufio"
 	"context"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
@@ -185,8 +186,13 @@ func (c *client) clientTCPOnce(id string) {
 	c.targetTCPConn = targetConn
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-	_, _, err = conn.DataExchange(remoteConn, targetConn)
-	c.logger.Debug("Exchange complete: %v", err)
+	bytesReceived, bytesSent, err := conn.DataExchange(remoteConn, targetConn)
+	c.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
+	if err == io.EOF {
+		c.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
+	} else {
+		c.logger.Error("Exchange complete: %v", err)
+	}
 }
 
 func (c *client) clientUDPOnce(id string) {
@@ -215,6 +221,7 @@ func (c *client) clientUDPOnce(id string) {
 		c.logger.Error("Read failed: %v", err)
 		return
 	}
+	c.AddUDPReceived(uint64(n))
 	targetUDPConn, err := net.DialUDP("udp", nil, c.targetUDPAddr)
 	if err != nil {
 		c.logger.Error("Dial failed: %v", err)
@@ -246,5 +253,7 @@ func (c *client) clientUDPOnce(id string) {
 		c.logger.Error("Write failed: %v", err)
 		return
 	}
-	c.logger.Debug("Transfer complete: %v", n)
+	c.AddUDPSent(uint64(n))
+	bytesReceived, bytesSent := c.GetUDPStats()
+	c.logger.Debug("Transfer complete: %v bytes transferred", bytesReceived+bytesSent)
 }

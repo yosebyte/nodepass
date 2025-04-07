@@ -171,13 +171,13 @@ In server mode, NodePass:
 Example:
 ```bash
 # No TLS encryption for data channel
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
 # Self-signed certificate (auto-generated)
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1"
 
 # Custom domain certificate
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 📱 Client Mode
@@ -224,6 +224,7 @@ NodePass uses a minimalist approach with command-line parameters and environment
 | `UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export UDP_DATA_BUF_SIZE=16384` |
 | `UDP_READ_TIMEOUT` | Timeout for UDP read operations | 5s | `export UDP_READ_TIMEOUT=10s` |
 | `REPORT_INTERVAL` | Interval for health check reports | 5s | `export REPORT_INTERVAL=10s` |
+| `RELOAD_INTERVAL` | Interval for certificate reload | 1h | `export RELOAD_INTERVAL=30m` |
 | `SERVICE_COOLDOWN` | Cooldown period before restart attempts | 5s | `export SERVICE_COOLDOWN=3s` |
 | `SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export SHUTDOWN_TIMEOUT=10s` |
 
@@ -233,13 +234,13 @@ NodePass uses a minimalist approach with command-line parameters and environment
 
 ```bash
 # Start a server with no TLS encryption for data channel
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0"
 
 # Start a server with auto-generated self-signed certificate
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
 
 # Start a server with custom domain certificate
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 🔌 Connecting to a NodePass Server
@@ -267,7 +268,7 @@ nodepass client://server.example.com:10101/127.0.0.1:5432
 
 ```bash
 # Service A (providing API) with custom certificate
-nodepass server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key
+nodepass "server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key"
 
 # Service B (consuming API)
 nodepass client://service-a:10101/127.0.0.1:8082
@@ -278,7 +279,7 @@ nodepass client://service-a:10101/127.0.0.1:8082
 
 ```bash
 # Central management server
-nodepass server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1
+nodepass "server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1"
 
 # IoT device
 nodepass client://mgmt.example.com:10101/127.0.0.1:80
@@ -294,7 +295,7 @@ nodepass client://tunnel.example.com:10101/127.0.0.1:3443
 nodepass server://tunnel.example.com:10101/127.0.0.1:3000
 
 # Testing environment
-nodepass server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1
+nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 ```
 
 ### 🐳 Container Deployment
@@ -307,7 +308,7 @@ docker network create nodepass-net
 docker run -d --name nodepass-server \
   --network nodepass-net \
   -p 10101:10101 \
-  ghcr.io/yosebyte/nodepass server://0.0.0.0:10101/web-service:80?log=info&tls=1
+  ghcr.io/yosebyte/nodepass "server://0.0.0.0:10101/web-service:80?log=info&tls=1"
 
 # Deploy a web service as target
 docker run -d --name web-service \
@@ -371,7 +372,7 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
    [Server] → [Generate Unique Connection ID] → [Signal Client via Unencrypted TCP Tunnel]
    ```
    - For TCP: Generates a `//<connection_id>#1` signal
-   - For UDP: Generates a `//<connection_id>#2` signal when datagram is received
+   - For UDP: Generates a `//<connection_id>#2` signal
 
 3. **Connection Preparation**:
    ```
@@ -424,8 +425,6 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
   - One-time datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
   - Read timeout control for response waiting (`UDP_READ_TIMEOUT`)
   - Optimized for low-latency, stateless communications
-
-Both protocols benefit from the same secure signaling mechanism through the TCP tunnel, ensuring protocol-agnostic control flow with protocol-specific data handling.
 
 ## 📡 Signal Communication Mechanism
 

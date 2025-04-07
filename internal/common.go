@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/yosebyte/x/conn"
@@ -15,18 +16,22 @@ import (
 )
 
 type common struct {
-	tlsCode       string
-	logger        *log.Logger
-	tunnelAddr    *net.TCPAddr
-	remoteAddr    *net.TCPAddr
-	targetTCPAddr *net.TCPAddr
-	targetUDPAddr *net.UDPAddr
-	tunnelTCPConn *net.TCPConn
-	targetTCPConn *net.TCPConn
-	targetUDPConn *net.UDPConn
-	remotePool    *conn.Pool
-	ctx           context.Context
-	cancel        context.CancelFunc
+	tlsCode          string
+	logger           *log.Logger
+	tunnelAddr       *net.TCPAddr
+	remoteAddr       *net.TCPAddr
+	targetTCPAddr    *net.TCPAddr
+	targetUDPAddr    *net.UDPAddr
+	tunnelTCPConn    *net.TCPConn
+	targetTCPConn    *net.TCPConn
+	targetUDPConn    *net.UDPConn
+	remotePool       *conn.Pool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	tcpBytesReceived uint64
+	tcpBytesSent     uint64
+	udpBytesReceived uint64
+	udpBytesSent     uint64
 }
 
 var (
@@ -36,13 +41,14 @@ var (
 	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)
 	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)
 	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
+	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)
 	ServiceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
 	ShutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
 )
 
 func getEnvAsInt(name string, defaultValue int) int {
 	if valueStr, exists := os.LookupEnv(name); exists {
-		if value, err := strconv.Atoi(valueStr); err == nil {
+		if value, err := strconv.Atoi(valueStr); err == nil && value >= 0 {
 			return value
 		}
 	}
@@ -51,7 +57,7 @@ func getEnvAsInt(name string, defaultValue int) int {
 
 func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 	if valueStr, exists := os.LookupEnv(name); exists {
-		if value, err := time.ParseDuration(valueStr); err == nil {
+		if value, err := time.ParseDuration(valueStr); err == nil && value >= 0 {
 			return value
 		}
 	}
@@ -104,4 +110,31 @@ func (c *common) shutdown(ctx context.Context, stopFunc func()) error {
 	case <-done:
 		return nil
 	}
+}
+
+func (c *common) AddTCPStats(received, sent uint64) {
+	atomic.AddUint64(&c.tcpBytesReceived, received)
+	atomic.AddUint64(&c.tcpBytesSent, sent)
+}
+
+func (c *common) AddUDPReceived(bytes uint64) {
+	atomic.AddUint64(&c.udpBytesReceived, bytes)
+}
+
+func (c *common) AddUDPSent(bytes uint64) {
+	atomic.AddUint64(&c.udpBytesSent, bytes)
+}
+
+func (c *common) GetTCPStats() (uint64, uint64) {
+	return atomic.LoadUint64(&c.tcpBytesReceived), atomic.LoadUint64(&c.tcpBytesSent)
+}
+
+func (c *common) GetUDPStats() (uint64, uint64) {
+	return atomic.LoadUint64(&c.udpBytesReceived), atomic.LoadUint64(&c.udpBytesSent)
+}
+
+func (c *common) GetTotalStats() (uint64, uint64) {
+	received := atomic.LoadUint64(&c.tcpBytesReceived) + atomic.LoadUint64(&c.udpBytesReceived)
+	sent := atomic.LoadUint64(&c.tcpBytesSent) + atomic.LoadUint64(&c.udpBytesSent)
+	return received, sent
 }

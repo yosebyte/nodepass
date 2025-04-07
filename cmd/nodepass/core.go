@@ -87,19 +87,35 @@ func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 		return tlsCode, tlsConfig
 	case "2":
 		crtFile, keyFile := parsedURL.Query().Get("crt"), parsedURL.Query().Get("key")
-		if cert, err := tls.LoadX509KeyPair(crtFile, keyFile); err != nil {
+		cert, err := tls.LoadX509KeyPair(crtFile, keyFile)
+		if err != nil {
 			logger.Error("Load failed: %v", err)
 			logger.Warn("TLS code-1: RAM cert")
 			return "1", tlsConfig
-		} else {
-			tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
-			if cert.Leaf != nil {
-				logger.Info("TLS code-2: %v", cert.Leaf.Subject.CommonName)
-			} else {
-				logger.Warn("TLS code-2: unknown")
-			}
-			return tlsCode, tlsConfig
 		}
+		cachedCert := cert
+		lastReload := time.Now()
+		tlsConfig = &tls.Config{
+			GetCertificate: func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				if time.Since(lastReload) >= internal.ReloadInterval {
+					newCert, err := tls.LoadX509KeyPair(crtFile, keyFile)
+					if err != nil {
+						logger.Error("Reload failed: %v", err)
+					} else {
+						logger.Debug("Cert reloaded: %v", crtFile)
+						cachedCert = newCert
+					}
+					lastReload = time.Now()
+				}
+				return &cachedCert, nil
+			},
+		}
+		if cert.Leaf != nil {
+			logger.Info("TLS code-2: %v", cert.Leaf.Subject.CommonName)
+		} else {
+			logger.Warn("TLS code-2: unknown")
+		}
+		return tlsCode, tlsConfig
 	default:
 		logger.Warn("TLS code-0: unencrypted")
 		return "0", nil

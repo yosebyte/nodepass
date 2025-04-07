@@ -171,13 +171,13 @@ nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 示例:
 ```bash
 # 数据通道无TLS加密
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
 # 自签名证书（自动生成）
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1"
 
 # 自定义域名证书
-nodepass server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 📱 客户端模式
@@ -224,6 +224,7 @@ NodePass采用命令行参数和环境变量的极简方法:
 | `UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export UDP_DATA_BUF_SIZE=16384` |
 | `UDP_READ_TIMEOUT` | UDP读取操作超时 | 5s | `export UDP_READ_TIMEOUT=10s` |
 | `REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export REPORT_INTERVAL=10s` |
+| `RELOAD_INTERVAL` | 定制证书重载间隔 | 1h | `export RELOAD_INTERVAL=30m` |
 | `SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 5s | `export SERVICE_COOLDOWN=3s` |
 | `SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export SHUTDOWN_TIMEOUT=10s` |
 
@@ -233,13 +234,13 @@ NodePass采用命令行参数和环境变量的极简方法:
 
 ```bash
 # 启动一个数据通道无TLS加密的服务器
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0"
 
 # 启动一个使用自动生成的自签名证书的服务器
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
 
 # 启动一个使用自定义域名证书的服务器
-nodepass server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 🔌 连接到NodePass服务器
@@ -266,7 +267,7 @@ nodepass client://server.example.com:10101/127.0.0.1:5432
 
 ```bash
 # 服务A(提供API)使用自定义证书
-nodepass server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key
+nodepass "server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key"
 
 # 服务B(消费API)
 nodepass client://service-a:10101/127.0.0.1:8082
@@ -276,7 +277,7 @@ nodepass client://service-a:10101/127.0.0.1:8082
 
 ```bash
 # 中央管理服务器
-nodepass server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1
+nodepass "server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1"
 
 # 物联网设备
 nodepass client://mgmt.example.com:10101/127.0.0.1:80
@@ -292,7 +293,7 @@ nodepass client://tunnel.example.com:10101/127.0.0.1:3443
 nodepass server://tunnel.example.com:10101/127.0.0.1:3000
 
 # 测试环境
-nodepass server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1
+nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 ```
 
 ### 🐳 容器部署
@@ -305,7 +306,7 @@ docker network create nodepass-net
 docker run -d --name nodepass-server \
   --network nodepass-net \
   -p 10101:10101 \
-  ghcr.io/yosebyte/nodepass server://0.0.0.0:10101/web-service:80?log=info&tls=1
+  ghcr.io/yosebyte/nodepass "server://0.0.0.0:10101/web-service:80?log=info&tls=1"
 
 # 部署Web服务作为目标
 docker run -d --name web-service \
@@ -366,20 +367,21 @@ NodePass通过其隧道架构建立双向数据流，支持TCP和UDP协议:
 
 2. **信号生成**:
    ```
-   [服务器] → [生成唯一连接ID] → [通过TLS加密隧道向客户端发送信号]
+   [服务器] → [生成唯一连接ID] → [通过TCP隧道向客户端发送信号]
    ```
    - 对于TCP: 生成`//<connection_id>#1`信号
-   - 对于UDP: 当接收到数据报时生成`//<connection_id>#2`信号
+   - 对于UDP: 生成`//<connection_id>#2`信号
 
 3. **连接准备**:
    ```
-   [服务器] → [在池中创建未加密的远程连接] → [等待客户端连接]
+   [服务器] → [在池中创建具有配置TLS模式的远程连接] → [等待客户端连接]
    ```
    - 两种协议使用相同的连接池机制，具有唯一的连接ID
+   - 根据指定的模式应用TLS配置（0，1或2）
 
 4. **数据交换**:
    ```
-   [目标连接] ⟷ [交换/传输] ⟷ [远程连接(未加密)]
+   [目标连接] ⟷ [交换/传输] ⟷ [远程连接]
    ```
    - 对于TCP: 使用`conn.DataExchange()`进行持续的双向数据流
    - 对于UDP: 使用可配置的缓冲区大小转发单个数据报
@@ -387,13 +389,13 @@ NodePass通过其隧道架构建立双向数据流，支持TCP和UDP协议:
 ### 客户端流程
 1. **信号接收**:
    ```
-   [客户端] → [从TLS加密隧道读取信号] → [解析连接ID]
+   [客户端] → [从TCP隧道读取信号] → [解析连接ID]
    ```
    - 客户端根据URL方案区分TCP和UDP信号
 
 2. **连接建立**:
    ```
-   [客户端] → [从池中检索连接] → [连接到远程端点(未加密)]
+   [客户端] → [从池中检索连接] → [连接到远程端点]
    ```
    - 此阶段的连接管理与协议无关
 
@@ -406,7 +408,7 @@ NodePass通过其隧道架构建立双向数据流，支持TCP和UDP协议:
 
 4. **数据交换**:
    ```
-   [远程连接(未加密)] ⟷ [交换/传输] ⟷ [本地目标连接]
+   [远程连接] ⟷ [交换/传输] ⟷ [本地目标连接]
    ```
    - 对于TCP: 使用`conn.DataExchange()`进行持续的双向数据流
    - 对于UDP: 读取单个数据报，转发它，使用超时等待响应，然后返回响应
@@ -421,8 +423,6 @@ NodePass通过其隧道架构建立双向数据流，支持TCP和UDP协议:
   - 一次性数据报转发，具有可配置的缓冲区大小(`UDP_DATA_BUF_SIZE`)
   - 响应等待的读取超时控制(`UDP_READ_TIMEOUT`)
   - 为低延迟、无状态通信优化
-
-两种协议都受益于通过TLS隧道的相同安全信号机制，确保协议无关的控制流与协议特定的数据处理。
 
 ## 📡 信号通信机制
 

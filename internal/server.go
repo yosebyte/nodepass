@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
@@ -128,7 +129,6 @@ func (s *server) tunnelHandshake() error {
 		return err
 	}
 	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
-
 	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
 	return nil
 }
@@ -208,8 +208,13 @@ func (s *server) serverTCPLoop() {
 				}
 				s.logger.Debug("TCP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
 				s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-				_, _, err = conn.DataExchange(remoteConn, targetConn)
-				s.logger.Debug("Exchange complete: %v", err)
+				bytesReceived, bytesSent, err := conn.DataExchange(remoteConn, targetConn)
+				s.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
+				if err == io.EOF {
+					s.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
+				} else {
+					s.logger.Error("Exchange complete: %v", err)
+				}
 			}(targetConn)
 		}
 	}
@@ -226,6 +231,7 @@ func (s *server) serverUDPLoop() {
 			if err != nil {
 				continue
 			}
+			s.AddUDPReceived(uint64(n))
 			s.logger.Debug("Target connection: %v <-> %v", s.targetUDPConn.LocalAddr(), clientAddr)
 			id, remoteConn := s.remotePool.ServerGet()
 			if remoteConn == nil {
@@ -269,7 +275,9 @@ func (s *server) serverUDPLoop() {
 					s.logger.Error("Write failed: %v", err)
 					return
 				}
-				s.logger.Debug("Transfer complete: %v", n)
+				s.AddUDPSent(uint64(n))
+				bytesReceived, bytesSent := s.GetUDPStats()
+				s.logger.Debug("Transfer complete: %v bytes transferred", bytesReceived+bytesSent)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
