@@ -32,6 +32,9 @@ type common struct {
 	tcpBytesSent     uint64
 	udpBytesReceived uint64
 	udpBytesSent     uint64
+	supportsQuic     bool
+	supportsWS       bool
+	securityManager  *SecurityManager
 }
 
 var (

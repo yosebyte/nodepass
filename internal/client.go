@@ -82,28 +82,52 @@ func (c *client) Shutdown(ctx context.Context) error {
 }
 
 func (c *client) tunnelHandshake() error {
+	// 建立TCP连接
 	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
 	if err != nil {
 		return err
 	}
 	c.tunnelTCPConn = tunnelTCPConn
 	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
-	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
+	
+	// 创建安全管理器
+	securityManager, err := NewSecurityManager(c.logger, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("创建安全管理器失败: %v", err)
 	}
-	tunnelSignal := strings.TrimSpace(string(rawTunnelURL))
-	c.logger.Debug("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
-	tunnelURL, err := url.Parse(tunnelSignal)
+	
+	// 加载受信任证书
+	if err := securityManager.LoadTrustedCertificates(); err != nil {
+		c.logger.Warn("加载受信任证书失败: %v", err)
+	}
+	
+	// 执行安全握手
+	handshakeData, err := securityManager.SecureHandshake(c.tunnelTCPConn, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("安全握手失败: %v", err)
 	}
-	c.remoteAddr.Port, err = strconv.Atoi(tunnelURL.Host)
-	if err != nil {
-		return err
+	
+	// 从握手数据中提取必要信息
+	c.remoteAddr.Port = handshakeData.Port
+	c.tlsCode = handshakeData.TLSMode
+	
+	// 检查服务器支持的协议
+	for _, proto := range handshakeData.SupportedProtos {
+		if proto == "quic" {
+			c.supportsQuic = true
+		}
+		if proto == "websocket" {
+			c.supportsWS = true
+		}
 	}
-	c.tlsCode = tunnelURL.Fragment
+	
+	c.logger.Debug("安全握手完成: 服务器=%s, TLS模式=%s, 端口=%d", 
+		handshakeData.ServerName, c.tlsCode, c.remoteAddr.Port)
 	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
+	
+	// 存储安全管理器以供后续使用
+	c.securityManager = securityManager
+	
 	return nil
 }
 

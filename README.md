@@ -1,4 +1,4 @@
-# 🔗 NodePass
+# 🔗 NodePass - Enhanced
 
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/yosebyte/nodepass)](https://golang.org/)
@@ -25,12 +25,15 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 - [Usage](#-usage)
   - [Server Mode](#️-server-mode)
   - [Client Mode](#-client-mode)
+  - [Protocol Selection](#-protocol-selection)
 - [Configuration](#️-configuration)
   - [Log Levels](#-log-levels)
   - [Environment Variables](#-environment-variables)
 - [Examples](#-examples)
   - [Basic Server Setup with TLS Options](#-basic-server-setup-with-tls-options)
   - [Connecting to a NodePass Server](#-connecting-to-a-nodepass-server)
+  - [Using QUIC Protocol](#-using-quic-protocol)
+  - [Using WebSocket Connection](#-using-websocket-connection)
   - [Database Access Through Firewall](#-database-access-through-firewall)
   - [Secure Microservice Communication](#-secure-microservice-communication)
   - [IoT Device Management](#-iot-device-management)
@@ -56,9 +59,11 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 </div>
 
 - **🔄 Dual Operating Modes**: Run as a server to accept connections or as a client to initiate them
-- **🌐 TCP/UDP Protocol Support**: Tunnels both TCP and UDP traffic for complete application compatibility
+- **🌐 Multi-Protocol Support**: Tunnels TCP/UDP/QUIC/WebSocket traffic for complete application compatibility
 - **🔒 Flexible TLS Options**: Three security modes for data channel encryption
-- **🔐 Automatic TLS Policy Adoption**: Client automatically adopts the server's TLS security policy
+- **🔐 Enforced TLS1.3 Encryption**: All encrypted connections use TLS1.3 for highest level of security
+- **🚀 QUIC Protocol Support**: UDP-based QUIC protocol for lower latency and better multiplexing
+- **🌐 WebSocket Full-Duplex Connection**: Support for HTTP-based WebSocket connections for firewall-restricted environments
 - **🔌 Efficient Connection Pooling**: Optimized connection management with configurable pool sizes
 - **📊 Flexible Logging System**: Configurable verbosity with five distinct logging levels
 - **🛡️ Resilient Error Handling**: Automatic connection recovery and graceful shutdowns
@@ -77,7 +82,7 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
 
 ## 📋 Requirements
 
-- Go 1.24 or higher (for building from source)
+- Go 1.18 or higher (for building from source)
 - Network connectivity between server and client endpoints
 - Admin privileges may be required for binding to ports below 1024
 
@@ -173,10 +178,10 @@ Example:
 # No TLS encryption for data channel
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
-# Self-signed certificate (auto-generated)
+# Self-signed certificate (auto-generated) with TLS1.3
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1"
 
-# Custom domain certificate
+# Custom domain certificate with TLS1.3
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
@@ -201,6 +206,17 @@ Example:
 # Connect to a NodePass server and automatically adopt its TLS security policy
 nodepass client://10.1.0.1:10101/127.0.0.1:8080?log=info
 ```
+
+### 🌐 Protocol Selection
+
+NodePass now supports multiple protocol types that can be selected based on your needs:
+
+- **TCP**: Default protocol suitable for most scenarios, providing reliable connections
+- **UDP**: Suitable for applications requiring low latency, such as real-time communications and gaming
+- **QUIC**: Modern UDP-based protocol offering low latency and better multiplexing, especially good for mobile networks
+- **WebSocket**: HTTP-based protocol suitable for scenarios requiring firewall traversal, supporting full-duplex communication
+
+The server automatically notifies clients about the protocol types it supports, and clients automatically select the best protocol for communication.
 
 ## ⚙️ Configuration
 
@@ -236,10 +252,10 @@ NodePass uses a minimalist approach with command-line parameters and environment
 # Start a server with no TLS encryption for data channel
 nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=0"
 
-# Start a server with auto-generated self-signed certificate
+# Start a server with auto-generated self-signed certificate (using TLS1.3)
 nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
 
-# Start a server with custom domain certificate
+# Start a server with custom domain certificate (using TLS1.3)
 nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
@@ -253,35 +269,57 @@ nodepass client://server.example.com:10101/127.0.0.1:8080
 nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
 ```
 
+### 🚀 Using QUIC Protocol
+
+The server automatically enables QUIC protocol support, and clients automatically detect and use QUIC protocol if available. QUIC protocol provides lower latency and better multiplexing, especially suitable for mobile networks and unstable network environments.
+
+```bash
+# Server side (automatically enables QUIC support)
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
+
+# Client side (automatically detects and uses QUIC)
+nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
+```
+
+### 🌐 Using WebSocket Connection
+
+WebSocket connections are especially suitable for scenarios requiring firewall traversal, as they are based on HTTP protocol which most firewalls allow.
+
+```bash
+# Server side (automatically enables WebSocket support)
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
+
+# Client side (automatically detects and uses WebSocket)
+nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
+```
+
 ### 🗄 Database Access Through Firewall
 
 ```bash
-# Server side (outside secured network) with TLS encryption
+# Server side (outside secured network) with TLS1.3 encryption
 nodepass server://:10101/127.0.0.1:5432?tls=1
 
 # Client side (inside the firewall)
 nodepass client://server.example.com:10101/127.0.0.1:5432
-
 ```
 
 ### 🔒 Secure Microservice Communication
 
 ```bash
-# Service A (providing API) with custom certificate
+# Service A (providing API) with custom certificate and TLS1.3
 nodepass "server://0.0.0.0:10101/127.0.0.1:8081?log=warn&tls=2&crt=/path/to/service-a.crt&key=/path/to/service-a.key"
 
 # Service B (consuming API)
 nodepass client://service-a:10101/127.0.0.1:8082
-
 ```
 
 ### 📡 IoT Device Management
 
 ```bash
-# Central management server
+# Central management server (with TLS1.3 and WebSocket support)
 nodepass "server://0.0.0.0:10101/127.0.0.1:8888?log=info&tls=1"
 
-# IoT device
+# IoT device (automatically uses best available protocol)
 nodepass client://mgmt.example.com:10101/127.0.0.1:80
 ```
 
@@ -294,7 +332,7 @@ nodepass client://tunnel.example.com:10101/127.0.0.1:3443
 # Development environment
 nodepass server://tunnel.example.com:10101/127.0.0.1:3000
 
-# Testing environment
+# Testing environment (with TLS1.3)
 nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 ```
 
@@ -304,7 +342,7 @@ nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 # Create a network for the containers
 docker network create nodepass-net
 
-# Deploy NodePass server with self-signed certificate
+# Deploy NodePass server with self-signed certificate (using TLS1.3)
 docker run -d --name nodepass-server \
   --network nodepass-net \
   -p 10101:10101 \
@@ -337,27 +375,33 @@ NodePass creates a network architecture with separate channels for control and d
      - **Mode 0**: Unencrypted data transfer (fastest, least secure)
      - **Mode 1**: Self-signed certificate encryption (good security, no verification)
      - **Mode 2**: Verified certificate encryption (highest security, requires valid certificates)
+   - All TLS encrypted connections use TLS1.3 for highest level of security
    - Created on-demand for each connection or datagram
    - Used for actual application data transfer
+   - Supports multiple protocols: TCP, UDP, QUIC, and WebSocket
 
 3. **Server Mode Operation**:
    - Listens for control connections on the tunnel endpoint
    - When traffic arrives at the target endpoint, signals the client via the control channel
    - Establishes data channels with the specified TLS mode when needed
+   - Automatically enables QUIC and WebSocket support and notifies clients
 
 4. **Client Mode Operation**:
    - Connects to the server's control channel
    - Listens for signals indicating incoming connections
    - Creates data connections using the TLS security level specified by the server
-   - Forwards data between the secure channel and local target
+   - Forwards data between the local target and secure channel
+   - Automatically detects and uses the best available protocol (TCP, QUIC, or WebSocket)
 
 5. **Protocol Support**:
    - **TCP**: Full bidirectional streaming with persistent connections
    - **UDP**: Datagram forwarding with configurable buffer sizes and timeouts
+   - **QUIC**: Modern UDP-based protocol offering low latency and better multiplexing
+   - **WebSocket**: HTTP-based protocol supporting full-duplex communication, suitable for firewall-restricted environments
 
 ## 🔄 Data Transmission Flow
 
-NodePass establishes a bidirectional data flow through its tunnel architecture, supporting both TCP and UDP protocols:
+NodePass establishes a bidirectional data flow through its tunnel architecture, supporting TCP, UDP, QUIC, and WebSocket protocols:
 
 ### Server-Side Flow
 1. **Connection Initiation**:
@@ -366,6 +410,8 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
    ```
    - For TCP: Client establishes persistent connection to target listener
    - For UDP: Server receives datagrams on UDP socket bound to target address
+   - For QUIC: Server accepts QUIC connection requests
+   - For WebSocket: Server accepts WebSocket upgrade requests
 
 2. **Signal Generation**:
    ```
@@ -373,292 +419,196 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
    ```
    - For TCP: Generates a `//<connection_id>#1` signal
    - For UDP: Generates a `//<connection_id>#2` signal
+   - For QUIC: Generates a `//<connection_id>#3` signal
+   - For WebSocket: Generates a `//<connection_id>#4` signal
 
 3. **Connection Preparation**:
    ```
    [Server] → [Create Remote Connection in Pool with Configured TLS Mode] → [Wait for Client Connection]
    ```
-   - Both protocols use the same connection pool mechanism with unique connection IDs
+   - All protocols use the same connection pool mechanism with unique connection IDs
    - TLS configuration applied based on the specified mode (0, 1, or 2)
+   - All TLS encrypted connections use TLS1.3
 
 4. **Data Exchange**:
    ```
    [Target Connection] ⟷ [Exchange/Transfer] ⟷ [Remote Connection]
    ```
-   - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
-   - For UDP: Individual datagrams are forwarded with configurable buffer sizes
+   - For TCP and WebSocket: Uses `conn.DataExchange()` for continuous bidirectional data streaming
+   - For UDP: Individual datagrams are forwarded
+   - For QUIC: Uses QUIC streams for efficient multiplexed data transfer
 
 ### Client-Side Flow
 1. **Signal Reception**:
    ```
-   [Client] → [Read Signal from TCP Tunnel] → [Parse Connection ID]
+   [Client] ← [Receive Signal via Unencrypted TCP Tunnel] ← [Server]
    ```
-   - Client differentiates between TCP and UDP signals based on URL scheme
+   - Client parses signal to determine connection ID and protocol type
 
 2. **Connection Establishment**:
    ```
-   [Client] → [Retrieve Connection from Pool] → [Connect to Remote Endpoint]
+   [Client] → [Get Remote Connection from Pool] → [Connect to Local Target]
    ```
-   - Connection management is protocol-agnostic at this stage
+   - Client retrieves pre-established connection from pool
+   - Uses appropriate connection method based on protocol type (TCP, UDP, QUIC, or WebSocket)
 
-3. **Local Connection**:
+3. **Data Exchange**:
    ```
-   [Client] → [Connect to Local Target] → [Establish Local Connection]
+   [Remote Connection] ⟷ [Exchange/Transfer] ⟷ [Local Target]
    ```
-   - For TCP: Establishes persistent TCP connection to local target
-   - For UDP: Creates UDP socket for datagram exchange with local target
+   - Uses same data exchange mechanism as server side
+   - All protocols use the same interface for data transfer
 
-4. **Data Exchange**:
+4. **Connection Termination**:
    ```
-   [Remote Connection] ⟷ [Exchange/Transfer] ⟷ [Local Target Connection]
+   [Client] → [Close Connection] → [Return Statistics]
    ```
-   - For TCP: Uses `conn.DataExchange()` for continuous bidirectional data streaming
-   - For UDP: Reads single datagram, forwards it, waits for response with timeout, then returns response
+   - When either end closes the connection, the other end also closes
+   - Bytes transferred and connection duration are recorded
 
-### Protocol-Specific Characteristics
-- **TCP Exchange**: 
-  - Persistent connections for full-duplex communication
-  - Continuous data streaming until connection termination
-  - Error handling with automatic reconnection
+## 🔄 Signal Communication Mechanism
 
-- **UDP Exchange**:
-  - One-time datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
-  - Read timeout control for response waiting (`UDP_READ_TIMEOUT`)
-  - Optimized for low-latency, stateless communications
+NodePass uses a simple yet powerful signaling system to coordinate between client and server:
 
-## 📡 Signal Communication Mechanism
+1. **Tunnel Establishment**:
+   ```
+   [Client] → [Connect to Server Tunnel Endpoint] → [Server]
+   [Client] ← [Receive Port and TLS Mode Information] ← [Server]
+   ```
+   - Server sends URL-formatted signal containing remote port and TLS mode
+   - Client parses signal and configures its connection parameters
 
-NodePass uses a sophisticated URL-based signaling protocol through the TCP tunnel:
+2. **Connection Signals**:
+   ```
+   [Server] → [//<connection_id>#<protocol_type>] → [Client]
+   ```
+   - `<connection_id>` is a unique identifier
+   - `<protocol_type>` indicates protocol: 1=TCP, 2=UDP, 3=QUIC, 4=WebSocket
 
-### Signal Types
-1. **Tunnel Signal**:
-   - Format: `//<port>#<tls>`
-   - Purpose: Informs the client about the server's remote endpoint port and tls code
-   - Timing: Sent on tunnel handshake
-
-2. **TCP Launch Signal**:
-   - Format: `//<connection_id>#1`
-   - Purpose: Requests the client to establish a TCP connection for a specific ID
-   - Timing: Sent when a new TCP connection to the target service is received
-
-3. **UDP Launch Signal**:
-   - Format: `//<connection_id>#2`
-   - Purpose: Requests the client to handle UDP traffic for a specific ID
-   - Timing: Sent when UDP data is received on the target port
-
-### Signal Flow
-1. **Signal Generation**:
-   - Server creates URL-formatted signals for specific events
-   - Signal is terminated with a newline character for proper parsing
-
-2. **Signal Transmission**:
-   - Server writes signals to the TCP tunnel connection
-   - Uses a mutex to prevent concurrent writes to the tunnel
-
-3. **Signal Reception**:
-   - Client uses a buffered reader to read signals from the tunnel
-   - Signals are trimmed and parsed into URL format
-
-4. **Signal Processing**:
-   - Client places valid signals in a buffered channel (signalChan)
-   - A dedicated goroutine processes signals from the channel
-   - Semaphore pattern prevents signal overflow
-
-5. **Signal Execution**:
-   - Remote signals update the client's remote address configuration
-   - Launch signals trigger the `clientOnce()` method to establish connections
-
-### Signal Resilience
-- Buffered channel with configurable capacity prevents signal loss during high load
-- Semaphore implementation ensures controlled concurrency
-- Error handling for malformed or unexpected signals
+3. **Health Checks**:
+   ```
+   [Server] → [Periodically Send Newline] → [Client]
+   ```
+   - Server periodically sends newline character to verify tunnel is still active
+   - If error is detected, both ends attempt to re-establish tunnel
 
 ## 🔌 Connection Pool Architecture
 
-NodePass implements an efficient connection pooling system for managing network connections:
+NodePass uses an efficient connection pool system to optimize performance and resource usage:
 
-### Pool Design
-1. **Pool Types**:
-   - **Client Pool**: Pre-establishes connections to the remote endpoint
-   - **Server Pool**: Manages incoming connections from clients
+1. **Server Pool**:
+   - Pre-allocated connections waiting for client requests
+   - Allocated when target connections arrive
+   - Supports TCP, UDP, QUIC, and WebSocket connections
 
-2. **Pool Components**:
-   - **Connection Storage**: Thread-safe map of connection IDs to net.Conn objects
-   - **ID Channel**: Buffered channel for available connection IDs
-   - **Capacity Management**: Dynamic adjustment based on usage patterns
-   - **Connection Factory**: Customizable connection creation function
+2. **Client Pool**:
+   - Pre-established connections to server
+   - Allocated based on signals
+   - Dynamically sized to maintain optimal performance
 
-### Connection Lifecycle
-1. **Connection Creation**:
-   - Connections are created up to the configured capacity
-   - Each connection is assigned a unique ID
-   - IDs and connections are stored in the pool
+3. **Pool Management**:
+   - Automatically expands and contracts to accommodate load
+   - Periodic health checks and connection refreshes
+   - Intelligent resource allocation to prevent exhaustion
 
-2. **Connection Acquisition**:
-   - Client retrieves connections using connection IDs
-   - Server retrieves the next available connection from the pool
-   - Connections are validated before being returned
+4. **Connection Lifecycle**:
+   ```
+   [Creation] → [Pool] → [Allocation] → [Usage] → [Closure/Return]
+   ```
+   - Connections pre-established before use
+   - Closed after use to ensure security
+   - Pool size configurable via environment variables
 
-3. **Connection Usage**:
-   - Connection is removed from the pool when acquired
-   - Used for data exchange between endpoints
-   - No connection reuse (one-time use model)
+## 🔍 Common Use Cases
 
-4. **Connection Termination**:
-   - Connections are closed after use
-   - Resources are properly released
-   - Error handling ensures clean termination
+NodePass is suitable for various networking scenarios:
 
-### Pool Management
-1. **Capacity Control**:
-   - `MIN_POOL_CAPACITY`: Ensures minimum available connections
-   - `MAX_POOL_CAPACITY`: Prevents excessive resource consumption
-   - Dynamic scaling based on demand patterns
+1. **Firewall Traversal**:
+   - Access services behind firewalls
+   - Provide multiple services through a single open port
 
-2. **Pool Managers**:
-   - `ClientManager()`: Maintains the client connection pool
-   - `ServerManager()`: Manages the server connection pool
+2. **Secure Remote Access**:
+   - Secure remote access with TLS1.3 encryption
+   - Internal service access without VPN
 
-3. **One-Time Connection Pattern**:
-   Each connection in the pool follows a one-time use pattern:
-   - Created and placed in the pool
-   - Retrieved once for a specific data exchange
-   - Never returned to the pool (prevents potential data leakage)
-   - Properly closed after use
+3. **Microservice Communication**:
+   - Service-to-service communication across network boundaries
+   - Efficient service mesh using QUIC protocol
 
-4. **Automatic Pool Size Adjustment**:
-   - Pool capacity dynamically adjusts based on real-time usage patterns
-   - If connection creation success rate is low (<20%), capacity decreases to minimize resource waste
-   - If connection creation success rate is high (>80%), capacity increases to accommodate higher traffic
-   - Gradual scaling prevents oscillation and provides stability
-   - Respects configured minimum and maximum capacity boundaries
-   - Scales down during periods of low activity to conserve resources
-   - Scales up proactively when traffic increases to maintain performance
-   - Self-tuning algorithm that adapts to varying network conditions
-   - Separate adjustment logic for client and server pools to optimize for different traffic patterns
+4. **IoT Device Connectivity**:
+   - Remote device management and monitoring
+   - Low-bandwidth device communication using WebSocket
 
-5. **Efficiency Considerations**:
-   - Pre-establishment reduces connection latency
-   - Connection validation ensures only healthy connections are used
-   - Proper resource cleanup prevents connection leaks
-   - Interval-based pool maintenance balances resource usage with responsiveness
-   - Optimized connection validation with minimal overhead
+5. **Development and Testing**:
+   - Secure bridge from local development to production environments
+   - Cross-environment testing and debugging
 
-## 💡 Common Use Cases
+6. **Database Access**:
+   - Secure remote database connections
+   - Cross-network database replication
 
-- **🚪 Remote Access**: Access services on private networks from external locations without VPN infrastructure. Ideal for accessing development servers, internal tools, or monitoring systems from remote work environments.
+7. **API Proxying**:
+   - Secure API gateway
+   - Cross-domain API access
 
-- **🧱 Firewall Bypass**: Navigate through restrictive network environments by establishing tunnels that use commonly allowed ports (like 443). Perfect for corporate environments with strict outbound connection policies or public Wi-Fi networks with limited connectivity.
-
-- **🏛️ Legacy System Integration**: Connect modern applications to legacy systems securely without modifying the legacy infrastructure. Enables gradual modernization strategies by providing secure bridges between old and new application components.
-
-- **🔒 Secure Microservice Communication**: Establish encrypted channels between distributed components across different networks or data centers. Allows microservices to communicate securely even across public networks without implementing complex service mesh solutions.
-
-- **📱 Remote Development**: Connect to development resources from anywhere, enabling seamless coding, testing, and debugging against internal development environments regardless of developer location. Supports modern distributed team workflows and remote work arrangements.
-
-- **☁️ Cloud-to-On-Premise Connectivity**: Link cloud services with on-premise infrastructure without exposing internal systems directly to the internet. Creates secure bridges for hybrid cloud architectures that require protected communication channels between environments.
-
-- **🌍 Geographic Distribution**: Access region-specific services from different locations, overcoming geographic restrictions or testing region-specific functionality. Useful for global applications that need to operate consistently across different markets.
-
-- **🧪 Testing Environments**: Create secure connections to isolated testing environments without compromising their isolation. Enables QA teams to access test systems securely while maintaining the integrity of test data and configurations.
-
-- **🔄 API Gateway Alternative**: Serve as a lightweight alternative to full API gateways for specific services. Provides secure access to internal APIs without the complexity and overhead of comprehensive API management solutions.
-
-- **🔒 Database Protection**: Enable secure database access while keeping database servers completely isolated from direct internet exposure. Creates a secure middle layer that protects valuable data assets from direct network attacks.
-
-- **🌐 Cross-Network IoT Communication**: Facilitate communication between IoT devices deployed across different network segments. Overcomes NAT, firewall, and routing challenges common in IoT deployments spanning multiple locations.
-
-- **🛠️ DevOps Pipeline Integration**: Connect CI/CD pipelines securely to deployment targets in various environments. Ensures build and deployment systems can securely reach production, staging, and testing environments without compromising network security.
+8. **Container Networking**:
+   - Cross-host container communication
+   - Container-to-external service bridging
 
 ## 🔧 Troubleshooting
 
-### 📜 Connection Issues
-- Verify firewall settings allow both TCP and UDP traffic on the specified ports
-- Check that the tunnel address is correctly specified in client mode
-- Ensure TLS certificates are properly generated
-- Increase log level to debug for more detailed connection information
-- Verify network stability between client and server endpoints
-- For UDP tunneling issues, check if your application requires specific UDP packet size configurations
-- For high-volume UDP applications, consider increasing the UDP_DATA_BUF_SIZE
-- If UDP packets seem to be lost, try adjusting the UDP_READ_TIMEOUT value
-- Check for NAT traversal issues if operating across different networks
-- Inspect system resource limits (file descriptors, etc.) if experiencing connection failures under load
-- Verify DNS resolution if using hostnames for tunnel or target addresses
+### 🔌 Connection Issues
 
-### 🚀 Performance Optimization
+1. **Tunnel Establishment Failure**:
+   - Check network connectivity and firewall rules
+   - Verify server is running and listening on specified port
+   - Use `log=debug` for detailed information
 
-#### Connection Pool Tuning
-- Adjust `MIN_POOL_CAPACITY` based on your minimum expected concurrent connections
-  - Too low: Increased latency during traffic spikes as new connections must be established
-  - Too high: Wasted resources maintaining idle connections
-  - Recommended starting point: 25-50% of your average concurrent connections
+2. **Data Transfer Errors**:
+   - Check TLS configuration
+   - Verify target service is accessible
+   - Check connection pool size and semaphore limits
 
-- Configure `MAX_POOL_CAPACITY` to handle peak loads while preventing resource exhaustion
-  - Too low: Connection failures during traffic spikes
-  - Too high: Potential resource exhaustion affecting system stability
-  - Recommended starting point: 150-200% of your peak concurrent connections
+3. **Performance Issues**:
+   - Adjust connection pool sizes
+   - Consider using QUIC protocol for better performance
+   - Monitor resource usage
 
-- Set `SEMAPHORE_LIMIT` based on expected peak concurrent tunneled sessions
-  - Too low: Rejected connections during traffic spikes
-  - Too high: Potential memory pressure from too many concurrent goroutines
-  - Recommended range: 1000-5000 for most applications, higher for high-throughput scenarios
+### 📊 Performance Optimization
 
-#### Network Configuration
-- Optimize TCP settings on both client and server:
-  - Adjust TCP keepalive intervals for long-lived connections
-  - Consider TCP buffer sizes for high-throughput applications
-  - Enable TCP BBR congestion control algorithm if available
+1. **Connection Pool Tuning**:
+   ```bash
+   export MIN_POOL_CAPACITY=32
+   export MAX_POOL_CAPACITY=2048
+   ```
+   - Increase minimum pool capacity for better responsiveness
+   - Increase maximum pool capacity for higher concurrency
 
-#### Resource Allocation
-- Ensure sufficient system resources on both client and server:
-  - Monitor CPU usage during peak loads
-  - Track memory consumption for connection management
-  - Verify sufficient network bandwidth between endpoints
+2. **Protocol Selection**:
+   - Use QUIC protocol for low-latency requirements
+   - Use WebSocket for firewall traversal
+   - Use standard TCP for general purposes
 
-#### Monitoring Recommendations
-- Implement connection tracking to identify bottlenecks
-- Monitor connection establishment success rates
-- Track data transfer rates to identify throughput issues
-- Measure connection latency to optimize user experience
+3. **Buffer Sizes**:
+   ```bash
+   export UDP_DATA_BUF_SIZE=16384
+   ```
+   - Increase UDP buffer size for handling larger datagrams
 
-#### Advanced Scenarios
-- For high-throughput applications:
-  ```bash
-  export MIN_POOL_CAPACITY=64
-  export MAX_POOL_CAPACITY=4096
-  export SEMAPHORE_LIMIT=8192
-  export REPORT_INTERVAL=2s
-  ```
+4. **Timeout Settings**:
+   ```bash
+   export UDP_READ_TIMEOUT=10s
+   export SHUTDOWN_TIMEOUT=10s
+   ```
+   - Adjust timeouts to accommodate network conditions
 
-- For low-latency applications:
-  ```bash
-  export MIN_POOL_CAPACITY=32
-  export MAX_POOL_CAPACITY=1024
-  export SEMAPHORE_LIMIT=2048
-  export REPORT_INTERVAL=1s
-  ```
+## 🤝 Contributing
 
-- For resource-constrained environments:
-  ```bash
-  export MIN_POOL_CAPACITY=8
-  export MAX_POOL_CAPACITY=256
-  export SEMAPHORE_LIMIT=512
-  export REPORT_INTERVAL=10s
-  ```
-
-## 👥 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
 ## 💬 Discussion
 
-Thank you to all the developers and users in the [NodeSeek](https://www.nodeseek.com/post-295115-1) community for your feedbacks. Feel free to reach out anytime with any technical issues.
+Join our [discussions](https://github.com/yosebyte/nodepass/discussions) to share your experiences and ideas.
 
 ## 📄 License
 
@@ -666,4 +616,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## ⭐ Stargazers
 
-[![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
+[![Star History Chart](https://api.star-history.com/svg?repos=yosebyte/nodepass&type=Date)](https://star-history.com/#yosebyte/nodepass&Date)
