@@ -69,12 +69,12 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
 
 **客户端模式**
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?log=info
+nodepass client://server.example.com:10101/127.0.0.1:8080
 ```
 
 **主控模式 (API)**
 ```bash
-nodepass "master://0.0.0.0:9090?log=info&tls=1"
+nodepass "master://0.0.0.0:10101/api?log=debug&tls=1"
 ```
 
 ## 🔧 常见使用场景
@@ -94,10 +94,6 @@ nodepass "master://0.0.0.0:9090?log=info&tls=1"
 3. 提交您的更改 (`git commit -m 'Add some amazing feature'`)
 4. 推送到分支 (`git push origin feature/amazing-feature`)
 5. 打开Pull Request
-
-## 💬 社区讨论
-
-感谢[NodeSeek](https://www.nodeseek.com/post-295115-1)社区各位开发者和用户的意见反馈，有任何技术问题欢迎随时交流。
 
 ## 📄 许可协议
 
