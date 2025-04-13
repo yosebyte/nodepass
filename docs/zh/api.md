@@ -164,9 +164,18 @@ function checkAndRestoreInstances() {
 
 ### 流量统计
 
-主控API提供基本的流量统计数据，但这些数据范围有限：
+主控API提供流量统计数据，但需要注意以下重要事项：
 
-1. **基本流量指标**：NodePass目前只周期性提供正反向TCP和UDP的流量累加值，需要前端配合存储和处理这些数据以得出有意义的统计信息。
+1. **启用调试模式**：流量统计功能仅在启用调试模式时可用。
+
+   ```bash
+   # 启用调试模式的主控
+   nodepass master://0.0.0.0:10101?log=debug
+   ```
+
+   如果未启用调试模式，API将不会收集或返回流量统计数据。
+
+2. **基本流量指标**：NodePass周期性地提供TCP和UDP流量在入站和出站方向上的累计值，前端应用需要存储和处理这些值以获得有意义的统计信息。
    ```javascript
    function processTrafficStats(instanceId, currentStats) {
      // 存储当前时间戳
@@ -201,7 +210,7 @@ function checkAndRestoreInstances() {
    }
    ```
 
-2. **数据持久化**：由于API只提供累加值，前端必须实现适当的存储和计算逻辑
+3. **数据持久化**：由于API只提供累计值，前端必须实现适当的存储和计算逻辑
    ```javascript
    // 前端流量历史存储结构示例
    const trafficHistory = {};
@@ -284,120 +293,30 @@ function checkAndRestoreInstances() {
    }
    ```
 
-## 响应格式
+## API端点文档
 
-所有API响应遵循标准格式：
+有关详细的API文档（包括请求和响应示例），请使用`/v1/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
 
-**成功响应：**
-```json
-{
-  "success": true,
-  "data": {
-    // 响应数据因端点而异
-  },
-  "error": null
-}
+- 可用的端点
+- 必需的参数
+- 响应格式
+- 请求和响应示例
+- 架构定义
+
+### 访问Swagger UI
+
+要访问Swagger UI文档：
+
+```
+http(s)://<api_addr>[<prefix>]/v1/docs
 ```
 
-**错误响应：**
-```json
-{
-  "success": false,
-  "data": null,
-  "error": {
-    "code": "错误代码",
-    "message": "人类可读的错误消息"
-  }
-}
+例如：
+```
+http://localhost:9090/api/v1/docs
 ```
 
-## API端点示例
-
-### 列出所有实例
-
-**请求：**
-```
-GET /api/v1/instances
-```
-
-**响应：**
-```json
-{
-  "success": true,
-  "data": {
-    "instances": [
-      {
-        "id": "ins_abc123",
-        "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1",
-        "status": "running",
-        "created_at": "2025-04-10T15:30:45Z",
-        "connections": 12,
-        "pool_size": 32
-      },
-      {
-        "id": "ins_def456",
-        "url": "client://server.example.com:10101/127.0.0.1:8080",
-        "status": "stopped",
-        "created_at": "2025-04-11T09:15:22Z",
-        "connections": 0,
-        "pool_size": 0
-      }
-    ]
-  },
-  "error": null
-}
-```
-
-### 创建新实例
-
-**请求：**
-```
-POST /api/v1/instances
-Content-Type: application/json
-
-{
-  "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1"
-}
-```
-
-**响应：**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "ins_ghi789",
-    "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1",
-    "status": "running",
-    "created_at": "2025-04-13T10:25:15Z"
-  },
-  "error": null
-}
-```
-
-### 控制实例
-
-**请求：**
-```
-PUT /api/v1/instances/ins_ghi789
-Content-Type: application/json
-
-{
-  "action": "restart"
-}
-```
-
-**响应：**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "ins_ghi789",
-    "status": "running",
-    "restarted_at": "2025-04-13T10:30:45Z"
-  },
-  "error": null
-}
-```
+Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试API。您可以针对运行中的NodePass主控实例执行API调用，并查看实际响应。
 
 ## 最佳实践
 
@@ -491,7 +410,7 @@ NodePass主控模式API提供了强大的接口，用于以编程方式管理Nod
 1. **实例持久化** - 存储配置并处理重启
 2. **实例ID变化** - 实现稳定的标识策略
 3. **适当的错误处理** - 从API错误中优雅恢复
-4. **流量统计** - 收集并可视化连接指标
+4. **流量统计** - 收集并可视化连接指标（需要启用调试模式）
 
 这些指南将帮助您构建前端应用与NodePass之间的健壮集成。
 

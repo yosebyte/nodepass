@@ -164,9 +164,18 @@ For proper lifecycle management:
 
 ### Traffic Statistics
 
-The Master API provides basic traffic statistics, but these are limited in scope:
+The Master API provides traffic statistics, but there are important requirements to note:
 
-1. **Basic Traffic Metrics**: NodePass only periodically provides cumulative TCP and UDP traffic values in both inbound and outbound directions. The frontend application needs to store and process these values to derive meaningful statistics.
+1. **Enable Debug Mode**: Traffic statistics are only available when debug mode is enabled. 
+
+   ```bash
+   # Master with debug mode enabled
+   nodepass master://0.0.0.0:10101?log=debug
+   ```
+
+   Without enabling debug mode, traffic statistics will not be collected or returned by the API.
+
+2. **Basic Traffic Metrics**: NodePass periodically provides cumulative TCP and UDP traffic values in both inbound and outbound directions. The frontend application needs to store and process these values to derive meaningful statistics.
    ```javascript
    function processTrafficStats(instanceId, currentStats) {
      // Store the current timestamp
@@ -201,7 +210,7 @@ The Master API provides basic traffic statistics, but these are limited in scope
    }
    ```
 
-2. **Data Persistence**: Since the API only provides cumulative values, the frontend must implement proper storage and calculation logic
+3. **Data Persistence**: Since the API only provides cumulative values, the frontend must implement proper storage and calculation logic
    ```javascript
    // Example of frontend storage structure for traffic history
    const trafficHistory = {};
@@ -284,120 +293,30 @@ Instance IDs will change after Master Mode restarts. To handle this:
    }
    ```
 
-## Response Format
+## API Endpoint Documentation
 
-All API responses follow a standard format:
+For detailed API documentation including request and response examples, please use the built-in Swagger UI documentation available at the `/v1/docs` endpoint. This interactive documentation provides comprehensive information about:
 
-**Success Response:**
-```json
-{
-  "success": true,
-  "data": {
-    // Response data varies by endpoint
-  },
-  "error": null
-}
+- Available endpoints
+- Required parameters
+- Response formats
+- Example requests and responses
+- Schema definitions
+
+### Accessing Swagger UI
+
+To access the Swagger UI documentation:
+
+```
+http(s)://<api_addr>[<prefix>]/v1/docs
 ```
 
-**Error Response:**
-```json
-{
-  "success": false,
-  "data": null,
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human-readable error message"
-  }
-}
+For example:
+```
+http://localhost:9090/api/v1/docs
 ```
 
-## API Endpoint Examples
-
-### List All Instances
-
-**Request:**
-```
-GET /api/v1/instances
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "instances": [
-      {
-        "id": "ins_abc123",
-        "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1",
-        "status": "running",
-        "created_at": "2025-04-10T15:30:45Z",
-        "connections": 12,
-        "pool_size": 32
-      },
-      {
-        "id": "ins_def456",
-        "url": "client://server.example.com:10101/127.0.0.1:8080",
-        "status": "stopped",
-        "created_at": "2025-04-11T09:15:22Z",
-        "connections": 0,
-        "pool_size": 0
-      }
-    ]
-  },
-  "error": null
-}
-```
-
-### Create a New Instance
-
-**Request:**
-```
-POST /api/v1/instances
-Content-Type: application/json
-
-{
-  "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "ins_ghi789",
-    "url": "server://0.0.0.0:10101/0.0.0.0:8080?tls=1",
-    "status": "running",
-    "created_at": "2025-04-13T10:25:15Z"
-  },
-  "error": null
-}
-```
-
-### Control an Instance
-
-**Request:**
-```
-PUT /api/v1/instances/ins_ghi789
-Content-Type: application/json
-
-{
-  "action": "restart"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "ins_ghi789",
-    "status": "running",
-    "restarted_at": "2025-04-13T10:30:45Z"
-  },
-  "error": null
-}
-```
+The Swagger UI provides a convenient way to explore and test the API directly in your browser. You can execute API calls against your running NodePass Master instance and see the actual responses.
 
 ## Best Practices
 
@@ -491,7 +410,7 @@ The NodePass Master Mode API provides a powerful interface for programmatic mana
 1. **Instance persistence** - Store configurations and handle restarts
 2. **Instance ID changes** - Implement stable identification strategies
 3. **Proper error handling** - Gracefully recover from API errors
-4. **Traffic statistics** - Collect and visualize connection metrics
+4. **Traffic statistics** - Collect and visualize connection metrics (requires debug mode)
 
 These guidelines will help you build robust integrations between your frontend applications and NodePass.
 
