@@ -6,16 +6,19 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/yosebyte/x/conn"
 	"github.com/yosebyte/x/log"
 )
 
-type server struct {
-	common
+type Server struct {
+	Common
 	serverMU       sync.Mutex
 	tunnelListener net.Listener
 	remoteListener net.Listener
@@ -24,20 +27,44 @@ type server struct {
 	semaphore      chan struct{}
 }
 
-func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *server {
-	common := &common{
-		tlsCode: tlsCode,
-		logger:  logger,
-	}
-	common.getAddress(parsedURL)
-	return &server{
-		common:    *common,
+func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *Server {
+	server := &Server{
+		Common: Common{
+			tlsCode: tlsCode,
+			logger:  logger,
+		},
 		tlsConfig: tlsConfig,
 		semaphore: make(chan struct{}, semaphoreLimit),
 	}
+	server.getAddress(parsedURL)
+	return server
 }
 
-func (s *server) Start() error {
+func (s *Server) Manage() {
+	s.logger.Info("Server started: %v(%v)/%v", s.tunnelAddr, s.remoteAddr, s.targetAddr)
+	go func() {
+		for {
+			if err := s.Start(); err != nil {
+				s.logger.Error("Server error: %v", err)
+				time.Sleep(serviceCooldown)
+				s.Stop()
+				s.logger.Info("Server restarted")
+			}
+		}
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	<-ctx.Done()
+	stop()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := s.shutdown(shutdownCtx, s.Stop); err != nil {
+		s.logger.Error("Server shutdown error: %v", err)
+	} else {
+		s.logger.Info("Server shutdown complete")
+	}
+}
+
+func (s *Server) Start() error {
 	s.initContext()
 	if err := s.initListener(); err != nil {
 		return err
@@ -48,10 +75,11 @@ func (s *server) Start() error {
 	s.remotePool = conn.NewServerPool(maxPoolCapacity, s.tlsConfig, s.remoteListener)
 	go s.remotePool.ServerManager()
 	go s.serverLaunch()
+	go s.statsReporter()
 	return s.healthCheck()
 }
 
-func (s *server) Stop() {
+func (s *Server) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -86,11 +114,7 @@ func (s *server) Stop() {
 	}
 }
 
-func (s *server) Shutdown(ctx context.Context) error {
-	return s.shutdown(ctx, s.Stop)
-}
-
-func (s *server) initListener() error {
+func (s *Server) initListener() error {
 	tunnelListener, err := net.Listen("tcp", s.tunnelAddr.String())
 	if err != nil {
 		return err
@@ -114,7 +138,7 @@ func (s *server) initListener() error {
 	return nil
 }
 
-func (s *server) tunnelHandshake() error {
+func (s *Server) tunnelHandshake() error {
 	tunnelTCPConn, err := s.tunnelListener.Accept()
 	if err != nil {
 		return err
@@ -133,7 +157,7 @@ func (s *server) tunnelHandshake() error {
 	return nil
 }
 
-func (s *server) serverLaunch() {
+func (s *Server) serverLaunch() {
 	for {
 		if s.remotePool.Ready() {
 			go s.serverTCPLoop()
@@ -144,7 +168,7 @@ func (s *server) serverLaunch() {
 	}
 }
 
-func (s *server) healthCheck() error {
+func (s *Server) healthCheck() error {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -163,7 +187,7 @@ func (s *server) healthCheck() error {
 	}
 }
 
-func (s *server) serverTCPLoop() {
+func (s *Server) serverTCPLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -220,7 +244,7 @@ func (s *server) serverTCPLoop() {
 	}
 }
 
-func (s *server) serverUDPLoop() {
+func (s *Server) serverUDPLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():

@@ -6,48 +6,83 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/yosebyte/x/conn"
 	"github.com/yosebyte/x/log"
 )
 
-type client struct {
-	common
+type Client struct {
+	Common
 	tunnelName string
 	bufReader  *bufio.Reader
 	signalChan chan string
 	errorCount int
 }
 
-func NewClient(parsedURL *url.URL, logger *log.Logger) *client {
-	common := &common{
-		logger: logger,
-	}
-	common.getAddress(parsedURL)
-	return &client{
-		common:     *common,
+func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
+	client := &Client{
+		Common: Common{
+			logger: logger,
+		},
 		tunnelName: parsedURL.Hostname(),
 		signalChan: make(chan string, semaphoreLimit),
 	}
+	client.getAddress(parsedURL)
+	return client
 }
 
-func (c *client) Start() error {
+func (c *Client) Manage() {
+	c.logger.Info("Client started: %v/%v", c.tunnelAddr, c.targetAddr)
+	go func() {
+		for {
+			if err := c.Start(); err != nil {
+				c.logger.Error("Client error: %v", err)
+				time.Sleep(serviceCooldown)
+				c.Stop()
+				c.logger.Info("Client restarted")
+			}
+		}
+	}()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	<-ctx.Done()
+	stop()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := c.shutdown(shutdownCtx, c.Stop); err != nil {
+		c.logger.Error("Client shutdown error: %v", err)
+	} else {
+		c.logger.Info("Client shutdown complete")
+	}
+}
+
+func (c *Client) Start() error {
 	c.initContext()
 	if err := c.tunnelHandshake(); err != nil {
 		return err
 	}
-	c.remotePool = conn.NewClientPool(minPoolCapacity, maxPoolCapacity, c.tlsCode, c.tunnelName, func() (net.Conn, error) {
-		return net.DialTCP("tcp", nil, c.remoteAddr)
-	})
+	c.remotePool = conn.NewClientPool(
+		minPoolCapacity,
+		maxPoolCapacity,
+		minPoolInterval,
+		maxPoolInterval,
+		c.tlsCode,
+		c.tunnelName,
+		func() (net.Conn, error) {
+			return net.DialTCP("tcp", nil, c.remoteAddr)
+		})
 	go c.remotePool.ClientManager()
 	go c.clientLaunch()
+	go c.statsReporter()
 	return c.signalQueue()
 }
 
-func (c *client) Stop() {
+func (c *Client) Stop() {
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -77,11 +112,7 @@ func (c *client) Stop() {
 	}
 }
 
-func (c *client) Shutdown(ctx context.Context) error {
-	return c.shutdown(ctx, c.Stop)
-}
-
-func (c *client) tunnelHandshake() error {
+func (c *Client) tunnelHandshake() error {
 	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
 	if err != nil {
 		return err
@@ -107,7 +138,7 @@ func (c *client) tunnelHandshake() error {
 	return nil
 }
 
-func (c *client) clientLaunch() {
+func (c *Client) clientLaunch() {
 	for {
 		if !c.remotePool.Ready() {
 			time.Sleep(time.Millisecond)
@@ -133,7 +164,7 @@ func (c *client) clientLaunch() {
 	}
 }
 
-func (c *client) signalQueue() error {
+func (c *Client) signalQueue() error {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -153,7 +184,7 @@ func (c *client) signalQueue() error {
 	}
 }
 
-func (c *client) clientTCPOnce(id string) {
+func (c *Client) clientTCPOnce(id string) {
 	c.logger.Debug("TCP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
@@ -166,7 +197,7 @@ func (c *client) clientTCPOnce(id string) {
 		}
 		return
 	}
-	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
+	c.logger.Debug("Remote connection: %v <- active %v / %v per %v", id, c.remotePool.Active(), c.remotePool.Capacity(), c.remotePool.Interval())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()
@@ -195,7 +226,7 @@ func (c *client) clientTCPOnce(id string) {
 	}
 }
 
-func (c *client) clientUDPOnce(id string) {
+func (c *Client) clientUDPOnce(id string) {
 	c.logger.Debug("UDP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.remotePool.ClientGet(id)
 	if remoteConn == nil {
@@ -208,7 +239,7 @@ func (c *client) clientUDPOnce(id string) {
 		}
 		return
 	}
-	c.logger.Debug("Remote connection: %v <- active %v / %v", id, c.remotePool.Active(), c.remotePool.Capacity())
+	c.logger.Debug("Remote connection: %v <- active %v / %v per %v", id, c.remotePool.Active(), c.remotePool.Capacity(), c.remotePool.Interval())
 	defer func() {
 		if remoteConn != nil {
 			remoteConn.Close()

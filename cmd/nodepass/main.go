@@ -3,9 +3,7 @@ package main
 import (
 	"net/url"
 	"os"
-	"os/signal"
 	"runtime"
-	"syscall"
 
 	"github.com/yosebyte/x/log"
 )
@@ -18,13 +16,7 @@ var (
 func main() {
 	parsedURL := getParsedURL(os.Args)
 	initLogLevel(parsedURL.Query().Get("log"))
-	coreDispatch(parsedURL, getStopSignal())
-}
-
-func getStopSignal() chan os.Signal {
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	return stop
+	coreDispatch(parsedURL)
 }
 
 func getParsedURL(args []string) *url.URL {
@@ -68,22 +60,24 @@ func getExitInfo() {
 │             ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░             │
 │             ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░             │
 ├─────────────────────────────────────────────────────────────┤
-│                 Universal TCP/UDP Tunneling                 │
-│            @https://github.com/yosebyte/nodepass            │
+│            >Universal TCP/UDP Tunneling Solution            │
+│            >https://github.com/yosebyte/nodepass            │
 ├─────────────────────────────────────────────────────────────┤
 │ Usage:                                                      │
 │ nodepass <core>://<tunnel>/<target>?<log>&<tls>&<crt>&<key> │
-├───────────┬──────────────────────────┬──────────────────────┤
-│ Parameter │ Values                   │ Description          │
-├───────────┼──────────────────────────┼──────────────────────┤
-│ <core>    │ server | client | ****** │ Operating mode       │
-│ <tunnel>  │ domain:port | ip:port    │ Tunnel address       │
-│ <target>  │ domain:port | ip:port    │ Target address       │
-│ <log>     │ debug | info | warn | .. │ Default level info   │
-│ <tls> *   │ 0 off | 1 on | 2 verify  │ Default TLS code-0   │
-│ <crt> *   │ <path/to/crt.file>       │ Custom certificate   │
-│ <key> *   │ <path/to/key.file>       │ Custom private key   │
-╰───────────┴──────────────────────────┴──────────────────────╯
+├──────────┬───────────────────────────┬──────────────────────┤
+│ Keys     │ Values                    │ Description          │
+├──────────┼───────────────────────────┼──────────────────────┤
+│ <core>   │ server | client | master  │ Operating mode       │
+│ <tunnel> │ host:port (IP | domain)   │ Tunnel address       │
+│ <target> │ host:port | API prefix    │ Target addr | prefix │
+│ <log>    │ debug | info | warn | ... │ Default level info   │
+│ * <tls>  │ 0 off | 1 on | 2 verify   │ Default TLS code-0   │
+│ * <crt>  │ <path/to/crt.pem>         │ Custom certificate   │
+│ * <key>  │ <path/to/key.pem>         │ Custom private key   │
+├──────────┴───────────────────────────┴──────────────────────┤
+│ * Vaild for server and master mode only                     │
+╰─────────────────────────────────────────────────────────────╯
 `, version, runtime.GOOS, runtime.GOARCH)
 	os.Exit(1)
 }

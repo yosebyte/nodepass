@@ -15,11 +15,12 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type common struct {
+type Common struct {
 	tlsCode          string
 	logger           *log.Logger
 	tunnelAddr       *net.TCPAddr
 	remoteAddr       *net.TCPAddr
+	targetAddr       string
 	targetTCPAddr    *net.TCPAddr
 	targetUDPAddr    *net.UDPAddr
 	tunnelTCPConn    *net.TCPConn
@@ -40,10 +41,12 @@ var (
 	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
 	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)
 	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)
+	minPoolInterval = getEnvAsDuration("MIN_POOL_INTERVAL", 1*time.Second)
+	maxPoolInterval = getEnvAsDuration("MAX_POOL_INTERVAL", 5*time.Second)
 	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
+	serviceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
+	shutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
 	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)
-	ServiceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
-	ShutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
 )
 
 func getEnvAsInt(name string, defaultValue int) int {
@@ -68,7 +71,7 @@ func getRandPort() int {
 	return rand.Intn(7169) + 1024
 }
 
-func (c *common) getAddress(parsedURL *url.URL) {
+func (c *Common) getAddress(parsedURL *url.URL) {
 	if tunnelAddr, err := net.ResolveTCPAddr("tcp", parsedURL.Host); err == nil {
 		c.tunnelAddr = tunnelAddr
 	} else {
@@ -78,27 +81,28 @@ func (c *common) getAddress(parsedURL *url.URL) {
 		IP:   c.tunnelAddr.IP,
 		Port: getRandPort(),
 	}
-	targetTCPAddr := strings.TrimPrefix(parsedURL.Path, "/")
-	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetTCPAddr); err == nil {
+	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
+	c.targetAddr = targetAddr
+	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
 		c.targetTCPAddr = targetTCPAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
-	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetTCPAddr); err == nil {
+	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
 		c.targetUDPAddr = targetUDPAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
 }
 
-func (c *common) initContext() {
+func (c *Common) initContext() {
 	if c.cancel != nil {
 		c.cancel()
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 }
 
-func (c *common) shutdown(ctx context.Context, stopFunc func()) error {
+func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -112,29 +116,38 @@ func (c *common) shutdown(ctx context.Context, stopFunc func()) error {
 	}
 }
 
-func (c *common) AddTCPStats(received, sent uint64) {
+func (c *Common) AddTCPStats(received, sent uint64) {
 	atomic.AddUint64(&c.tcpBytesReceived, received)
 	atomic.AddUint64(&c.tcpBytesSent, sent)
 }
 
-func (c *common) AddUDPReceived(bytes uint64) {
+func (c *Common) AddUDPReceived(bytes uint64) {
 	atomic.AddUint64(&c.udpBytesReceived, bytes)
 }
 
-func (c *common) AddUDPSent(bytes uint64) {
+func (c *Common) AddUDPSent(bytes uint64) {
 	atomic.AddUint64(&c.udpBytesSent, bytes)
 }
 
-func (c *common) GetTCPStats() (uint64, uint64) {
+func (c *Common) GetTCPStats() (uint64, uint64) {
 	return atomic.LoadUint64(&c.tcpBytesReceived), atomic.LoadUint64(&c.tcpBytesSent)
 }
 
-func (c *common) GetUDPStats() (uint64, uint64) {
+func (c *Common) GetUDPStats() (uint64, uint64) {
 	return atomic.LoadUint64(&c.udpBytesReceived), atomic.LoadUint64(&c.udpBytesSent)
 }
 
-func (c *common) GetTotalStats() (uint64, uint64) {
-	received := atomic.LoadUint64(&c.tcpBytesReceived) + atomic.LoadUint64(&c.udpBytesReceived)
-	sent := atomic.LoadUint64(&c.tcpBytesSent) + atomic.LoadUint64(&c.udpBytesSent)
-	return received, sent
+func (c *Common) statsReporter() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			tcpReceived, tcpSent := c.GetTCPStats()
+			udpReceived, udpSent := c.GetUDPStats()
+			c.logger.Debug("Periodic reporter: TRAFFIC_STATS|TCP_RX=%d|TCP_TX=%d|UDP_RX=%d|UDP_TX=%d",
+				tcpReceived, tcpSent, udpReceived, udpSent)
+		}
+		time.Sleep(reportInterval)
+	}
 }
