@@ -69,12 +69,12 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
 
 **Client Mode**
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?log=info
+nodepass client://server.example.com:10101/127.0.0.1:8080
 ```
 
 **Master Mode (API)**
 ```bash
-nodepass "master://0.0.0.0:9090?log=info&tls=1"
+nodepass "master://0.0.0.0:10101/api?log=debug&tls=1"
 ```
 
 ## 🔧 Common Use Cases
