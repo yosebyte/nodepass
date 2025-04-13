@@ -2,11 +2,11 @@
   <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="500">
 
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/yosebyte/nodepass)](https://golang.org/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
-</div>
+![GitHub last commit](https://img.shields.io/github/last-commit/yosebyte/nodepass)
 
-**语言**: [English](README.md) | [简体中文](README_zh.md)
+[English](README.md) | [简体中文](README_zh.md)
+</div>
 
 NodePass是一个优雅、高效的TCP隧道解决方案，可在网络端点之间创建安全的通信桥梁。通过建立一个TCP控制通道，NodePass能够在受限网络环境中实现无缝数据传输，同时为数据通道提供可配置的安全选项。其服务器-客户端架构允许灵活部署，使服务能够穿越防火墙、NAT和其他网络障碍。凭借智能连接池、最小资源占用和简洁的命令语法，NodePass为开发人员和系统管理员提供了一个强大且易用的工具，可以解决复杂的网络挑战，同时不影响安全性或性能。
 
