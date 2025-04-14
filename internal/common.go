@@ -47,6 +47,7 @@ var (
 	serviceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
 	shutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
 	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)
+	dialTimeout     = getEnvAsDuration("DIAL_TIMEOUT", 10*time.Second)
 )
 
 func getEnvAsInt(name string, defaultValue int) int {
