@@ -30,8 +30,7 @@ func runServer(parsedURL *url.URL) {
 }
 
 func runClient(parsedURL *url.URL) {
-	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
-	client := internal.NewClient(parsedURL, tlsCode, tlsConfig, logger)
+	client := internal.NewClient(parsedURL, logger)
 	client.Manage()
 }
 
