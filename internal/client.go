@@ -3,6 +3,7 @@ package internal
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/url"
@@ -23,15 +24,18 @@ type Client struct {
 	bufReader  *bufio.Reader
 	signalChan chan string
 	errorCount int
+	tlsConfig  *tls.Config
 }
 
-func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
+func NewClient(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *Client {
 	client := &Client{
 		Common: Common{
 			logger: logger,
+			tlsCode: tlsCode,
 		},
 		tunnelName: parsedURL.Hostname(),
 		signalChan: make(chan string, semaphoreLimit),
+		tlsConfig: tlsConfig,
 	}
 	client.getAddress(parsedURL)
 	return client
@@ -74,6 +78,14 @@ func (c *Client) Start() error {
 		c.tlsCode,
 		c.tunnelName,
 		func() (net.Conn, error) {
+			if c.tlsConfig != nil {
+				return tls.DialWithDialer(
+					&net.Dialer{Timeout: dialTimeout},
+					"tcp",
+					c.remoteAddr.String(),
+					c.tlsConfig,
+				)
+			}
 			return net.DialTCP("tcp", nil, c.remoteAddr)
 		})
 	go c.remotePool.ClientManager()
