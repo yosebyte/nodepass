@@ -10,7 +10,7 @@ English | [简体中文](README_zh.md)
 
 NodePass is an elegant, efficient TCP tunneling solution that creates secure communication bridges between network endpoints. By establishing a TCP control channel, NodePass facilitates seamless data transfer through otherwise restricted network environments while offering configurable security options for the data channel. Its server-client architecture allows for flexible deployment scenarios, enabling access to services across firewalls, NATs, and other network barriers. With its intelligent connection pooling, minimal resource footprint, and straightforward command syntax, NodePass provides developers and system administrators with a powerful yet easy-to-use tool for solving complex networking challenges without compromising on security or performance.
 
-## 📋 Key Features
+## 💎 Key Features
 
 - **🔀 Multiple Operating Modes**
   - Server mode accepting incoming tunnels with configurable security
