@@ -17,8 +17,8 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type wsServer struct {
-	common
+type WSServer struct {
+	Common
 	serverMU       sync.Mutex
 	tunnelListener net.Listener
 	wsServer       *nws.Server
@@ -29,20 +29,20 @@ type wsServer struct {
 	wsPool         *nws.Pool
 }
 
-func NewWSServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *wsServer {
-	common := &common{
+func NewWSServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *WSServer {
+	common := &Common{
 		tlsCode: tlsCode,
 		logger:  logger,
 	}
 	common.getAddress(parsedURL)
-	return &wsServer{
-		common:    *common,
+	return &WSServer{
+		Common:    *common,
 		tlsConfig: tlsConfig,
 		semaphore: make(chan struct{}, semaphoreLimit),
 	}
 }
 
-func (s *wsServer) Start() error {
+func (s *WSServer) Start() error {
 	s.initContext()
 	if err := s.initListener(); err != nil {
 		return err
@@ -74,7 +74,7 @@ func (s *wsServer) Start() error {
 	return s.healthCheck()
 }
 
-func (s *wsServer) Stop() {
+func (s *WSServer) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -118,11 +118,11 @@ func (s *wsServer) Stop() {
 	}
 }
 
-func (s *wsServer) Shutdown(ctx context.Context) error {
+func (s *WSServer) Shutdown(ctx context.Context) error {
 	return s.shutdown(ctx, s.Stop)
 }
 
-func (s *wsServer) initListener() error {
+func (s *WSServer) initListener() error {
 	tunnelListener, err := net.Listen("tcp", s.tunnelAddr.String())
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func (s *wsServer) initListener() error {
 	return nil
 }
 
-func (s *wsServer) tunnelHandshake() error {
+func (s *WSServer) tunnelHandshake() error {
 	tunnelTCPConn, err := s.tunnelListener.Accept()
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ func (s *wsServer) tunnelHandshake() error {
 	return nil
 }
 
-func (s *wsServer) serverLaunch() {
+func (s *WSServer) serverLaunch() {
 	for {
 		if s.remotePool.Ready() && s.wsPool.Ready() {
 			go s.serverTCPLoop()
@@ -186,7 +186,7 @@ func (s *wsServer) serverLaunch() {
 	}
 }
 
-func (s *wsServer) serverWSLoop() {
+func (s *WSServer) serverWSLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -243,7 +243,7 @@ func (s *wsServer) serverWSLoop() {
 	}
 }
 
-func (s *wsServer) healthCheck() error {
+func (s *WSServer) healthCheck() error {
 	for {
 		select {
 		case <-s.ctx.Done():

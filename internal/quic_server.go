@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"net/url"
 	"strconv"
@@ -16,8 +17,8 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type quicServer struct {
-	common
+type QuicServer struct {
+	Common
 	serverMU       sync.Mutex
 	tunnelListener net.Listener
 	quicListener   quic.Listener
@@ -29,20 +30,20 @@ type quicServer struct {
 	quicPool       *nquic.Pool
 }
 
-func NewQuicServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *quicServer {
-	common := &common{
+func NewQuicServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *QuicServer {
+	common := &Common{
 		tlsCode: tlsCode,
 		logger:  logger,
 	}
 	common.getAddress(parsedURL)
-	return &quicServer{
-		common:    *common,
+	return &QuicServer{
+		Common:    *common,
 		tlsConfig: tlsConfig,
 		semaphore: make(chan struct{}, semaphoreLimit),
 	}
 }
 
-func (s *quicServer) Start() error {
+func (s *QuicServer) Start() error {
 	s.initContext()
 	if err := s.initListener(); err != nil {
 		return err
@@ -73,7 +74,7 @@ func (s *quicServer) Start() error {
 	return s.healthCheck()
 }
 
-func (s *quicServer) Stop() {
+func (s *QuicServer) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -117,11 +118,11 @@ func (s *quicServer) Stop() {
 	}
 }
 
-func (s *quicServer) Shutdown(ctx context.Context) error {
+func (s *QuicServer) Shutdown(ctx context.Context) error {
 	return s.shutdown(ctx, s.Stop)
 }
 
-func (s *quicServer) initListener() error {
+func (s *QuicServer) initListener() error {
 	tunnelListener, err := net.Listen("tcp", s.tunnelAddr.String())
 	if err != nil {
 		return err
@@ -145,7 +146,7 @@ func (s *quicServer) initListener() error {
 	return nil
 }
 
-func (s *quicServer) tunnelHandshake() error {
+func (s *QuicServer) tunnelHandshake() error {
 	tunnelTCPConn, err := s.tunnelListener.Accept()
 	if err != nil {
 		return err
@@ -166,7 +167,7 @@ func (s *quicServer) tunnelHandshake() error {
 	return nil
 }
 
-func (s *quicServer) serverLaunch() {
+func (s *QuicServer) serverLaunch() {
 	for {
 		if s.remotePool.Ready() && s.quicPool.Ready() {
 			go s.serverTCPLoop()
@@ -178,7 +179,7 @@ func (s *quicServer) serverLaunch() {
 	}
 }
 
-func (s *quicServer) serverQuicLoop() {
+func (s *QuicServer) serverQuicLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():

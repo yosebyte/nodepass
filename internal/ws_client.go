@@ -17,8 +17,8 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type wsClient struct {
-	common
+type WSClient struct {
+	Common
 	tunnelName    string
 	bufReader     *bufio.Reader
 	signalChan    chan string
@@ -28,19 +28,19 @@ type wsClient struct {
 	supportsWS    bool
 }
 
-func NewWSClient(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *wsClient {
-	common := &common{
+func NewWSClient(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *WSClient {
+	common := &Common{
 		logger: logger,
 	}
 	common.getAddress(parsedURL)
-	return &wsClient{
-		common:     *common,
+	return &WSClient{
+		Common:     *common,
 		tunnelName: parsedURL.Hostname(),
 		signalChan: make(chan string, semaphoreLimit),
 	}
 }
 
-func (c *wsClient) Start() error {
+func (c *WSClient) Start() error {
 	c.initContext()
 	if err := c.tunnelHandshake(); err != nil {
 		return err
@@ -65,7 +65,7 @@ func (c *wsClient) Start() error {
 	return c.signalQueue()
 }
 
-func (c *wsClient) getTLSConfig() *tls.Config {
+func (c *WSClient) getTLSConfig() *tls.Config {
 	// 根据tlsCode创建TLS配置
 	if c.tlsCode == "0" {
 		return nil
@@ -86,7 +86,7 @@ func (c *wsClient) getTLSConfig() *tls.Config {
 	return config
 }
 
-func (c *wsClient) Stop() {
+func (c *WSClient) Stop() {
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -121,11 +121,11 @@ func (c *wsClient) Stop() {
 	}
 }
 
-func (c *wsClient) Shutdown(ctx context.Context) error {
+func (c *WSClient) Shutdown(ctx context.Context) error {
 	return c.shutdown(ctx, c.Stop)
 }
 
-func (c *wsClient) tunnelHandshake() error {
+func (c *WSClient) tunnelHandshake() error {
 	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func (c *wsClient) tunnelHandshake() error {
 	return nil
 }
 
-func (c *wsClient) clientLaunch() {
+func (c *WSClient) clientLaunch() {
 	for {
 		if !c.remotePool.Ready() || (c.supportsWS && !c.wsPool.Ready()) {
 			time.Sleep(time.Millisecond)
@@ -191,7 +191,7 @@ func (c *wsClient) clientLaunch() {
 	}
 }
 
-func (c *wsClient) signalQueue() error {
+func (c *WSClient) signalQueue() error {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -211,7 +211,7 @@ func (c *wsClient) signalQueue() error {
 	}
 }
 
-func (c *wsClient) clientWSOnce(id string) {
+func (c *WSClient) clientWSOnce(id string) {
 	c.logger.Debug("WebSocket launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.wsPool.ClientGet(id)
 	if remoteConn == nil {

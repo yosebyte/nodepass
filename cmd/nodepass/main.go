@@ -68,22 +68,24 @@ func getExitInfo() {
 │             ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░             │
 │             ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░             │
 ├─────────────────────────────────────────────────────────────┤
-│                 Universal TCP/UDP Tunneling                 │
-│            @https://github.com/yosebyte/nodepass            │
+│            >Universal TCP/UDP/QUIC/WS Tunneling            │
+│            >https://github.com/yosebyte/nodepass            │
 ├─────────────────────────────────────────────────────────────┤
 │ Usage:                                                      │
 │ nodepass <core>://<tunnel>/<target>?<log>&<tls>&<crt>&<key> │
 ├───────────┬──────────────────────────┬──────────────────────┤
 │ Parameter │ Values                   │ Description          │
 ├───────────┼──────────────────────────┼──────────────────────┤
-│ <core>    │ server | client | ****** │ Operating mode       │
+│ <core>    │ server | client | master │ Operating mode       │
 │ <tunnel>  │ domain:port | ip:port    │ Tunnel address       │
 │ <target>  │ domain:port | ip:port    │ Target address       │
 │ <log>     │ debug | info | warn | .. │ Default level info   │
 │ <tls> *   │ 0 off | 1 on | 2 verify  │ Default TLS code-0   │
 │ <crt> *   │ <path/to/crt.file>       │ Custom certificate   │
 │ <key> *   │ <path/to/key.file>       │ Custom private key   │
-╰───────────┴──────────────────────────┴──────────────────────╯
+├───────────┴──────────────────────────┴──────────────────────┤
+│ * Valid for server and master mode only                     │
+╰─────────────────────────────────────────────────────────────╯
 `, version, runtime.GOOS, runtime.GOARCH)
 	os.Exit(1)
 }

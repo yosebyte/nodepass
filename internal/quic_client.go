@@ -16,8 +16,8 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type quicClient struct {
-	common
+type QuicClient struct {
+	Common
 	tunnelName string
 	bufReader  *bufio.Reader
 	signalChan chan string
@@ -26,19 +26,19 @@ type quicClient struct {
 	quicPool   *nquic.Pool
 }
 
-func NewQuicClient(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *quicClient {
-	common := &common{
+func NewQuicClient(parsedURL *url.URL, tlsConfig *tls.Config, logger *log.Logger) *QuicClient {
+	common := &Common{
 		logger: logger,
 	}
 	common.getAddress(parsedURL)
-	return &quicClient{
-		common:     *common,
+	return &QuicClient{
+		Common:     *common,
 		tunnelName: parsedURL.Hostname(),
 		signalChan: make(chan string, semaphoreLimit),
 	}
 }
 
-func (c *quicClient) Start() error {
+func (c *QuicClient) Start() error {
 	c.initContext()
 	if err := c.tunnelHandshake(); err != nil {
 		return err
@@ -58,7 +58,7 @@ func (c *quicClient) Start() error {
 	return c.signalQueue()
 }
 
-func (c *quicClient) getTLSConfig() *tls.Config {
+func (c *QuicClient) getTLSConfig() *tls.Config {
 	// 根据tlsCode创建TLS配置
 	if c.tlsCode == "0" {
 		return nil
@@ -79,7 +79,7 @@ func (c *quicClient) getTLSConfig() *tls.Config {
 	return config
 }
 
-func (c *quicClient) Stop() {
+func (c *QuicClient) Stop() {
 	if c.cancel != nil {
 		c.cancel()
 	}
@@ -114,11 +114,11 @@ func (c *quicClient) Stop() {
 	}
 }
 
-func (c *quicClient) Shutdown(ctx context.Context) error {
+func (c *QuicClient) Shutdown(ctx context.Context) error {
 	return c.shutdown(ctx, c.Stop)
 }
 
-func (c *quicClient) tunnelHandshake() error {
+func (c *QuicClient) tunnelHandshake() error {
 	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func (c *quicClient) tunnelHandshake() error {
 	return nil
 }
 
-func (c *quicClient) clientLaunch() {
+func (c *QuicClient) clientLaunch() {
 	for {
 		if !c.remotePool.Ready() || (c.supportsQuic && !c.quicPool.Ready()) {
 			time.Sleep(time.Millisecond)
@@ -184,7 +184,7 @@ func (c *quicClient) clientLaunch() {
 	}
 }
 
-func (c *quicClient) signalQueue() error {
+func (c *QuicClient) signalQueue() error {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -204,7 +204,7 @@ func (c *quicClient) signalQueue() error {
 	}
 }
 
-func (c *quicClient) clientQuicOnce(id string) {
+func (c *QuicClient) clientQuicOnce(id string) {
 	c.logger.Debug("QUIC launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 	remoteConn := c.quicPool.ClientGet(id)
 	if remoteConn == nil {

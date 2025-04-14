@@ -18,6 +18,9 @@ func coreDispatch(parsedURL *url.URL, signalChan chan os.Signal) {
 		runServer(parsedURL, signalChan)
 	case "client":
 		runClient(parsedURL, signalChan)
+	case "master":
+		logger.Fatal("Master mode not implemented in this version")
+		getExitInfo()
 	default:
 		logger.Fatal("Unknown core: %v", parsedURL.Scheme)
 		getExitInfo()

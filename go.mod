@@ -1,11 +1,11 @@
 module github.com/yosebyte/nodepass
 
-go 1.18
+go 1.24.1
 
 require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/quic-go/quic-go v0.40.1
-	github.com/yosebyte/x v1.1.6
+	github.com/yosebyte/x v1.1.8
 )
 
 require (

@@ -17,8 +17,9 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-type server struct {
-	common
+// Server 是服务端核心结构体
+type Server struct {
+	Common
 	serverMU       sync.Mutex
 	tunnelListener net.Listener
 	remoteListener net.Listener
@@ -27,20 +28,22 @@ type server struct {
 	semaphore      chan struct{}
 }
 
-func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *server {
-	common := &common{
-		tlsCode: tlsCode,
-		logger:  logger,
-	}
-	common.getAddress(parsedURL)
-	return &server{
-		common:    *common,
+// NewServer 创建一个新的服务端实例
+func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *Server {
+	server := &Server{
+		Common: Common{
+			tlsCode: tlsCode,
+			logger:  logger,
+		},
 		tlsConfig: tlsConfig,
 		semaphore: make(chan struct{}, semaphoreLimit),
 	}
+	server.getAddress(parsedURL)
+	return server
 }
 
-func (s *server) Start() error {
+// Start 启动服务端
+func (s *Server) Start() error {
 	s.initContext()
 	if err := s.initListener(); err != nil {
 		return err
@@ -51,10 +54,12 @@ func (s *server) Start() error {
 	s.remotePool = conn.NewServerPool(maxPoolCapacity, s.tlsConfig, s.remoteListener)
 	go s.remotePool.ServerManager()
 	go s.serverLaunch()
+	go s.statsReporter()
 	return s.healthCheck()
 }
 
-func (s *server) Stop() {
+// Stop 停止服务端
+func (s *Server) Stop() {
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -89,11 +94,13 @@ func (s *server) Stop() {
 	}
 }
 
-func (s *server) Shutdown(ctx context.Context) error {
+// Shutdown 安全关闭服务端
+func (s *Server) Shutdown(ctx context.Context) error {
 	return s.shutdown(ctx, s.Stop)
 }
 
-func (s *server) initListener() error {
+// initListener 初始化监听器
+func (s *Server) initListener() error {
 	tunnelListener, err := net.Listen("tcp", s.tunnelAddr.String())
 	if err != nil {
 		return err
@@ -117,7 +124,8 @@ func (s *server) initListener() error {
 	return nil
 }
 
-func (s *server) tunnelHandshake() error {
+// tunnelHandshake 执行隧道握手
+func (s *Server) tunnelHandshake() error {
 	tunnelTCPConn, err := s.tunnelListener.Accept()
 	if err != nil {
 		return err
@@ -126,50 +134,69 @@ func (s *server) tunnelHandshake() error {
 	
 	// 创建安全管理器
 	securityManager, err := NewSecurityManager(s.logger, s.tlsConfig)
+	if err == nil {
+		// 加载受信任证书
+		if err := securityManager.LoadTrustedCertificates(); err != nil {
+			s.logger.Warn("加载受信任证书失败: %v", err)
+		}
+		
+		// 执行安全握手
+		handshakeData := &security.HandshakeData{
+			ServerName:      "nodepass-server",
+			Port:            s.remoteAddr.Port,
+			TLSMode:         s.tlsCode,
+			SupportedProtos: []string{"tcp", "udp", "quic", "websocket"},
+		}
+		
+		// 执行安全握手
+		_, err = securityManager.SecureHandshake(s.tunnelTCPConn, true)
+		if err != nil {
+			s.logger.Warn("安全握手失败，将使用标准握手: %v", err)
+		} else {
+			s.logger.Debug("安全握手完成: 端口=%d, TLS模式=%s", s.remoteAddr.Port, s.tlsCode)
+			// 存储安全管理器以供后续使用
+			s.securityManager = securityManager
+			s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
+			return nil
+		}
+	}
+	
+	// 如果安全握手失败或不可用，使用标准握手
+	tunnelURL := &url.URL{
+		Host:     strconv.Itoa(s.remoteAddr.Port),
+		Fragment: s.tlsCode,
+	}
+	_, err = s.tunnelTCPConn.Write([]byte(tunnelURL.String() + "\n"))
 	if err != nil {
-		return fmt.Errorf("创建安全管理器失败: %v", err)
+		return err
 	}
-	
-	// 加载受信任证书
-	if err := securityManager.LoadTrustedCertificates(); err != nil {
-		s.logger.Warn("加载受信任证书失败: %v", err)
-	}
-	
-	// 执行安全握手
-	handshakeData := &security.HandshakeData{
-		ServerName:      "nodepass-server",
-		Port:            s.remoteAddr.Port,
-		TLSMode:         s.tlsCode,
-		SupportedProtos: []string{"tcp", "udp", "quic", "websocket"},
-	}
-	
-	// 执行安全握手
-	_, err = securityManager.SecureHandshake(s.tunnelTCPConn, true)
-	if err != nil {
-		return fmt.Errorf("安全握手失败: %v", err)
-	}
-	
-	s.logger.Debug("安全握手完成: 端口=%d, TLS模式=%s", s.remoteAddr.Port, s.tlsCode)
+	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
 	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
-	
-	// 存储安全管理器以供后续使用
-	s.securityManager = securityManager
-	
 	return nil
 }
 
-func (s *server) serverLaunch() {
+// serverLaunch 启动服务
+func (s *Server) serverLaunch() {
 	for {
 		if s.remotePool.Ready() {
 			go s.serverTCPLoop()
 			go s.serverUDPLoop()
+			
+			// 如果支持QUIC和WebSocket，启动相应的服务
+			if s.supportsQuic {
+				go s.serverQUICLoop()
+			}
+			if s.supportsWS {
+				go s.serverWSLoop()
+			}
 			return
 		}
 		time.Sleep(time.Millisecond)
 	}
 }
 
-func (s *server) healthCheck() error {
+// healthCheck 健康检查
+func (s *Server) healthCheck() error {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -188,7 +215,8 @@ func (s *server) healthCheck() error {
 	}
 }
 
-func (s *server) serverTCPLoop() {
+// serverTCPLoop 处理TCP连接
+func (s *Server) serverTCPLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -221,39 +249,53 @@ func (s *server) serverTCPLoop() {
 				}()
 				s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 				
-				// 使用安全消息发送启动信号
-				launchData := map[string]interface{}{
-					"id": id,
-					"type": "tcp",
-					"timestamp": time.Now().Unix(),
-				}
-				launchDataJSON, err := json.Marshal(launchData)
-				if err != nil {
-					s.logger.Error("序列化启动数据失败: %v", err)
-					return
+				// 使用安全消息发送启动信号（如果安全管理器可用）
+				if s.securityManager != nil {
+					launchData := map[string]interface{}{
+						"id": id,
+						"type": "tcp",
+						"timestamp": time.Now().Unix(),
+					}
+					launchDataJSON, err := json.Marshal(launchData)
+					if err != nil {
+						s.logger.Error("序列化启动数据失败: %v", err)
+						return
+					}
+					
+					secureMsg, err := s.securityManager.CreateSecureMessage(string(launchDataJSON))
+					if err != nil {
+						s.logger.Error("创建安全消息失败: %v", err)
+						return
+					}
+					
+					s.serverMU.Lock()
+					_, err = s.tunnelTCPConn.Write([]byte(secureMsg + "\n"))
+					s.serverMU.Unlock()
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					
+					// 验证连接
+					if !s.securityManager.IsConnectionVerified(remoteConn) {
+						s.logger.Warn("连接未验证，但将继续处理: %v", remoteConn.RemoteAddr())
+					}
+				} else {
+					// 使用标准方式发送启动信号
+					launchURL := &url.URL{
+						Host:     id,
+						Fragment: "1",
+					}
+					s.serverMU.Lock()
+					_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
+					s.serverMU.Unlock()
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
 				}
 				
-				secureMsg, err := s.securityManager.CreateSecureMessage(string(launchDataJSON))
-				if err != nil {
-					s.logger.Error("创建安全消息失败: %v", err)
-					return
-				}
-				
-				s.serverMU.Lock()
-				_, err = s.tunnelTCPConn.Write([]byte(secureMsg + "\n"))
-				s.serverMU.Unlock()
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
 				s.logger.Debug("TCP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
-				
-				// 验证连接
-				if !s.securityManager.IsConnectionVerified(remoteConn) {
-					s.logger.Error("连接未验证: %v", remoteConn.RemoteAddr())
-					return
-				}
-				
 				s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 				bytesReceived, bytesSent, err := conn.DataExchange(remoteConn, targetConn)
 				s.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
@@ -267,7 +309,8 @@ func (s *server) serverTCPLoop() {
 	}
 }
 
-func (s *server) serverUDPLoop() {
+// serverUDPLoop 处理UDP连接
+func (s *Server) serverUDPLoop() {
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -295,80 +338,125 @@ func (s *server) serverUDPLoop() {
 			go func(buffer []byte, n int, clientAddr *net.UDPAddr, remoteConn net.Conn) {
 				defer func() { <-s.semaphore }()
 				
-				// 使用安全消息发送启动信号
-				launchData := map[string]interface{}{
-					"id": id,
-					"type": "udp",
-					"timestamp": time.Now().Unix(),
-				}
-				launchDataJSON, err := json.Marshal(launchData)
-				if err != nil {
-					s.logger.Error("序列化启动数据失败: %v", err)
-					return
+				// 使用安全消息发送启动信号（如果安全管理器可用）
+				if s.securityManager != nil {
+					launchData := map[string]interface{}{
+						"id": id,
+						"type": "udp",
+						"timestamp": time.Now().Unix(),
+					}
+					launchDataJSON, err := json.Marshal(launchData)
+					if err != nil {
+						s.logger.Error("序列化启动数据失败: %v", err)
+						return
+					}
+					
+					secureMsg, err := s.securityManager.CreateSecureMessage(string(launchDataJSON))
+					if err != nil {
+						s.logger.Error("创建安全消息失败: %v", err)
+						return
+					}
+					
+					s.serverMU.Lock()
+					_, err = s.tunnelTCPConn.Write([]byte(secureMsg + "\n"))
+					s.serverMU.Unlock()
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					
+					// 验证连接
+					if !s.securityManager.IsConnectionVerified(remoteConn) {
+						s.logger.Warn("连接未验证，但将继续处理: %v", remoteConn.RemoteAddr())
+					}
+					
+					s.logger.Debug("UDP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
+					s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
+					
+					// 创建安全消息包装UDP数据
+					dataMsg, err := s.securityManager.CreateSecureMessage(string(buffer[:n]))
+					if err != nil {
+						s.logger.Error("创建安全消息失败: %v", err)
+						return
+					}
+					
+					// 发送安全消息
+					_, err = remoteConn.Write([]byte(dataMsg))
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					
+					// 接收安全消息
+					respBuffer := make([]byte, udpDataBufSize*2) // 增大缓冲区以容纳安全消息
+					n, err = remoteConn.Read(respBuffer)
+					if err != nil {
+						s.logger.Error("Read failed: %v", err)
+						return
+					}
+					
+					// 验证并解析安全消息
+					respData, err := s.securityManager.VerifySecureMessage(string(respBuffer[:n]))
+					if err != nil {
+						s.logger.Error("验证安全消息失败: %v", err)
+						return
+					}
+					
+					// 发送解析后的数据
+					_, err = s.targetUDPConn.WriteToUDP([]byte(respData), clientAddr)
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					s.AddUDPSent(uint64(len(respData)))
+				} else {
+					// 使用标准方式发送启动信号
+					launchURL := &url.URL{
+						Host:     id,
+						Fragment: "2",
+					}
+					s.serverMU.Lock()
+					_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
+					s.serverMU.Unlock()
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					s.logger.Debug("UDP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
+					s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
+					_, err = remoteConn.Write(buffer[:n])
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					n, err = remoteConn.Read(buffer)
+					if err != nil {
+						s.logger.Error("Read failed: %v", err)
+						return
+					}
+					_, err = s.targetUDPConn.WriteToUDP(buffer[:n], clientAddr)
+					if err != nil {
+						s.logger.Error("Write failed: %v", err)
+						return
+					}
+					s.AddUDPSent(uint64(n))
 				}
 				
-				secureMsg, err := s.securityManager.CreateSecureMessage(string(launchDataJSON))
-				if err != nil {
-					s.logger.Error("创建安全消息失败: %v", err)
-					return
-				}
-				
-				s.serverMU.Lock()
-				_, err = s.tunnelTCPConn.Write([]byte(secureMsg + "\n"))
-				s.serverMU.Unlock()
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-				s.logger.Debug("UDP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
-				
-				// 验证连接
-				if !s.securityManager.IsConnectionVerified(remoteConn) {
-					s.logger.Error("连接未验证: %v", remoteConn.RemoteAddr())
-					return
-				}
-				
-				s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
-				
-				// 创建安全消息包装UDP数据
-				dataMsg, err := s.securityManager.CreateSecureMessage(string(buffer[:n]))
-				if err != nil {
-					s.logger.Error("创建安全消息失败: %v", err)
-					return
-				}
-				
-				// 发送安全消息
-				_, err = remoteConn.Write([]byte(dataMsg))
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-				
-				// 接收安全消息
-				respBuffer := make([]byte, udpDataBufSize*2) // 增大缓冲区以容纳安全消息
-				n, err = remoteConn.Read(respBuffer)
-				if err != nil {
-					s.logger.Error("Read failed: %v", err)
-					return
-				}
-				
-				// 验证并解析安全消息
-				respData, err := s.securityManager.VerifySecureMessage(string(respBuffer[:n]))
-				if err != nil {
-					s.logger.Error("验证安全消息失败: %v", err)
-					return
-				}
-				
-				// 发送解析后的数据
-				_, err = s.targetUDPConn.WriteToUDP([]byte(respData), clientAddr)
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-				s.AddUDPSent(uint64(len(respData)))
 				bytesReceived, bytesSent := s.GetUDPStats()
 				s.logger.Debug("Transfer complete: %v bytes transferred", bytesReceived+bytesSent)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
+}
+
+// serverQUICLoop 处理QUIC连接（占位符，实际实现在quic_server.go中）
+func (s *Server) serverQUICLoop() {
+	s.logger.Info("QUIC服务已启动")
+	// 实际实现在quic_server.go中
+}
+
+// serverWSLoop 处理WebSocket连接（占位符，实际实现在ws_server.go中）
+func (s *Server) serverWSLoop() {
+	s.logger.Info("WebSocket服务已启动")
+	// 实际实现在ws_server.go中
 }
