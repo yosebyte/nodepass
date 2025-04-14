@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
 ![GitHub last commit](https://img.shields.io/github/last-commit/yosebyte/nodepass)
 
-[English](README.md) | [简体中文](README_zh.md)
+English | [简体中文](README_zh.md)
 </div>
 
 NodePass is an elegant, efficient TCP tunneling solution that creates secure communication bridges between network endpoints. By establishing a TCP control channel, NodePass facilitates seamless data transfer through otherwise restricted network environments while offering configurable security options for the data channel. Its server-client architecture allows for flexible deployment scenarios, enabling access to services across firewalls, NATs, and other network barriers. With its intelligent connection pooling, minimal resource footprint, and straightforward command syntax, NodePass provides developers and system administrators with a powerful yet easy-to-use tool for solving complex networking challenges without compromising on security or performance.
@@ -85,7 +85,7 @@ Explore the complete documentation to learn more about NodePass:
 - [How It Works](/docs/en/how-it-works.md)
 - [Troubleshooting](/docs/en/troubleshooting.md)
 
-## 🤝 Contributing
+## 👥 Contributing
 
 Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
