@@ -39,6 +39,40 @@ NodePass is an elegant, efficient TCP tunneling solution that creates secure com
   - Environment variables for fine-tuning performance
   - Intelligent defaults for most use cases
 
+## 📋 Quick Start
+
+### 📥 Installation
+
+- **Pre-built Binaries**: Download from [releases page](https://github.com/yosebyte/nodepass/releases).
+- **Go Install**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
+- **Container Image**: `docker pull ghcr.io/yosebyte/nodepass:latest`
+- **Management Script**: `bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)`
+
+### 🚀 Basic Usage
+
+**Server Mode**
+```bash
+nodepass "server://:10101/127.0.0.1:8080?log=debug&tls=1"
+```
+
+**Client Mode**
+```bash
+nodepass client://server.example.com:10101/127.0.0.1:8080
+```
+
+**Master Mode (API)**
+```bash
+nodepass "master://:10101/api?log=debug&tls=1"
+```
+
+## 🔧 Common Use Cases
+
+- **Remote Access**: Securely access internal services from external locations
+- **Firewall Bypass**: Navigate through restrictive network environments
+- **Secure Microservices**: Establish encrypted channels between distributed components
+- **Database Protection**: Enable secure database access while keeping servers isolated
+- **IoT Communication**: Connect devices across different network segments
+
 ## 📚 Documentation
 
 Explore the complete documentation to learn more about NodePass:
@@ -51,53 +85,17 @@ Explore the complete documentation to learn more about NodePass:
 - [How It Works](/docs/en/how-it-works.md)
 - [Troubleshooting](/docs/en/troubleshooting.md)
 
-## 📋 Quick Start
+## 🤝 Contributing
 
-### 📥 Installation
+Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
 
-- **Pre-built Binaries**: Download from [releases page](https://github.com/yosebyte/nodepass/releases).
-- **Go Install**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
-- **Container Image**: `docker pull ghcr.io/yosebyte/nodepass:latest`
-- **Linux Management Script**: `bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)`
+## 💬 Discussion
 
-### 🚀 Basic Usage
-
-**Server Mode**
-```bash
-nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1"
-```
-
-**Client Mode**
-```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080
-```
-
-**Master Mode (API)**
-```bash
-nodepass "master://0.0.0.0:10101/api?log=debug&tls=1"
-```
-
-## 🔧 Common Use Cases
-
-- **Remote Access**: Securely access internal services from external locations
-- **Firewall Bypass**: Navigate through restrictive network environments
-- **Secure Microservices**: Establish encrypted channels between distributed components
-- **Database Protection**: Enable secure database access while keeping servers isolated
-- **IoT Communication**: Connect devices across different network segments
-
-## 👥 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Join our [discussions](https://github.com/yosebyte/nodepass/discussions) to share your experiences and ideas.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Project `NodePass` is licensed under the [MIT LICENSE](LICENSE).
 
 ## ⭐ Stargazers
 
