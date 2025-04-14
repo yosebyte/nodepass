@@ -96,6 +96,8 @@ After installation, verify that NodePass is correctly installed by checking the 
 nodepass
 ```
 
+![np-cli](https://cdn.yobc.de/assets/np-cli.png)
+
 ## Next Steps
 
 Now that you have NodePass installed, you can:
