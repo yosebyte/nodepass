@@ -16,7 +16,7 @@ NodePass在主控模式（Master Mode）下提供了RESTful API，使前端应�
 ### 基本URL
 
 ```
-http(s)://<api_addr>[<prefix>]/v1/
+master://<api_addr>/<prefix>?<log>&<tls>
 ```
 
 其中：

@@ -16,7 +16,7 @@ When running NodePass in Master Mode (`master://`), it exposes a REST API that a
 ### Base URL
 
 ```
-http(s)://<api_addr>[<prefix>]/v1/
+master://<api_addr>/<prefix>?<log>&<tls>
 ```
 
 Where:

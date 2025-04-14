@@ -9,28 +9,35 @@ import (
 )
 
 var (
-	logger  = log.NewLogger(log.Info, true)
+	// 全局日志记录器
+	logger = log.NewLogger(log.Info, true)
+	// 程序版本
 	version = "dev"
 )
 
+// 程序入口点
 func main() {
 	parsedURL := getParsedURL(os.Args)
 	initLogLevel(parsedURL.Query().Get("log"))
 	coreDispatch(parsedURL)
 }
 
+// 解析URL参数
 func getParsedURL(args []string) *url.URL {
 	if len(args) < 2 {
 		getExitInfo()
 	}
+
 	parsedURL, err := url.Parse(args[1])
 	if err != nil {
 		logger.Fatal("URL parse: %v", err)
 		getExitInfo()
 	}
+
 	return parsedURL
 }
 
+// 初始化日志级别
 func initLogLevel(level string) {
 	switch level {
 	case "debug":
@@ -51,6 +58,7 @@ func initLogLevel(level string) {
 	}
 }
 
+// 输出帮助信息并退出程序
 func getExitInfo() {
 	logger.SetLogLevel(log.Info)
 	logger.Info(`Version: %v %v/%v

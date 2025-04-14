@@ -1,3 +1,4 @@
+// 内部工具包，提供共享功能
 package internal
 
 import (
@@ -15,41 +16,43 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
+// Common 包含所有模式共享的核心功能
 type Common struct {
-	tlsCode          string
-	logger           *log.Logger
-	tunnelAddr       *net.TCPAddr
-	remoteAddr       *net.TCPAddr
-	targetAddr       string
-	targetTCPAddr    *net.TCPAddr
-	targetUDPAddr    *net.UDPAddr
-	tunnelTCPConn    *net.TCPConn
-	targetTCPConn    *net.TCPConn
-	targetUDPConn    *net.UDPConn
-	remotePool       *conn.Pool
-	ctx              context.Context
-	cancel           context.CancelFunc
-	tcpBytesReceived uint64
-	tcpBytesSent     uint64
-	udpBytesReceived uint64
-	udpBytesSent     uint64
+	tlsCode          string             // TLS模式代码
+	logger           *log.Logger        // 日志记录器
+	tunnelAddr       *net.TCPAddr       // 隧道地址
+	remoteAddr       *net.TCPAddr       // 远程地址
+	targetAddr       string             // 目标地址字符串
+	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
+	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
+	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
+	targetTCPConn    *net.TCPConn       // 目标TCP连接
+	targetUDPConn    *net.UDPConn       // 目标UDP连接
+	remotePool       *conn.Pool         // 远程连接池
+	ctx              context.Context    // 上下文
+	cancel           context.CancelFunc // 取消函数
+	tcpBytesReceived uint64             // TCP接收字节数
+	tcpBytesSent     uint64             // TCP发送字节数
+	udpBytesReceived uint64             // UDP接收字节数
+	udpBytesSent     uint64             // UDP发送字节数
 }
 
+// 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit  = getEnvAsInt("SEMAPHORE_LIMIT", 1024)
-	minPoolCapacity = getEnvAsInt("MIN_POOL_CAPACITY", 16)
-	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)
-	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)
-	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)
-	minPoolInterval = getEnvAsDuration("MIN_POOL_INTERVAL", 1*time.Second)
-	maxPoolInterval = getEnvAsDuration("MAX_POOL_INTERVAL", 5*time.Second)
-	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)
-	serviceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)
-	shutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)
-	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)
-	dialTimeout     = getEnvAsDuration("DIAL_TIMEOUT", 10*time.Second)
+	semaphoreLimit  = getEnvAsInt("SEMAPHORE_LIMIT", 1024)                 // 信号量限制
+	minPoolCapacity = getEnvAsInt("MIN_POOL_CAPACITY", 16)                 // 最小池容量
+	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)               // 最大池容量
+	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
+	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)  // UDP读取超时
+	minPoolInterval = getEnvAsDuration("MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
+	maxPoolInterval = getEnvAsDuration("MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
+	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)   // 报告间隔
+	serviceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)  // 服务冷却时间
+	shutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
+	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
 )
 
+// 从环境变量获取整数值，如果不存在则使用默认值
 func getEnvAsInt(name string, defaultValue int) int {
 	if valueStr, exists := os.LookupEnv(name); exists {
 		if value, err := strconv.Atoi(valueStr); err == nil && value >= 0 {
@@ -59,6 +62,7 @@ func getEnvAsInt(name string, defaultValue int) int {
 	return defaultValue
 }
 
+// 从环境变量获取时间间隔，如果不存在则使用默认值
 func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 	if valueStr, exists := os.LookupEnv(name); exists {
 		if value, err := time.ParseDuration(valueStr); err == nil && value >= 0 {
@@ -68,27 +72,38 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
+// 获取随机端口号
 func getRandPort() int {
 	return rand.Intn(7169) + 1024
 }
 
+// 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) {
+	// 解析隧道地址
 	if tunnelAddr, err := net.ResolveTCPAddr("tcp", parsedURL.Host); err == nil {
 		c.tunnelAddr = tunnelAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
+
+	// 设置随机远程地址
 	c.remoteAddr = &net.TCPAddr{
 		IP:   c.tunnelAddr.IP,
 		Port: getRandPort(),
 	}
+
+	// 处理目标地址
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
 	c.targetAddr = targetAddr
+
+	// 解析目标TCP地址
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
 		c.targetTCPAddr = targetTCPAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
+
+	// 解析目标UDP地址
 	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
 		c.targetUDPAddr = targetUDPAddr
 	} else {
@@ -96,6 +111,7 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	}
 }
 
+// 初始化上下文
 func (c *Common) initContext() {
 	if c.cancel != nil {
 		c.cancel()
@@ -103,12 +119,14 @@ func (c *Common) initContext() {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 }
 
+// 优雅关闭
 func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		stopFunc()
 	}()
+
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -117,27 +135,33 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	}
 }
 
+// 添加TCP统计数据
 func (c *Common) AddTCPStats(received, sent uint64) {
 	atomic.AddUint64(&c.tcpBytesReceived, received)
 	atomic.AddUint64(&c.tcpBytesSent, sent)
 }
 
+// 添加UDP接收统计
 func (c *Common) AddUDPReceived(bytes uint64) {
 	atomic.AddUint64(&c.udpBytesReceived, bytes)
 }
 
+// 添加UDP发送统计
 func (c *Common) AddUDPSent(bytes uint64) {
 	atomic.AddUint64(&c.udpBytesSent, bytes)
 }
 
+// 获取TCP统计数据
 func (c *Common) GetTCPStats() (uint64, uint64) {
 	return atomic.LoadUint64(&c.tcpBytesReceived), atomic.LoadUint64(&c.tcpBytesSent)
 }
 
+// 获取UDP统计数据
 func (c *Common) GetUDPStats() (uint64, uint64) {
 	return atomic.LoadUint64(&c.udpBytesReceived), atomic.LoadUint64(&c.udpBytesSent)
 }
 
+// 统计数据定期报告
 func (c *Common) statsReporter() {
 	for {
 		select {
