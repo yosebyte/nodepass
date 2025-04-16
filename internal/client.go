@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -42,7 +41,7 @@ func NewClient(parsedURL *url.URL, logger *log.Logger) *Client {
 
 // Manage 管理客户端生命周期
 func (c *Client) Manage() {
-	c.logger.Info("Client started: %v/%v", c.tunnelAddr, c.targetAddr)
+	c.logger.Info("Client started: %v/%v", c.tunnelAddr, c.targetTCPAddr)
 
 	// 启动客户端服务并处理重启
 	go func() {
@@ -80,8 +79,8 @@ func (c *Client) Start() error {
 		return err
 	}
 
-	// 初始化远程连接池
-	c.remotePool = conn.NewClientPool(
+	// 初始化隧道连接池
+	c.tunnelPool = conn.NewClientPool(
 		minPoolCapacity,
 		maxPoolCapacity,
 		minPoolInterval,
@@ -89,10 +88,10 @@ func (c *Client) Start() error {
 		c.tlsCode,
 		c.tunnelName,
 		func() (net.Conn, error) {
-			return net.DialTCP("tcp", nil, c.remoteAddr)
+			return net.DialTCP("tcp", nil, c.tunnelAddr)
 		})
 
-	go c.remotePool.ClientManager()
+	go c.tunnelPool.ClientManager()
 	go c.clientLaunch()
 	go c.statsReporter()
 
@@ -106,11 +105,11 @@ func (c *Client) Stop() {
 		c.cancel()
 	}
 
-	// 关闭远程连接池
-	if c.remotePool != nil {
-		active := c.remotePool.Active()
-		c.remotePool.Close()
-		c.logger.Debug("Remote connection closed: active %v", active)
+	// 关闭隧道连接池
+	if c.tunnelPool != nil {
+		active := c.tunnelPool.Active()
+		c.tunnelPool.Close()
+		c.logger.Debug("Tunnel connection closed: active %v", active)
 	}
 
 	// 关闭UDP连接
@@ -165,14 +164,10 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 
-	// 设置远程端口和TLS代码
-	c.remoteAddr.Port, err = strconv.Atoi(tunnelURL.Host)
-	if err != nil {
-		return err
-	}
+	// 设置TLS代码
 	c.tlsCode = tunnelURL.Fragment
 
-	c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 	return nil
 }
 
@@ -180,7 +175,7 @@ func (c *Client) tunnelHandshake() error {
 func (c *Client) clientLaunch() {
 	for {
 		// 等待连接池准备就绪
-		if !c.remotePool.Ready() {
+		if !c.tunnelPool.Ready() {
 			time.Sleep(time.Millisecond)
 			continue
 		}
@@ -237,20 +232,20 @@ func (c *Client) clientTCPOnce(id string) {
 	c.logger.Debug("TCP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 从连接池获取连接
-	remoteConn := c.remotePool.ClientGet(id)
+	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
 		c.errorCount++
 		// 错误过多时刷新连接池
-		if c.errorCount > c.remotePool.Capacity()*1/3 {
+		if c.errorCount > c.tunnelPool.Capacity()*1/3 {
 			c.logger.Error("Too many errors: %v", c.errorCount)
-			c.remotePool.Flush()
+			c.tunnelPool.Flush()
 			c.errorCount = 0
 		}
 		return
 	}
 
-	c.logger.Debug("Remote connection: %v <- active %v / %v per %v", id, c.remotePool.Active(), c.remotePool.Capacity(), c.remotePool.Interval())
+	c.logger.Debug("Tunnel connection: %v <- active %v / %v per %v", id, c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
 
 	// 确保连接关闭
 	defer func() {
@@ -259,7 +254,7 @@ func (c *Client) clientTCPOnce(id string) {
 		}
 	}()
 
-	c.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	// 连接到目标TCP地址
 	targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
@@ -294,20 +289,20 @@ func (c *Client) clientUDPOnce(id string) {
 	c.logger.Debug("UDP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 从连接池获取连接
-	remoteConn := c.remotePool.ClientGet(id)
+	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
 		c.errorCount++
 		// 错误过多时刷新连接池
-		if c.errorCount > c.remotePool.Capacity()*1/3 {
+		if c.errorCount > c.tunnelPool.Capacity()*1/3 {
 			c.logger.Error("Too many errors: %v", c.errorCount)
-			c.remotePool.Flush()
+			c.tunnelPool.Flush()
 			c.errorCount = 0
 		}
 		return
 	}
 
-	c.logger.Debug("Remote connection: %v <- active %v / %v per %v", id, c.remotePool.Active(), c.remotePool.Capacity(), c.remotePool.Interval())
+	c.logger.Debug("Tunnel connection: %v <- active %v / %v per %v", id, c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
 
 	// 确保连接关闭
 	defer func() {
@@ -316,7 +311,7 @@ func (c *Client) clientUDPOnce(id string) {
 		}
 	}()
 
-	c.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	// 读取来自远程连接的数据
 	buffer := make([]byte, udpDataBufSize)

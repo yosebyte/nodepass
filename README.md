@@ -72,6 +72,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 - **Secure Microservices**: Establish encrypted channels between distributed components
 - **Database Protection**: Enable secure database access while keeping servers isolated
 - **IoT Communication**: Connect devices across different network segments
+- **Penetration Testing**: Create secure tunnels for security assessments
 
 ## 📚 Documentation
 

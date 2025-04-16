@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -23,7 +22,6 @@ type Server struct {
 	Common                          // 继承通用功能
 	serverMU       sync.Mutex       // 服务器互斥锁
 	tunnelListener net.Listener     // 隧道监听器
-	remoteListener net.Listener     // 远程连接监听器
 	targetListener *net.TCPListener // 目标监听器
 	tlsConfig      *tls.Config      // TLS配置
 	semaphore      chan struct{}    // 信号量通道
@@ -45,7 +43,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 // Manage 管理服务器生命周期
 func (s *Server) Manage() {
-	s.logger.Info("Server started: %v(%v)/%v", s.tunnelAddr, s.remoteAddr, s.targetAddr)
+	s.logger.Info("Server started: %v/%v", s.tunnelAddr, s.targetTCPAddr)
 
 	// 启动服务器并处理重启
 	go func() {
@@ -88,10 +86,10 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	// 初始化远程连接池
-	s.remotePool = conn.NewServerPool(maxPoolCapacity, s.tlsConfig, s.remoteListener)
+	// 初始化隧道连接池
+	s.tunnelPool = conn.NewServerPool(maxPoolCapacity, s.tlsConfig, s.tunnelListener)
 
-	go s.remotePool.ServerManager()
+	go s.tunnelPool.ServerManager()
 	go s.serverLaunch()
 	go s.statsReporter()
 
@@ -105,11 +103,11 @@ func (s *Server) Stop() {
 		s.cancel()
 	}
 
-	// 关闭远程连接池
-	if s.remotePool != nil {
-		active := s.remotePool.Active()
-		s.remotePool.Close()
-		s.logger.Debug("Remote connection closed: active %v", active)
+	// 关闭隧道连接池
+	if s.tunnelPool != nil {
+		active := s.tunnelPool.Active()
+		s.tunnelPool.Close()
+		s.logger.Debug("Tunnel connection closed: active %v", active)
 	}
 
 	// 关闭UDP连接
@@ -136,12 +134,6 @@ func (s *Server) Stop() {
 		s.logger.Debug("Target listener closed: %v", s.targetListener.Addr())
 	}
 
-	// 关闭远程监听器
-	if s.remoteListener != nil {
-		s.remoteListener.Close()
-		s.logger.Debug("Remote listener closed: %v", s.remoteListener.Addr())
-	}
-
 	// 关闭隧道监听器
 	if s.tunnelListener != nil {
 		s.tunnelListener.Close()
@@ -152,18 +144,11 @@ func (s *Server) Stop() {
 // 初始化监听器
 func (s *Server) initListener() error {
 	// 初始化隧道监听器
-	tunnelListener, err := net.Listen("tcp", s.tunnelAddr.String())
+	tunnelListener, err := net.ListenTCP("tcp", s.tunnelAddr)
 	if err != nil {
 		return err
 	}
 	s.tunnelListener = tunnelListener
-
-	// 初始化远程监听器
-	remoteListener, err := net.ListenTCP("tcp", s.remoteAddr)
-	if err != nil {
-		return err
-	}
-	s.remoteListener = remoteListener
 
 	// 初始化目标TCP监听器
 	targetListener, err := net.ListenTCP("tcp", s.targetTCPAddr)
@@ -193,7 +178,6 @@ func (s *Server) tunnelHandshake() error {
 
 	// 构建并发送隧道URL到客户端
 	tunnelURL := &url.URL{
-		Host:     strconv.Itoa(s.remoteAddr.Port),
 		Fragment: s.tlsCode,
 	}
 	_, err = s.tunnelTCPConn.Write([]byte(tunnelURL.String() + "\n"))
@@ -202,7 +186,7 @@ func (s *Server) tunnelHandshake() error {
 	}
 
 	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
-	s.logger.Debug("Tunnel connection: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
+	s.logger.Debug("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
 	return nil
 }
 
@@ -210,7 +194,7 @@ func (s *Server) tunnelHandshake() error {
 func (s *Server) serverLaunch() {
 	for {
 		// 等待连接池准备就绪
-		if s.remotePool.Ready() {
+		if s.tunnelPool.Ready() {
 			go s.serverTCPLoop()
 			go s.serverUDPLoop()
 			return
@@ -269,13 +253,13 @@ func (s *Server) serverTCPLoop() {
 				defer func() { <-s.semaphore }()
 
 				// 从连接池获取连接
-				id, remoteConn := s.remotePool.ServerGet()
+				id, remoteConn := s.tunnelPool.ServerGet()
 				if remoteConn == nil {
 					s.logger.Error("Get failed: %v", id)
 					return
 				}
 
-				s.logger.Debug("Remote connection: %v <- active %v", id, s.remotePool.Active())
+				s.logger.Debug("Tunnel connection: %v <- active %v", id, s.tunnelPool.Active())
 
 				defer func() {
 					if remoteConn != nil {
@@ -283,7 +267,7 @@ func (s *Server) serverTCPLoop() {
 					}
 				}()
 
-				s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+				s.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 				// 构建并发送启动URL到客户端
 				launchURL := &url.URL{
@@ -335,12 +319,12 @@ func (s *Server) serverUDPLoop() {
 			s.logger.Debug("Target connection: %v <-> %v", s.targetUDPConn.LocalAddr(), clientAddr)
 
 			// 从连接池获取连接
-			id, remoteConn := s.remotePool.ServerGet()
+			id, remoteConn := s.tunnelPool.ServerGet()
 			if remoteConn == nil {
 				continue
 			}
 
-			s.logger.Debug("Remote connection: %v <- active %v", id, s.remotePool.Active())
+			s.logger.Debug("Tunnel connection: %v <- active %v", id, s.tunnelPool.Active())
 
 			defer func() {
 				if remoteConn != nil {
@@ -348,7 +332,7 @@ func (s *Server) serverUDPLoop() {
 				}
 			}()
 
-			s.logger.Debug("Remote connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+			s.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 			// 使用信号量限制并发数
 			s.semaphore <- struct{}{}

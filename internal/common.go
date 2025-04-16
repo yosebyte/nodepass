@@ -3,7 +3,6 @@ package internal
 
 import (
 	"context"
-	"math/rand"
 	"net"
 	"net/url"
 	"os"
@@ -21,14 +20,13 @@ type Common struct {
 	tlsCode          string             // TLS模式代码
 	logger           *log.Logger        // 日志记录器
 	tunnelAddr       *net.TCPAddr       // 隧道地址
-	remoteAddr       *net.TCPAddr       // 远程地址
 	targetAddr       string             // 目标地址字符串
 	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
 	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
 	targetTCPConn    *net.TCPConn       // 目标TCP连接
 	targetUDPConn    *net.UDPConn       // 目标UDP连接
-	remotePool       *conn.Pool         // 远程连接池
+	tunnelPool       *conn.Pool         // 隧道连接池
 	ctx              context.Context    // 上下文
 	cancel           context.CancelFunc // 取消函数
 	tcpBytesReceived uint64             // TCP接收字节数
@@ -72,11 +70,6 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-// 获取随机端口号
-func getRandPort() int {
-	return rand.Intn(7169) + 1024
-}
-
 // 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) {
 	// 解析隧道地址
@@ -84,12 +77,6 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 		c.tunnelAddr = tunnelAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
-	}
-
-	// 设置随机远程地址
-	c.remoteAddr = &net.TCPAddr{
-		IP:   c.tunnelAddr.IP,
-		Port: getRandPort(),
 	}
 
 	// 处理目标地址

@@ -111,8 +111,8 @@ NodePass uses a sophisticated URL-based signaling protocol through the TCP tunne
 
 ### Signal Types
 1. **Tunnel Signal**:
-   - Format: `//<port>#<tls>`
-   - Purpose: Informs the client about the server's remote endpoint port and tls code
+   - Format: `#<tls>`
+   - Purpose: Informs the client about the tls code
    - Timing: Sent on tunnel handshake
 
 2. **TCP Launch Signal**:
