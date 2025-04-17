@@ -143,11 +143,11 @@ func (c *Client) Stop() {
 // tunnelHandshake 与隧道服务器进行握手
 func (c *Client) tunnelHandshake() error {
 	// 建立隧道TCP连接
-	tunnelTCPConn, err := net.DialTCP("tcp", nil, c.tunnelAddr)
+	tunnelTCPConn, err := net.DialTimeout("tcp", c.tunnelAddr.String(), tcpDialTimeout)
 	if err != nil {
 		return err
 	}
-	c.tunnelTCPConn = tunnelTCPConn
+	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
 	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
 
 	// 读取隧道URL
@@ -257,7 +257,7 @@ func (c *Client) clientTCPOnce(id string) {
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	// 连接到目标TCP地址
-	targetConn, err := net.DialTCP("tcp", nil, c.targetTCPAddr)
+	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
 		c.logger.Error("Dial failed: %v", err)
 		return
@@ -269,7 +269,7 @@ func (c *Client) clientTCPOnce(id string) {
 		}
 	}()
 
-	c.targetTCPConn = targetConn
+	c.targetTCPConn = targetConn.(*net.TCPConn)
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
@@ -323,7 +323,7 @@ func (c *Client) clientUDPOnce(id string) {
 	c.AddUDPReceived(uint64(n))
 
 	// 连接到目标UDP地址
-	targetUDPConn, err := net.DialUDP("udp", nil, c.targetUDPAddr)
+	targetUDPConn, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 	if err != nil {
 		c.logger.Error("Dial failed: %v", err)
 		return
@@ -335,7 +335,7 @@ func (c *Client) clientUDPOnce(id string) {
 		}
 	}()
 
-	c.targetUDPConn = targetUDPConn
+	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
 	c.logger.Debug("Target connection: %v <-> %v", targetUDPConn.LocalAddr(), targetUDPConn.RemoteAddr())
 
 	// 发送数据到目标
@@ -351,7 +351,7 @@ func (c *Client) clientUDPOnce(id string) {
 		return
 	}
 
-	n, _, err = targetUDPConn.ReadFromUDP(buffer)
+	n, _, err = targetUDPConn.(*net.UDPConn).ReadFromUDP(buffer)
 	if err != nil {
 		c.logger.Error("Read failed: %v", err)
 		return

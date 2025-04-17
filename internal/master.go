@@ -585,7 +585,7 @@ func generateOpenAPISpec() string {
         "responses": {
           "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
           "400": {"description": "Invalid input"},
-		  "404": {"description": "Not found"}
+          "404": {"description": "Not found"}
         }
       }
     },

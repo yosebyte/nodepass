@@ -52,17 +52,19 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
-| `SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export SEMAPHORE_LIMIT=2048` |
-| `MIN_POOL_CAPACITY` | 最小连接池大小 | 16 | `export MIN_POOL_CAPACITY=32` |
-| `MAX_POOL_CAPACITY` | 最大连接池大小 | 1024 | `export MAX_POOL_CAPACITY=4096` |
-| `MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export MIN_POOL_INTERVAL=500ms` |
-| `MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export MAX_POOL_INTERVAL=3s` |
-| `UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export UDP_DATA_BUF_SIZE=16384` |
-| `UDP_READ_TIMEOUT` | UDP读取操作超时 | 5s | `export UDP_READ_TIMEOUT=10s` |
-| `REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export REPORT_INTERVAL=10s` |
-| `RELOAD_INTERVAL` | 证书重载间隔 | 1h | `export RELOAD_INTERVAL=30m` |
-| `SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 5s | `export SERVICE_COOLDOWN=3s` |
-| `SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export SHUTDOWN_TIMEOUT=10s` |
+| `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_MIN_POOL_CAPACITY` | 最小连接池大小 | 16 | `export NP_MIN_POOL_CAPACITY=32` |
+| `NP_MAX_POOL_CAPACITY` | 最大连接池大小 | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
+| `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 5s | `export NP_UDP_READ_TIMEOUT=10s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP拨号超时 | 5s | `export NP_UDP_DIAL_TIMEOUT=10s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP拨号超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=10s` |
+| `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
+| `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
+| `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
+| `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 5s | `export NP_SERVICE_COOLDOWN=3s` |
+| `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
+| `NP_RELOAD_INTERVAL` | 证书重载间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### 连接池调优
 
@@ -70,29 +72,29 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 
 #### 池容量设置
 
-- `MIN_POOL_CAPACITY`：确保最小可用连接数
+- `NP_MIN_POOL_CAPACITY`：确保最小可用连接数
   - 太低：流量高峰期延迟增加，因为必须建立新连接
   - 太高：维护空闲连接浪费资源
   - 推荐起点：平均并发连接的25-50%
 
-- `MAX_POOL_CAPACITY`：防止过度资源消耗，同时处理峰值负载
+- `NP_MAX_POOL_CAPACITY`：防止过度资源消耗，同时处理峰值负载
   - 太低：流量高峰期连接失败
   - 太高：潜在资源耗尽影响系统稳定性
   - 推荐起点：峰值并发连接的150-200%
 
 #### 池间隔设置
 
-- `MIN_POOL_INTERVAL`：控制连接创建尝试之间的最小时间
+- `NP_MIN_POOL_INTERVAL`：控制连接创建尝试之间的最小时间
   - 太低：可能以连接尝试压垮网络
   - 推荐范围：根据网络延迟，500ms-2s
 
-- `MAX_POOL_INTERVAL`：控制连接创建尝试之间的最大时间
+- `NP_MAX_POOL_INTERVAL`：控制连接创建尝试之间的最大时间
   - 太高：流量高峰期可能导致池耗尽
   - 推荐范围：根据预期流量模式，3s-10s
 
 #### 连接管理
 
-- `SEMAPHORE_LIMIT`：控制最大并发隧道操作数
+- `NP_SEMAPHORE_LIMIT`：控制最大并发隧道操作数
   - 太低：流量高峰期拒绝连接
   - 太高：太多并发goroutine可能导致内存压力
   - 推荐范围：大多数应用1000-5000，高吞吐量场景更高
@@ -101,30 +103,34 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 
 对于严重依赖UDP流量的应用：
 
-- `UDP_DATA_BUF_SIZE`：UDP数据包缓冲区大小
+- `NP_UDP_DATA_BUF_SIZE`：UDP数据包缓冲区大小
   - 对于发送大UDP数据包的应用增加此值
   - 默认值(8192)适用于大多数情况
   - 考虑为媒体流或游戏服务器增加到16384或更高
 
-- `UDP_READ_TIMEOUT`：UDP读取操作超时
+- `NP_UDP_READ_TIMEOUT`：UDP读取操作超时
   - 对于高延迟网络或响应时间慢的应用增加此值
   - 对于需要快速故障转移的低延迟应用减少此值
 
+- `NP_UDP_DIAL_TIMEOUT`：UDP拨号超时
+  - 对于高延迟网络增加此值
+  - 对于需要快速连接的应用减少此值
+
 ### 服务管理设置
 
-- `REPORT_INTERVAL`：控制健康状态报告频率
+- `NP_REPORT_INTERVAL`：控制健康状态报告频率
   - 较低值提供更频繁的更新但增加日志量
   - 较高值减少日志输出但提供较少的即时可见性
 
-- `RELOAD_INTERVAL`：控制检查TLS证书变更的频率
+- `NP_RELOAD_INTERVAL`：控制检查TLS证书变更的频率
   - 较低值更快检测证书变更但增加文件系统操作
   - 较高值减少开销但延迟检测证书更新
 
-- `SERVICE_COOLDOWN`：尝试服务重启前的等待时间
+- `NP_SERVICE_COOLDOWN`：尝试服务重启前的等待时间
   - 较低值更快尝试恢复但可能在持续性问题情况下导致抖动
   - 较高值提供更多稳定性但从瞬态问题中恢复较慢
 
-- `SHUTDOWN_TIMEOUT`：关闭期间等待连接关闭的最长时间
+- `NP_SHUTDOWN_TIMEOUT`：关闭期间等待连接关闭的最长时间
   - 较低值确保更快关闭但可能中断活动连接
   - 较高值允许连接有更多时间完成但延迟关闭
 
@@ -137,13 +143,13 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 对于需要最大吞吐量的应用（如媒体流、文件传输）：
 
 ```bash
-export MIN_POOL_CAPACITY=64
-export MAX_POOL_CAPACITY=4096
-export MIN_POOL_INTERVAL=500ms
-export MAX_POOL_INTERVAL=3s
-export SEMAPHORE_LIMIT=8192
-export UDP_DATA_BUF_SIZE=32768
-export REPORT_INTERVAL=10s
+export NP_MIN_POOL_CAPACITY=64
+export NP_MAX_POOL_CAPACITY=4096
+export NP_MIN_POOL_INTERVAL=500ms
+export NP_MAX_POOL_INTERVAL=3s
+export NP_SEMAPHORE_LIMIT=8192
+export NP_UDP_DATA_BUF_SIZE=32768
+export NP_REPORT_INTERVAL=10s
 ```
 
 ### 低延迟配置
@@ -151,13 +157,13 @@ export REPORT_INTERVAL=10s
 对于需要最小延迟的应用（如游戏、金融交易）：
 
 ```bash
-export MIN_POOL_CAPACITY=128
-export MAX_POOL_CAPACITY=2048
-export MIN_POOL_INTERVAL=100ms
-export MAX_POOL_INTERVAL=1s
-export SEMAPHORE_LIMIT=4096
-export UDP_READ_TIMEOUT=2s
-export REPORT_INTERVAL=1s
+export NP_MIN_POOL_CAPACITY=128
+export NP_MAX_POOL_CAPACITY=2048
+export NP_MIN_POOL_INTERVAL=100ms
+export NP_MAX_POOL_INTERVAL=1s
+export NP_SEMAPHORE_LIMIT=4096
+export NP_UDP_READ_TIMEOUT=2s
+export NP_REPORT_INTERVAL=1s
 ```
 
 ### 资源受限配置
@@ -165,13 +171,13 @@ export REPORT_INTERVAL=1s
 对于在资源有限系统上的部署（如IoT设备、小型VPS）：
 
 ```bash
-export MIN_POOL_CAPACITY=8
-export MAX_POOL_CAPACITY=256
-export MIN_POOL_INTERVAL=2s
-export MAX_POOL_INTERVAL=10s
-export SEMAPHORE_LIMIT=512
-export REPORT_INTERVAL=30s
-export SHUTDOWN_TIMEOUT=3s
+export NP_MIN_POOL_CAPACITY=8
+export NP_MAX_POOL_CAPACITY=256
+export NP_MIN_POOL_INTERVAL=2s
+export NP_MAX_POOL_INTERVAL=10s
+export NP_SEMAPHORE_LIMIT=512
+export NP_REPORT_INTERVAL=30s
+export NP_SHUTDOWN_TIMEOUT=3s
 ```
 
 ## 下一步

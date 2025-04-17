@@ -37,17 +37,19 @@ type Common struct {
 
 // 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit  = getEnvAsInt("SEMAPHORE_LIMIT", 1024)                 // 信号量限制
-	minPoolCapacity = getEnvAsInt("MIN_POOL_CAPACITY", 16)                 // 最小池容量
-	maxPoolCapacity = getEnvAsInt("MAX_POOL_CAPACITY", 1024)               // 最大池容量
-	udpDataBufSize  = getEnvAsInt("UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
-	udpReadTimeout  = getEnvAsDuration("UDP_READ_TIMEOUT", 5*time.Second)  // UDP读取超时
-	minPoolInterval = getEnvAsDuration("MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
-	maxPoolInterval = getEnvAsDuration("MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
-	reportInterval  = getEnvAsDuration("REPORT_INTERVAL", 5*time.Second)   // 报告间隔
-	serviceCooldown = getEnvAsDuration("SERVICE_COOLDOWN", 5*time.Second)  // 服务冷却时间
-	shutdownTimeout = getEnvAsDuration("SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
-	ReloadInterval  = getEnvAsDuration("RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
+	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
+	minPoolCapacity = getEnvAsInt("NP_MIN_POOL_CAPACITY", 16)                 // 最小池容量
+	maxPoolCapacity = getEnvAsInt("NP_MAX_POOL_CAPACITY", 1024)               // 最大池容量
+	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
+	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 5*time.Second)  // UDP读取超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)  // UDP拨号超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)  // TCP拨号超时
+	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
+	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
+	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
+	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 5*time.Second)  // 服务冷却时间
+	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
+	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
 )
 
 // 从环境变量获取整数值，如果不存在则使用默认值
