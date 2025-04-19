@@ -2,6 +2,7 @@
   <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="500">
 
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/yosebyte/nodepass/total.svg)](https://github.com/yosebyte/nodepass/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
 ![GitHub last commit](https://img.shields.io/github/last-commit/yosebyte/nodepass)
 
