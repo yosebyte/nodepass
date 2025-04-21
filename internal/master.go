@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -27,8 +29,11 @@ import (
 	"github.com/yosebyte/x/log"
 )
 
-// API版本
-const openAPIVersion = "v1"
+// 常量定义
+const (
+	openAPIVersion = "v1"
+	stateFileName  = "nodepass.gob"
+)
 
 // Swagger UI HTML模板
 const swaggerUIHTML = `<!DOCTYPE html>
@@ -60,6 +65,19 @@ type Master struct {
 	logLevel  string       // 日志级别
 	tlsConfig *tls.Config  // TLS配置
 	masterURL *url.URL     // 主控URL
+	statePath string       // 实例状态持久化文件路径
+}
+
+// PersistentInstance 用于持久化的实例数据结构
+type PersistentInstance struct {
+	ID     string `json:"id"`     // 实例ID
+	Type   string `json:"type"`   // 实例类型（client或server）
+	URL    string `json:"url"`    // 实例URL
+	Status string `json:"status"` // 实例状态
+	TCPRX  uint64 `json:"tcprx"`  // TCP接收字节数
+	TCPTX  uint64 `json:"tcptx"`  // TCP发送字节数
+	UDPRX  uint64 `json:"udprx"`  // UDP接收字节数
+	UDPTX  uint64 `json:"udptx"`  // UDP发送字节数
 }
 
 // Instance 实例信息
@@ -128,7 +146,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 // 设置跨域响应头
 func setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH, POST, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 }
 
@@ -144,10 +162,14 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 设置API前缀
 	prefix := parsedURL.Path
 	if prefix == "" || prefix == "/" {
-		prefix = "/api"
+		prefix = fmt.Sprintf("/%s", generateID())
 	} else {
 		prefix = strings.TrimRight(prefix, "/")
 	}
+
+	// 获取应用程序目录作为状态文件存储位置
+	execPath, _ := os.Executable()
+	stateDir := filepath.Dir(execPath)
 
 	master := &Master{
 		Common: Common{
@@ -158,8 +180,13 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		logLevel:  parsedURL.Query().Get("log"),
 		tlsConfig: tlsConfig,
 		masterURL: parsedURL,
+		statePath: filepath.Join(stateDir, stateFileName),
 	}
 	master.tunnelAddr = host
+
+	// 加载持久化的实例状态
+	master.loadState()
+
 	return master
 }
 
@@ -244,11 +271,123 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
+		// 保存实例状态
+		if err := m.saveState(); err != nil {
+			m.logger.Error("Save gob failed: %v", err)
+		} else {
+			m.logger.Info("Instances saved: %v", m.statePath)
+		}
+
 		// 关闭HTTP服务器
 		if err := m.server.Shutdown(ctx); err != nil {
 			m.logger.Error("ApiSvr shutdown error: %v", err)
 		}
 	})
+}
+
+// saveState 保存实例状态到文件
+func (m *Master) saveState() error {
+	// 创建持久化数据
+	persistentData := make(map[string]PersistentInstance)
+
+	// 从sync.Map转换数据
+	m.instances.Range(func(key, value any) bool {
+		instance := value.(*Instance)
+		persistentData[key.(string)] = PersistentInstance{
+			ID:     instance.ID,
+			Type:   instance.Type,
+			URL:    instance.URL,
+			Status: instance.Status,
+			TCPRX:  instance.TCPRX,
+			TCPTX:  instance.TCPTX,
+			UDPRX:  instance.UDPRX,
+			UDPTX:  instance.UDPTX,
+		}
+		return true
+	})
+
+	// 如果没有实例，直接返回
+	if len(persistentData) == 0 {
+		// 如果状态文件存在，删除它
+		if _, err := os.Stat(m.statePath); err == nil {
+			return os.Remove(m.statePath)
+		}
+		return nil
+	}
+
+	// 创建临时文件
+	tempFile, err := os.CreateTemp(filepath.Dir(m.statePath), "np-*.tmp")
+	if err != nil {
+		m.logger.Error("Create temp failed: %v", err)
+		return err
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath) // 确保在任何情况下删除临时文件
+
+	// 编码数据
+	encoder := gob.NewEncoder(tempFile)
+	if err := encoder.Encode(persistentData); err != nil {
+		m.logger.Error("Encode instances failed: %v", err)
+		tempFile.Close()
+		return err
+	}
+
+	// 关闭文件
+	if err := tempFile.Close(); err != nil {
+		m.logger.Error("Close temp failed: %v", err)
+		return err
+	}
+
+	// 原子地替换文件
+	if err := os.Rename(tempPath, m.statePath); err != nil {
+		m.logger.Error("Rename temp failed: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+// loadState 从文件加载实例状态
+func (m *Master) loadState() {
+	// 检查文件是否存在
+	if _, err := os.Stat(m.statePath); os.IsNotExist(err) {
+		return
+	}
+
+	// 打开文件
+	file, err := os.Open(m.statePath)
+	if err != nil {
+		m.logger.Error("Open file failed: %v", err)
+		return
+	}
+	defer file.Close()
+
+	// 解码数据
+	var persistentData map[string]PersistentInstance
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&persistentData); err != nil {
+		m.logger.Error("Decode file failed: %v", err)
+		return
+	}
+
+	// 恢复实例
+	for id, data := range persistentData {
+		// 创建实例对象，保留原始状态
+		instance := &Instance{
+			ID:      data.ID,
+			Type:    data.Type,
+			URL:     data.URL,
+			Status:  data.Status,
+			TCPRX:   data.TCPRX,
+			TCPTX:   data.TCPTX,
+			UDPRX:   data.UDPRX,
+			UDPTX:   data.UDPTX,
+			stopped: make(chan struct{}),
+		}
+		m.instances.Store(id, instance)
+	}
+
+	m.logger.Info("Loaded %v instances from %v", len(persistentData), m.statePath)
 }
 
 // handleOpenAPISpec 处理OpenAPI规范请求
@@ -320,6 +459,12 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 
 		// 启动实例
 		go m.startInstance(instance)
+		// 保存实例状态
+		go func() {
+			// 等待实例启动完成
+			time.Sleep(100 * time.Millisecond)
+			m.saveState()
+		}()
 		writeJSON(w, http.StatusCreated, instance)
 
 	default:
@@ -348,7 +493,7 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 		// 获取实例信息
 		writeJSON(w, http.StatusOK, instance)
 
-	case http.MethodPut:
+	case http.MethodPatch:
 		// 更新实例状态
 		var reqData struct {
 			Action string `json:"action"`
@@ -378,6 +523,8 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 			m.stopInstance(instance)
 		}
 		m.instances.Delete(id)
+		// 删除实例后保存状态
+		m.saveState()
 		w.WriteHeader(http.StatusNoContent)
 
 	default:
@@ -422,7 +569,7 @@ func (m *Master) startInstance(instance *Instance) {
 	writer := NewInstanceLogWriter(instance.ID, instance, os.Stdout, m)
 	cmd.Stdout, cmd.Stderr = writer, writer
 
-	m.logger.Info("Instance queued: %v [%s]", instance.URL, instance.ID)
+	m.logger.Info("Instance queued: %v [%v]", instance.URL, instance.ID)
 
 	// 启动实例
 	if err := cmd.Start(); err != nil {
@@ -442,21 +589,24 @@ func (m *Master) startInstance(instance *Instance) {
 func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 	select {
 	case <-instance.stopped:
+		// 实例被显式停止
 		return
 	default:
-		if err := cmd.Wait(); err != nil && instance.Status != "stopped" {
-			if value, exists := m.instances.Load(instance.ID); exists {
-				instance = value.(*Instance)
-				if instance.Status != "stopped" {
+		// 等待进程完成
+		err := cmd.Wait()
+
+		// 获取最新的实例状态
+		if value, exists := m.instances.Load(instance.ID); exists {
+			instance = value.(*Instance)
+
+			// 仅在未被用户手动停止时更新状态
+			if instance.Status != "stopped" {
+				if err != nil {
 					m.logger.Error("Instance error: %v [%v]", err, instance.ID)
 					instance.Status = "error"
-					m.instances.Store(instance.ID, instance)
+				} else {
+					instance.Status = "stopped"
 				}
-			}
-		} else if value, exists := m.instances.Load(instance.ID); exists {
-			instance = value.(*Instance)
-			if instance.Status != "stopped" {
-				instance.Status = "stopped"
 				m.instances.Store(instance.ID, instance)
 			}
 		}
@@ -502,6 +652,9 @@ func (m *Master) stopInstance(instance *Instance) {
 	instance.stopped = make(chan struct{})
 	instance.cancelFunc = nil
 	m.instances.Store(instance.ID, instance)
+
+	// 保存状态变更
+	m.saveState()
 }
 
 // enhanceURL 增强URL，添加日志级别和TLS配置
@@ -598,7 +751,7 @@ func generateOpenAPISpec() string {
           "404": {"description": "Not found"}
         }
       },
-      "put": {
+      "patch": {
         "summary": "Update instance",
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateInstanceRequest"}}}},
         "responses": {
