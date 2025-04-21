@@ -21,7 +21,9 @@ master://<api_addr>/<prefix>?<log>&<tls>
 
 其中：
 - `<api_addr>`是主控模式URL中指定的地址（例如`0.0.0.0:9090`）
-- `<prefix>`是可选的API前缀（默认为`/api`）
+- `<prefix>`是可选的API前缀（如果未指定，则使用随机生成的ID作为前缀）
+
+**注意：** 如果不指定自定义前缀，系统会自动生成一个随机前缀以增强安全性。生成的前缀将显示在启动日志中。
 
 ### 启动主控模式
 
@@ -44,7 +46,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/v1/instances` | GET | 列出所有NodePass实例 |
 | `/v1/instances` | POST | 创建新的NodePass实例 |
 | `/v1/instances/{id}` | GET | 获取特定实例的详细信息 |
-| `/v1/instances/{id}` | PUT | 更新或控制特定实例 |
+| `/v1/instances/{id}` | PATCH | 更新或控制特定实例 |
 | `/v1/instances/{id}` | DELETE | 删除特定实例 |
 | `/v1/openapi.json` | GET | OpenAPI规范 |
 | `/v1/docs` | GET | Swagger UI文档 |
@@ -62,39 +64,15 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 ### 实例持久化
 
-**重要提示：**NodePass主控模式**不会在重启之间持久保存实例配置**。当主控模式进程重启时，所有实例信息都会丢失。
+NodePass主控模式现在支持使用gob序列化格式进行实例持久化。实例及其状态会保存到与可执行文件相同目录下的`nodepass.gob`文件中，并在主控重启时自动恢复。
 
-前端应用应该：
-1. 在自己的持久存储中保存实例配置
-2. 在检测到NodePass主控重启时重新注册所有实例
-3. 比较返回的实例ID与存储的ID，以检测和处理重启
+主要持久化特性：
+- 实例配置自动保存到磁盘
+- 实例状态（运行/停止）得到保留
+- 流量统计数据在重启之间保持
+- 重启后无需手动重新注册
 
-重新注册逻辑示例：
-```javascript
-function checkAndRestoreInstances() {
-  try {
-    // 简单的健康检查，检测主控是否正在运行
-    const response = await fetch(`${API_URL}/v1/instances`);
-    
-    if (response.status === 200) {
-      const data = await response.json();
-      
-      // 如果没有实例但我们有存储的配置，主控可能已重启
-      if (data.data.instances.length === 0 && storedInstances.length > 0) {
-        console.log("检测到主控重启，重新注册实例...");
-        
-        for (const instance of storedInstances) {
-          const newInstance = await createInstance(instance.url);
-          // 使用新分配的ID更新存储的ID
-          updateStoredInstanceId(instance.id, newInstance.data.id);
-        }
-      }
-    }
-  } catch (error) {
-    console.error("NodePass主控不可达:", error);
-  }
-}
-```
+**注意：** 虽然实例配置现在已经持久化，前端应用仍应保留自己的实例配置记录作为备份策略。
 
 ### 实例生命周期管理
 
@@ -152,7 +130,7 @@ function checkAndRestoreInstances() {
    async function controlInstance(instanceId, action) {
      // action可以是: start, stop, restart
      const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
-       method: 'PUT',
+       method: 'PATCH',  // 注意：API已更新为使用PATCH方法而非PUT
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ action })
      });
@@ -244,54 +222,15 @@ function checkAndRestoreInstances() {
    }
    ```
 
-### 实例ID变化
+### 实例ID持久化
 
-在主控模式重启后实例ID会改变。要处理这个问题：
+由于NodePass现在使用gob格式持久化存储实例状态，实例ID在主控重启后**不再发生变化**。这意味着：
 
-1. **通过URL跟踪**：使用实例URL作为稳定标识符
-   ```javascript
-   function findInstanceByUrl(url) {
-     return storedInstances.find(instance => instance.url === url);
-   }
-   ```
+1. 前端应用可以安全地使用实例ID作为唯一标识符
+2. 实例配置、状态和统计数据在重启后自动恢复
+3. 不再需要实现实例ID变化的处理逻辑
 
-2. **ID映射**：维护应用程序稳定ID与NodePass实例ID之间的映射
-   ```javascript
-   const instanceMapping = {};
-   
-   function updateInstanceMapping(appInstanceId, nodepassInstanceId) {
-     instanceMapping[appInstanceId] = nodepassInstanceId;
-   }
-   
-   function getNodePassId(appInstanceId) {
-     return instanceMapping[appInstanceId];
-   }
-   ```
-
-3. **恢复程序**：实现ID变化时的恢复程序
-   ```javascript
-   async function recoverInstances() {
-     // 从NodePass获取所有当前实例
-     const response = await fetch(`${API_URL}/v1/instances`);
-     const data = await response.json();
-     
-     // 通过URL匹配实例
-     for (const storedInstance of storedInstances) {
-       const matchingInstance = data.data.instances.find(
-         instance => instance.url === storedInstance.url
-       );
-       
-       if (matchingInstance) {
-         // 更新ID映射
-         updateInstanceMapping(storedInstance.appId, matchingInstance.id);
-       } else {
-         // 实例不存在，重新创建
-         const newInstance = await createInstance(storedInstance.url);
-         updateInstanceMapping(storedInstance.appId, newInstance.data.id);
-       }
-     }
-   }
-   ```
+这极大简化了前端集成，消除了以前处理实例重新创建和ID映射的复杂性。
 
 ## API端点文档
 
@@ -410,7 +349,7 @@ Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试A
 NodePass主控模式API提供了强大的接口，用于以编程方式管理NodePass实例。在与前端应用集成时，特别注意：
 
 1. **实例持久化** - 存储配置并处理重启
-2. **实例ID变化** - 实现稳定的标识策略
+2. **实例ID持久化** - 使用实例ID作为唯一标识符
 3. **适当的错误处理** - 从API错误中优雅恢复
 4. **流量统计** - 收集并可视化连接指标（需要启用调试模式）
 

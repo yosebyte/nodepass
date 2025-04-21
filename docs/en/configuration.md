@@ -64,7 +64,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | Cooldown period before restart attempts | 5s | `export NP_SERVICE_COOLDOWN=3s` |
 | `NP_SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
-| `NP_RELOAD_INTERVAL` | Interval for certificate reload | 1h | `export NP_RELOAD_INTERVAL=30m` |
+| `NP_RELOAD_INTERVAL` | Interval for cert/pool reload | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### Connection Pool Tuning
 

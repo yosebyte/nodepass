@@ -21,7 +21,9 @@ master://<api_addr>/<prefix>?<log>&<tls>
 
 Where:
 - `<api_addr>` is the address specified in the master mode URL (e.g., `0.0.0.0:9090`)
-- `<prefix>` is the optional API prefix (defaults to `/api`)
+- `<prefix>` is the optional API prefix (if not specified, a randomly generated ID will be used as the prefix)
+
+**Note:** If no custom prefix is specified, the system will automatically generate a random prefix for enhanced security. The generated prefix will be displayed in the startup logs.
 
 ### Starting Master Mode
 
@@ -44,7 +46,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/v1/instances` | GET | List all NodePass instances |
 | `/v1/instances` | POST | Create a new NodePass instance |
 | `/v1/instances/{id}` | GET | Get details about a specific instance |
-| `/v1/instances/{id}` | PUT | Update or control a specific instance |
+| `/v1/instances/{id}` | PATCH | Update or control a specific instance |
 | `/v1/instances/{id}` | DELETE | Remove a specific instance |
 | `/v1/openapi.json` | GET | OpenAPI specification |
 | `/v1/docs` | GET | Swagger UI documentation |
@@ -62,39 +64,25 @@ When integrating NodePass with frontend applications, consider the following imp
 
 ### Instance Persistence
 
-**Important:** NodePass Master Mode **does not persist instance configurations** between restarts. When the Master Mode process restarts, all instance information is lost.
+NodePass Master Mode now supports instance persistence using the gob serialization format. Instances and their states are saved to a `nodepass.gob` file in the same directory as the executable, and automatically restored when the master restarts.
 
-Frontend applications should:
-1. Store instance configurations in their own persistent storage
-2. Re-register all instances when detecting a NodePass Master restart
-3. Compare returned instance IDs with stored IDs to detect and handle restarts
+Key persistence features:
+- Instance configurations are automatically saved to disk
+- Instance state (running/stopped) is preserved
+- Traffic statistics are retained between restarts
+- No need for manual re-registration after restart
 
-Example re-registration logic:
-```javascript
-function checkAndRestoreInstances() {
-  try {
-    // Simple health check to detect if master is running
-    const response = await fetch(`${API_URL}/v1/instances`);
-    
-    if (response.status === 200) {
-      const data = await response.json();
-      
-      // If no instances but we have stored configs, master likely restarted
-      if (data.data.instances.length === 0 && storedInstances.length > 0) {
-        console.log("Detected master restart, re-registering instances...");
-        
-        for (const instance of storedInstances) {
-          const newInstance = await createInstance(instance.url);
-          // Update stored ID with newly assigned ID
-          updateStoredInstanceId(instance.id, newInstance.data.id);
-        }
-      }
-    }
-  } catch (error) {
-    console.error("NodePass master unreachable:", error);
-  }
-}
-```
+**Note:** While instance configurations are now persisted, frontend applications should still maintain their own record of instance configurations as a backup strategy.
+
+### Instance ID Persistence
+
+With NodePass now using gob format for persistent storage of instance state, instance IDs **no longer change** after a master restart. This means:
+
+1. Frontend applications can safely use instance IDs as unique identifiers
+2. Instance configurations, states, and statistics are automatically restored after restart
+3. No need to implement logic for handling instance ID changes
+
+This greatly simplifies frontend integration by eliminating the previous complexity of handling instance recreation and ID mapping.
 
 ### Instance Lifecycle Management
 
@@ -152,7 +140,7 @@ For proper lifecycle management:
    async function controlInstance(instanceId, action) {
      // action can be: start, stop, restart
      const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
-       method: 'PUT',
+       method: 'PATCH',  // Note: API has been updated to use PATCH instead of PUT
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ action })
      });
@@ -240,55 +228,6 @@ The Master API provides traffic statistics, but there are important requirements
        trafficHistory[instanceId].tcp_out_rates.shift();
        trafficHistory[instanceId].udp_in_rates.shift();
        trafficHistory[instanceId].udp_out_rates.shift();
-     }
-   }
-   ```
-
-### Instance ID Changes
-
-Instance IDs will change after Master Mode restarts. To handle this:
-
-1. **Track by URL**: Use the instance URL as the stable identifier
-   ```javascript
-   function findInstanceByUrl(url) {
-     return storedInstances.find(instance => instance.url === url);
-   }
-   ```
-
-2. **ID Mapping**: Maintain a mapping between your application's stable IDs and NodePass instance IDs
-   ```javascript
-   const instanceMapping = {};
-   
-   function updateInstanceMapping(appInstanceId, nodepassInstanceId) {
-     instanceMapping[appInstanceId] = nodepassInstanceId;
-   }
-   
-   function getNodePassId(appInstanceId) {
-     return instanceMapping[appInstanceId];
-   }
-   ```
-
-3. **Recovery Procedure**: Implement a recovery procedure for when IDs change
-   ```javascript
-   async function recoverInstances() {
-     // Get all current instances from NodePass
-     const response = await fetch(`${API_URL}/v1/instances`);
-     const data = await response.json();
-     
-     // Match instances by URL
-     for (const storedInstance of storedInstances) {
-       const matchingInstance = data.data.instances.find(
-         instance => instance.url === storedInstance.url
-       );
-       
-       if (matchingInstance) {
-         // Update the ID mapping
-         updateInstanceMapping(storedInstance.appId, matchingInstance.id);
-       } else {
-         // Instance doesn't exist, recreate it
-         const newInstance = await createInstance(storedInstance.url);
-         updateInstanceMapping(storedInstance.appId, newInstance.data.id);
-       }
      }
    }
    ```
@@ -410,7 +349,7 @@ Implement comprehensive monitoring:
 The NodePass Master Mode API provides a powerful interface for programmatic management of NodePass instances. When integrating with frontend applications, be particularly mindful of:
 
 1. **Instance persistence** - Store configurations and handle restarts
-2. **Instance ID changes** - Implement stable identification strategies
+2. **Instance ID persistence** - Use instance IDs as stable identifiers
 3. **Proper error handling** - Gracefully recover from API errors
 4. **Traffic statistics** - Collect and visualize connection metrics (requires debug mode)
 
