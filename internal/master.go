@@ -68,31 +68,19 @@ type Master struct {
 	statePath string       // 实例状态持久化文件路径
 }
 
-// PersistentInstance 用于持久化的实例数据结构
-type PersistentInstance struct {
-	ID     string `json:"id"`     // 实例ID
-	Type   string `json:"type"`   // 实例类型（client或server）
-	URL    string `json:"url"`    // 实例URL
-	Status string `json:"status"` // 实例状态
-	TCPRX  uint64 `json:"tcprx"`  // TCP接收字节数
-	TCPTX  uint64 `json:"tcptx"`  // TCP发送字节数
-	UDPRX  uint64 `json:"udprx"`  // UDP接收字节数
-	UDPTX  uint64 `json:"udptx"`  // UDP发送字节数
-}
-
 // Instance 实例信息
 type Instance struct {
-	ID         string             `json:"id"`     // 实例ID
-	Type       string             `json:"type"`   // 实例类型（client或server）
-	Status     string             `json:"status"` // 实例状态
-	URL        string             `json:"url"`    // 实例URL
-	TCPRX      uint64             `json:"tcprx"`  // TCP接收字节数
-	TCPTX      uint64             `json:"tcptx"`  // TCP发送字节数
-	UDPRX      uint64             `json:"udprx"`  // UDP接收字节数
-	UDPTX      uint64             `json:"udptx"`  // UDP发送字节数
-	cmd        *exec.Cmd          `json:"-"`      // 命令对象（不序列化）
-	stopped    chan struct{}      `json:"-"`      // 停止信号通道（不序列化）
-	cancelFunc context.CancelFunc `json:"-"`      // 取消函数（不序列化）
+	ID         string             `json:"id"`        // 实例ID
+	Type       string             `json:"type"`      // 实例类型（client或server）
+	Status     string             `json:"status"`    // 实例状态
+	URL        string             `json:"url"`       // 实例URL
+	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
+	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
+	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
+	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
+	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
+	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -288,21 +276,12 @@ func (m *Master) Shutdown(ctx context.Context) error {
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
 	// 创建持久化数据
-	persistentData := make(map[string]PersistentInstance)
+	persistentData := make(map[string]*Instance)
 
 	// 从sync.Map转换数据
 	m.instances.Range(func(key, value any) bool {
 		instance := value.(*Instance)
-		persistentData[key.(string)] = PersistentInstance{
-			ID:     instance.ID,
-			Type:   instance.Type,
-			URL:    instance.URL,
-			Status: instance.Status,
-			TCPRX:  instance.TCPRX,
-			TCPTX:  instance.TCPTX,
-			UDPRX:  instance.UDPRX,
-			UDPTX:  instance.UDPTX,
-		}
+		persistentData[key.(string)] = instance
 		return true
 	})
 
@@ -363,7 +342,7 @@ func (m *Master) loadState() {
 	defer file.Close()
 
 	// 解码数据
-	var persistentData map[string]PersistentInstance
+	var persistentData map[string]*Instance
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&persistentData); err != nil {
 		m.logger.Error("Decode file failed: %v", err)
@@ -371,19 +350,8 @@ func (m *Master) loadState() {
 	}
 
 	// 恢复实例
-	for id, data := range persistentData {
-		// 创建实例对象，保留原始状态
-		instance := &Instance{
-			ID:      data.ID,
-			Type:    data.Type,
-			URL:     data.URL,
-			Status:  data.Status,
-			TCPRX:   data.TCPRX,
-			TCPTX:   data.TCPTX,
-			UDPRX:   data.UDPRX,
-			UDPTX:   data.UDPTX,
-			stopped: make(chan struct{}),
-		}
+	for id, instance := range persistentData {
+		instance.stopped = make(chan struct{})
 		m.instances.Store(id, instance)
 	}
 
