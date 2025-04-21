@@ -23,7 +23,6 @@ type Client struct {
 	tunnelName string        // 隧道名称
 	bufReader  *bufio.Reader // 缓冲读取器
 	signalChan chan string   // 信号通道
-	errorCount int           // 错误计数
 }
 
 // NewClient 创建新的客户端实例
@@ -191,8 +190,14 @@ func (c *Client) clientLaunch() {
 				continue
 			}
 
-			// 根据信号类型处理TCP或UDP请求
+			// 处理信号
 			switch signalURL.Fragment {
+			case "0": // 连接池刷新
+				go func() {
+					c.tunnelPool.Flush()
+					time.Sleep(reportInterval) // 等待连接池刷新完成
+					c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
+				}()
 			case "1": // TCP
 				go c.clientTCPOnce(signalURL.Host)
 			case "2": // UDP
@@ -235,13 +240,6 @@ func (c *Client) clientTCPOnce(id string) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
-		c.errorCount++
-		// 错误过多时刷新连接池
-		if c.errorCount > c.tunnelPool.Capacity()*1/3 {
-			c.logger.Error("Too many errors: %v", c.errorCount)
-			c.tunnelPool.Flush()
-			c.errorCount = 0
-		}
 		return
 	}
 
@@ -280,7 +278,7 @@ func (c *Client) clientTCPOnce(id string) {
 	if err == io.EOF {
 		c.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
 	} else {
-		c.logger.Error("Exchange complete: %v", err)
+		c.logger.Debug("Exchange complete: %v", err)
 	}
 }
 
@@ -292,13 +290,6 @@ func (c *Client) clientUDPOnce(id string) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
-		c.errorCount++
-		// 错误过多时刷新连接池
-		if c.errorCount > c.tunnelPool.Capacity()*1/3 {
-			c.logger.Error("Too many errors: %v", c.errorCount)
-			c.tunnelPool.Flush()
-			c.errorCount = 0
-		}
 		return
 	}
 

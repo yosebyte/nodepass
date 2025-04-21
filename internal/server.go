@@ -87,7 +87,7 @@ func (s *Server) Start() error {
 	}
 
 	// 初始化隧道连接池
-	s.tunnelPool = conn.NewServerPool(maxPoolCapacity, s.tlsConfig, s.tunnelListener)
+	s.tunnelPool = conn.NewServerPool(s.tlsConfig, s.tunnelListener)
 
 	go s.tunnelPool.ServerManager()
 	go s.serverLaunch()
@@ -205,6 +205,7 @@ func (s *Server) serverLaunch() {
 
 // 健康检查
 func (s *Server) healthCheck() error {
+	lastFlushed := time.Now()
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -214,11 +215,31 @@ func (s *Server) healthCheck() error {
 			if !s.serverMU.TryLock() {
 				continue
 			}
-			_, err := s.tunnelTCPConn.Write([]byte("\n"))
-			s.serverMU.Unlock()
-			if err != nil {
-				return err
+			// 定期刷新连接池
+			if time.Since(lastFlushed) >= ReloadInterval {
+				flushURL := &url.URL{
+					Fragment: "0", // 刷新模式
+				}
+
+				_, err := s.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
+				if err != nil {
+					s.serverMU.Unlock()
+					return err
+				}
+
+				s.tunnelPool.Flush()
+				lastFlushed = time.Now()
+				time.Sleep(reportInterval) // 等待连接池刷新完成
+				s.logger.Debug("Tunnel pool reset: %v active connections", s.tunnelPool.Active())
+			} else {
+				// 定期发送心跳包
+				_, err := s.tunnelTCPConn.Write([]byte("\n"))
+				if err != nil {
+					s.serverMU.Unlock()
+					return err
+				}
 			}
+			s.serverMU.Unlock()
 			time.Sleep(reportInterval)
 		}
 	}
@@ -294,7 +315,7 @@ func (s *Server) serverTCPLoop() {
 				if err == io.EOF {
 					s.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
 				} else {
-					s.logger.Error("Exchange complete: %v", err)
+					s.logger.Debug("Exchange complete: %v", err)
 				}
 			}(targetConn)
 		}
