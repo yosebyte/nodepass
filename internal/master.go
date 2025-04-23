@@ -115,7 +115,8 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
 			for i, stat := range stats {
 				if v, err := strconv.ParseUint(matches[i+1], 10, 64); err == nil {
-					*stat = v
+					// 累加新的统计数据
+					*stat += v
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
