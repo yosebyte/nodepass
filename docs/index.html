@@ -10,8 +10,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.css">
     <link rel="stylesheet" href="./styles.css">
     <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.11.4/dist/gsap.min.js"></script>
@@ -24,18 +22,18 @@
             <div class="flex justify-between items-center">
                 <div class="flex items-center">
                     <img src="https://cdn.yobc.de/assets/nodepass.png" alt="NodePass" class="h-8 mr-3 rounded-xl">
-                    <span class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="brand-name">NodePass</span>
+                    <span class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">NodePass</span>
                 </div>
                 <div class="hidden md:flex space-x-6">
-                    <a href="#features" class="nav-link" data-i18n="features">Features</a>
-                    <a href="#architecture" class="nav-link" data-i18n="architecture">Architecture</a>
-                    <a href="#documentation" class="nav-link" data-i18n="documentation">Documentation</a>
-                    <a href="https://github.com/yosebyte/nodepass" class="nav-link" data-i18n="repository">Repository</a>
+                    <a href="#features" class="nav-link" data-i18n="features"></a>
+                    <a href="#architecture" class="nav-link" data-i18n="architecture"></a>
+                    <a href="#documentation" class="nav-link" data-i18n="documentation"></a>
+                    <a href="https://github.com/yosebyte/nodepass" class="nav-link" data-i18n="repository"></a>
                     <button id="language-toggle" class="nav-link flex items-center" data-i18n="language-toggle">
                         <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
                         </svg>
-                        <span id="current-lang" data-i18n="current-lang">EN</span>
+                        <span id="current-lang" data-i18n="current-lang"></span>
                     </button>
                 </div>
                 <div class="md:hidden">
@@ -49,15 +47,15 @@
         </div>
         <div id="mobile-menu" class="md:hidden hidden">
             <div class="px-4 py-3 space-y-2 bg-gray-800 shadow-lg">
-                <a href="#features" class="block nav-link py-2" data-i18n="features">Features</a>
-                <a href="#architecture" class="block nav-link py-2" data-i18n="architecture">Architecture</a>
-                <a href="#documentation" class="block nav-link py-2" data-i18n="documentation">Documentation</a>
-                <a href="https://github.com/yosebyte/nodepass" class="block nav-link py-2" data-i18n="repository">Repository</a>
+                <a href="#features" class="block nav-link py-2" data-i18n="features"></a>
+                <a href="#architecture" class="block nav-link py-2" data-i18n="architecture"></a>
+                <a href="#documentation" class="block nav-link py-2" data-i18n="documentation"></a>
+                <a href="https://github.com/yosebyte/nodepass" class="block nav-link py-2" data-i18n="repository"></a>
                 <button id="mobile-language-toggle" class="block w-full text-left nav-link py-2 flex items-center" data-i18n="mobile-language-toggle">
                     <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"></path>
                     </svg>
-                    <span id="mobile-current-lang" data-i18n="mobile-current-lang">EN</span>
+                    <span id="mobile-current-lang" data-i18n="mobile-current-lang"></span>
                 </button>
             </div>
         </div>
@@ -69,23 +67,21 @@
         <div id="particles-js" class="absolute inset-0 z-1"></div>
         <div class="container mx-auto px-4 z-10 text-center">
             <div class="logo-container mb-6">
-                <img src="https://cdn.yobc.de/assets/np-poster.png" alt="NodePass Logo" class="mx-auto w-full max-w-md highlight-image rounded-xl" data-i18n="hero-logo">
+                <img src="https://cdn.yobc.de/assets/np-poster.png" alt="NodePass Logo" class="mx-auto w-full max-w-md glassmorphism rounded-xl" data-i18n="hero-logo">
             </div>
-            <p class="text-xl md:text-2xl text-gray-300 mb-8 max-w-3xl mx-auto hero-description animate__animated animate__fadeIn" data-i18n="subtitle">
-                Lightweight TCP/UDP tunnel solution with an innovative three-layer architecture
-            </p>
+            <p class="text-xl md:text-2xl text-gray-300 mb-8 max-w-3xl mx-auto hero-description animate__animated animate__fadeIn" data-i18n="subtitle"></p>
             <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4 mb-16 hero-buttons animate__animated animate__fadeIn">
                 <a href="https://github.com/yosebyte/nodepass" class="primary-btn text-white font-medium py-3 px-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50" data-i18n="github-button">
-                    <svg class="w-5 h-5 inline-block mr-2" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-5 h-5 inline-block mr-2 btn-icon" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"></path>
                     </svg>
-                    <span data-i18n="github">GitHub Project</span>
+                    <span data-i18n="github"></span>
                 </a>
-                <a href="#features" class="secondary-btn bg-transparent hover:bg-gray-800 text-white font-medium py-3 px-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50" data-i18n="learn-more-button">
-                    <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                <a class="secondary-btn bg-transparent hover:bg-gray-800 text-white font-medium py-3 px-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50" data-i18n="learn-more-button">
+                    <svg class="w-5 h-5 inline-block mr-2 btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
                     </svg>
-                    <span data-i18n="learn-more">Learn More</span>
+                    <span data-i18n="learn-more"></span>
                 </a>
             </div>
         </div>
@@ -93,53 +89,44 @@
 
     <section id="features" class="py-20 relative overflow-hidden">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl md:text-4xl font-bold mb-16 text-center text-gradient" data-i18n="features-title">Key Features</h2>
+            <h2 class="text-3xl md:text-4xl font-bold mb-16 text-center text-gradient" data-i18n="features-title"></h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <!-- 特性卡片 1 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="0">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature1-title">High-Performance Tunnel</h3>
-                    <p class="text-gray-400" data-i18n="feature1-desc">Lightweight tunnel implemented in Go with extremely low latency and high throughput, supporting large-scale concurrent connections.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature1-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature1-desc"></p>
                 </div>
-
-                <!-- 特性卡片 2 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="0.2">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature2-title">Three-Layer Architecture</h3>
-                    <p class="text-gray-400" data-i18n="feature2-desc">Innovative master node, child node, and client three-layer architecture for flexible network topology and unified management.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature2-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature2-desc"></p>
                 </div>
-
-                <!-- 特性卡片 3 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="0.4">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature3-title">Multi-Protocol Support</h3>
-                    <p class="text-gray-400" data-i18n="feature3-desc">Supports TCP and UDP protocols to meet network requirements for different application scenarios, with flexible configuration options.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature3-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature3-desc"></p>
                 </div>
-
-                <!-- 特性卡片 4 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="0.6">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature4-title">Secure and Reliable</h3>
-                    <p class="text-gray-400" data-i18n="feature4-desc">Built-in TLS encryption and authentication mechanisms ensure the security and integrity of data transmission, preventing unauthorized access.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature4-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature4-desc"></p>
                 </div>
-
-                <!-- 特性卡片 5 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="0.8">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -147,19 +134,17 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature5-title">Easy Configuration</h3>
-                    <p class="text-gray-400" data-i18n="feature5-desc">Simple command-line interface and configuration files make deployment and management simple and efficient, suitable for users of all technical levels.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature5-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature5-desc"></p>
                 </div>
-
-                <!-- 特性卡片 6 -->
                 <div class="feature-card card-3d glassmorphism rounded-xl p-6 glow-on-hover" data-delay="1">
                     <div class="icon-container mb-5">
                         <svg class="w-10 h-10 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature6-title">Cross-Platform Compatible</h3>
-                    <p class="text-gray-400" data-i18n="feature6-desc">Supports Linux, Windows, macOS and other operating systems, can be deployed and run seamlessly in various environments.</p>
+                    <h3 class="text-xl font-semibold mb-3" data-i18n="feature6-title"></h3>
+                    <p class="text-gray-400" data-i18n="feature6-desc"></p>
                 </div>
             </div>
         </div>
@@ -167,147 +152,100 @@
 
     <section id="architecture" class="py-20 relative bg-gray-800 bg-opacity-50">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center demo-title text-gradient" data-i18n="how-it-works">NodePass Architecture</h2>
-            
-            <!-- 架构图 -->
+            <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center demo-title text-gradient" data-i18n="how-it-works"></h2>
             <div class="architecture-diagram mb-16">
                 <div class="architecture-container relative mx-auto" style="height: 480px; max-width: 960px;">
-                    <!-- 架构图层 -->
                     <div class="architecture-layer-container relative w-full h-full">
-                        <!-- 上方的Master节点 -->
                         <div class="arch-layer master-layer-top absolute top-0 left-1/2 transform -translate-x-1/2 w-11/12 md:w-3/4 p-5 bg-blue-900 bg-opacity-20 border border-blue-500 rounded-lg shadow-glow" data-node-type="master-top">
                             <div class="flex items-center mb-3">
                                 <div class="w-3 h-3 bg-blue-500 rounded-full pulse-animation mr-2"></div>
-                                <h3 class="text-xl font-semibold text-blue-400" data-i18n="master-node-1">Master API</h3>
+                                <h3 class="text-xl font-semibold text-blue-400" data-i18n="master-node-1"></h3>
                             </div>
-                            
-                            <!-- 上方主节点内的Server和Client -->
                             <div class="flex flex-wrap justify-center gap-4 mt-2">
-                                <!-- Server组件 -->
                                 <div class="flex-1 min-w-[150px] bg-indigo-900 bg-opacity-30 p-3 rounded-lg border border-indigo-500 border-opacity-50">
                                     <div class="flex items-center mb-1">
                                         <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
-                                        <h4 class="text-sm font-medium text-indigo-300" data-i18n="server-component">Server</h4>
+                                        <h4 class="text-sm font-medium text-indigo-300" data-i18n="server-component"></h4>
                                     </div>
-                                    <div class="text-xs text-gray-400" data-i18n="server-desc">Handles incoming connections & protocol translation</div>
+                                    <div class="text-xs text-gray-400" data-i18n="server-desc"></div>
                                 </div>
-                                
-                                <!-- Client组件 -->
                                 <div class="flex-1 min-w-[150px] bg-green-900 bg-opacity-30 p-3 rounded-lg border border-green-500 border-opacity-50">
                                     <div class="flex items-center mb-1">
                                         <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                                        <h4 class="text-sm font-medium text-green-300" data-i18n="client-component">Client</h4>
+                                        <h4 class="text-sm font-medium text-green-300" data-i18n="client-component"></h4>
                                     </div>
-                                    <div class="text-xs text-gray-400" data-i18n="client-desc">Establishes & maintains tunnel connections</div>
+                                    <div class="text-xs text-gray-400" data-i18n="client-desc"></div>
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- 下方的Master节点 -->
                         <div class="arch-layer master-layer-bottom absolute bottom-0 left-1/2 transform -translate-x-1/2 w-11/12 md:w-3/4 p-5 bg-blue-900 bg-opacity-20 border border-blue-500 rounded-lg shadow-glow" data-node-type="master-bottom">
                             <div class="flex items-center mb-3">
                                 <div class="w-3 h-3 bg-blue-500 rounded-full pulse-animation mr-2"></div>
-                                <h3 class="text-xl font-semibold text-blue-400" data-i18n="master-node-2">Master API</h3>
+                                <h3 class="text-xl font-semibold text-blue-400" data-i18n="master-node-2"></h3>
                             </div>
-                            
-                            <!-- 下方主节点内的Server和Client -->
                             <div class="flex flex-wrap justify-center gap-4 mt-2">
-                                <!-- Client组件 -->
                                 <div class="flex-1 min-w-[150px] bg-green-900 bg-opacity-30 p-3 rounded-lg border border-green-500 border-opacity-50">
                                     <div class="flex items-center mb-1">
                                         <div class="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                                        <h4 class="text-sm font-medium text-green-300" data-i18n="client-component">Client</h4>
+                                        <h4 class="text-sm font-medium text-green-300" data-i18n="client-component"></h4>
                                     </div>
-                                    <div class="text-xs text-gray-400" data-i18n="client-desc">Establishes & maintains tunnel connections</div>
+                                    <div class="text-xs text-gray-400" data-i18n="client-desc"></div>
                                 </div>
-                                
-                                <!-- Server组件 -->
                                 <div class="flex-1 min-w-[150px] bg-indigo-900 bg-opacity-30 p-3 rounded-lg border border-indigo-500 border-opacity-50">
                                     <div class="flex items-center mb-1">
                                         <div class="w-2 h-2 bg-indigo-500 rounded-full mr-2"></div>
-                                        <h4 class="text-sm font-medium text-indigo-300" data-i18n="server-component">Server</h4>
+                                        <h4 class="text-sm font-medium text-indigo-300" data-i18n="server-component"></h4>
                                     </div>
-                                    <div class="text-xs text-gray-400" data-i18n="server-desc">Handles incoming connections & protocol translation</div>
+                                    <div class="text-xs text-gray-400" data-i18n="server-desc"></div>
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- 通道标记 - 中间位置 -->
-                        <div class="connection-labels absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10 bg-gray-900 bg-opacity-60 p-3 rounded-lg border border-gray-700">
-                            <h4 class="text-sm font-medium text-gray-300 mb-2" data-i18n="connection-channels">Connection Channels</h4>
-                            <div class="flex gap-3">
-                                <div class="channel-label bg-blue-800 text-xs text-blue-200 px-2 py-1 rounded" data-i18n="control-channel">Control Channel</div>
-                                <div class="channel-label bg-green-800 text-xs text-green-200 px-2 py-1 rounded" data-i18n="data-channel">Data Channel</div>
-                            </div>
-                        </div>
-                        
-                        <!-- 连接线 -->
-                        <div class="connection-lines absolute inset-0" id="connection-lines">
-                            <!-- 动态生成的SVG连接线将在JavaScript中添加 -->
-                        </div>
-                        
-                        <!-- 数据包指示器 -->
-                        <div class="data-packets" id="data-packets"></div>
+                        <div class="connection-lines absolute inset-0" id="connection-lines"></div>
                     </div>
                 </div>
             </div>
-            
-            <!-- 架构图下方的详细信息 -->
             <div class="glassmorphism rounded-xl p-6 max-w-4xl mx-auto mb-12 shadow-glow">
-                <h3 class="text-2xl font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="data-flow">Data Transmission Flow</h3>
-                <p class="text-gray-300 mb-4" data-i18n="data-flow-desc">NodePass establishes peer-to-peer bidirectional data flow between Master nodes:</p>
-                
+                <h3 class="text-2xl font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="data-flow"></h3>
+                <p class="text-gray-300 mb-4" data-i18n="data-flow-desc"></p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <!-- 控制通道 -->
                     <div class="bg-gray-800 bg-opacity-50 p-4 rounded-lg border border-blue-500 border-opacity-25">
-                        <h4 class="text-blue-400 font-medium mb-2" data-i18n="control-channel">Control Channel</h4>
+                        <h4 class="text-blue-400 font-medium mb-2" data-i18n="control-channel"></h4>
                         <ul class="list-disc list-inside text-gray-400 space-y-1 text-sm">
-                            <li data-i18n="control-channel-1">Unencrypted TCP connection for signaling</li>
-                            <li data-i18n="control-channel-2">Persistent connection for tunnel lifetime</li>
-                            <li data-i18n="control-channel-3">URL-based signaling protocol</li>
-                            <li data-i18n="control-channel-4">Coordinates connection establishment</li>
+                            <li data-i18n="control-channel-1"></li>
+                            <li data-i18n="control-channel-2"></li>
+                            <li data-i18n="control-channel-3"></li>
+                            <li data-i18n="control-channel-4"></li>
                         </ul>
                     </div>
-                    
-                    <!-- 数据通道 -->
                     <div class="bg-gray-800 bg-opacity-50 p-4 rounded-lg border border-green-500 border-opacity-25">
-                        <h4 class="text-green-400 font-medium mb-2" data-i18n="data-channel">Data Channel</h4>
+                        <h4 class="text-green-400 font-medium mb-2" data-i18n="data-channel"></h4>
                         <ul class="list-disc list-inside text-gray-400 space-y-1 text-sm">
-                            <li data-i18n="data-channel-1">Configurable TLS encryption (3 modes)</li>
-                            <li data-i18n="data-channel-2">Created on-demand for each connection</li>
-                            <li data-i18n="data-channel-3">Efficient connection pooling system</li>
-                            <li data-i18n="data-channel-4">Supports both TCP and UDP protocols</li>
+                            <li data-i18n="data-channel-1"></li>
+                            <li data-i18n="data-channel-2"></li>
+                            <li data-i18n="data-channel-3"></li>
+                            <li data-i18n="data-channel-4"></li>
                         </ul>
                     </div>
                 </div>
-                
-                <h4 class="text-xl font-medium mb-3 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="security-features">Security Features</h4>
+                <h4 class="text-xl font-medium mb-3 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="security-features"></h4>
                 <div class="bg-gray-800 bg-opacity-50 p-4 rounded-lg mb-6">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- 安全模式 0 -->
                         <div class="bg-gray-900 p-3 rounded">
-                            <h5 class="text-gray-300 font-medium mb-1" data-i18n="security-mode-0">Mode 0</h5>
-                            <p class="text-gray-400 text-sm" data-i18n="security-mode-0-desc">Unencrypted data transfer (fastest, least secure)</p>
+                            <h5 class="text-gray-300 font-medium mb-1" data-i18n="security-mode-0"></h5>
+                            <p class="text-gray-400 text-sm" data-i18n="security-mode-0-desc"></p>
                         </div>
-                        
-                        <!-- 安全模式 1 -->
                         <div class="bg-gray-900 p-3 rounded">
-                            <h5 class="text-yellow-300 font-medium mb-1" data-i18n="security-mode-1">Mode 1</h5>
-                            <p class="text-gray-400 text-sm" data-i18n="security-mode-1-desc">Self-signed certificate encryption (good security, no verification)</p>
+                            <h5 class="text-yellow-300 font-medium mb-1" data-i18n="security-mode-1"></h5>
+                            <p class="text-gray-400 text-sm" data-i18n="security-mode-1-desc"></p>
                         </div>
-                        
-                        <!-- 安全模式 2 -->
                         <div class="bg-gray-900 p-3 rounded">
-                            <h5 class="text-green-300 font-medium mb-1" data-i18n="security-mode-2">Mode 2</h5>
-                            <p class="text-gray-400 text-sm" data-i18n="security-mode-2-desc">Verified certificate encryption (highest security, requires valid certificates)</p>
+                            <h5 class="text-green-300 font-medium mb-1" data-i18n="security-mode-2"></h5>
+                            <p class="text-gray-400 text-sm" data-i18n="security-mode-2-desc"></p>
                         </div>
                     </div>
                 </div>
-                
-                <p class="text-gray-300" data-i18n="architecture-benefit">This peer-to-peer architecture allows NodePass to flexibly adapt to various network environments, achieving efficient data transmission between endpoints with enhanced security and protocol translation.</p>
+                <p class="text-gray-300" data-i18n="architecture-benefit"></p>
             </div>
-            
-            <!-- 命令行部分 -->
             <div class="mt-16 glassmorphism rounded-xl p-6 max-w-4xl mx-auto shadow-glow">
                 <div class="flex justify-between items-center mb-4 terminal-header">
                     <div class="flex space-x-2">
@@ -333,73 +271,62 @@ $ nodepass "master://:10101/api?log=debug&tls=1" </pre>
 
     <section id="documentation" class="py-20 relative">
         <div class="container mx-auto px-4">
-            <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center resources-title text-gradient" data-i18n="resources-title">Resources & Documentation</h2>
+            <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center resources-title text-gradient" data-i18n="resources-title"></h2>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 resources-links">
-                <!-- 文档链接 -->
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/installation.md" class="resources-box rounded-xl p-6 block hover:no-underline" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/installation.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/installation.md" data-i18n="installation-guide">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc1-title">Installation Guide</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc1-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc1-desc">Detailed installation steps and system requirements to help you quickly deploy NodePass.</p>
+                    <p class="text-gray-400" data-i18n="doc1-desc"></p>
                 </a>
-                
-                <!-- API文档 -->
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/api.md" class="resources-box rounded-xl p-6 block hover:no-underline" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/api.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/api.md" data-i18n="api-documentation">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc2-title">API Documentation</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc2-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc2-desc">Detailed description of NodePass API for building custom applications and integrations.</p>
+                    <p class="text-gray-400" data-i18n="doc2-desc"></p>
                 </a>
-                
-                <!-- 配置指南 -->
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/configuration.md" class="resources-box rounded-xl p-6 block hover:no-underline" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/configuration.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/configuration.md" data-i18n="configuration-guide">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc3-title">Configuration Guide</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc3-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc3-desc">Comprehensive explanation of configuration options to help you customize NodePass behavior according to your needs.</p>
+                    <p class="text-gray-400" data-i18n="doc3-desc"></p>
                 </a>
-                
-                <!-- 示例 -->
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/examples.md" class="resources-box rounded-xl p-6 block hover:no-underline" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/examples.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/examples.md" data-i18n="usage-examples">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc4-title">Usage Examples</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc4-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc4-desc">Real examples of common application scenarios to help you quickly get started and apply to actual projects.</p>
+                    <p class="text-gray-400" data-i18n="doc4-desc"></p>
                 </a>
-                
-                <!-- 常见问题 -->
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/troubleshooting.md" class="resources-box rounded-xl p-6 block hover:no-underline" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/troubleshooting.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/troubleshooting.md" data-i18n="troubleshooting">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 0 0118 0z"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc5-title">Troubleshooting</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc5-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc5-desc">FAQs and troubleshooting guide to solve problems you may encounter when using NodePass.</p>
+                    <p class="text-gray-400" data-i18n="doc5-desc"></p>
                 </a>
-                
-                <!-- GitHub -->
                 <a href="https://github.com/yosebyte/nodepass" class="resources-box rounded-xl p-6 block hover:no-underline" data-i18n="github-repository">
                     <div class="flex items-center mb-4">
                         <svg class="w-8 h-8 mr-3 text-purple-400" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"></path>
                         </svg>
-                        <h3 class="text-xl font-semibold text-white" data-i18n="doc6-title">GitHub Repository</h3>
+                        <h3 class="text-xl font-semibold text-white" data-i18n="doc6-title"></h3>
                     </div>
-                    <p class="text-gray-400" data-i18n="doc6-desc">Visit the GitHub repository to get the latest code, report issues, or contribute code.</p>
+                    <p class="text-gray-400" data-i18n="doc6-desc"></p>
                 </a>
             </div>
         </div>
@@ -407,20 +334,20 @@ $ nodepass "master://:10101/api?log=debug&tls=1" </pre>
 
     <section class="py-16 bg-gray-800 bg-opacity-50 download-section">
         <div class="container mx-auto px-4 text-center">
-            <h2 class="text-3xl md:text-4xl font-bold mb-6 text-gradient" data-i18n="start-using">Start Using NodePass</h2>
-            <p class="text-gray-300 mb-8 max-w-2xl mx-auto" data-i18n="download-desc">Download and deploy NodePass now to experience an efficient and secure network tunnel solution.</p>
+            <h2 class="text-3xl md:text-4xl font-bold mb-6 text-gradient" data-i18n="start-using"></h2>
+            <p class="text-gray-300 mb-8 max-w-2xl mx-auto" data-i18n="download-desc"></p>
             <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
                 <a href="https://github.com/yosebyte/nodepass/releases" class="primary-btn text-white font-medium py-3 px-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50" data-i18n="download-latest-version">
-                    <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-5 h-5 inline-block mr-2 btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
                     </svg>
-                    <span data-i18n="download-latest">Download Latest Version</span>
+                    <span data-i18n="download-latest"></span>
                 </a>
                 <a href="https://github.com/yosebyte/nodepass/blob/main/docs/en/installation.md" class="secondary-btn bg-transparent hover:bg-gray-800 text-white font-medium py-3 px-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50" data-langurl-en="https://github.com/yosebyte/nodepass/blob/main/docs/en/installation.md" data-langurl-zh="https://github.com/yosebyte/nodepass/blob/main/docs/zh/installation.md" data-i18n="view-installation-guide">
-                    <svg class="w-5 h-5 inline-block mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <svg class="w-5 h-5 inline-block mr-2 btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                     </svg>
-                    <span data-i18n="view-installation">View Installation Guide</span>
+                    <span data-i18n="view-installation"></span>
                 </a>
             </div>
         </div>
@@ -432,9 +359,9 @@ $ nodepass "master://:10101/api?log=debug&tls=1" </pre>
                 <div class="mb-6 md:mb-0">
                     <div class="flex items-center">
                         <img src="https://cdn.yobc.de/assets/nodepass.png" alt="NodePass" class="h-8 mr-3 rounded-xl" data-i18n="footer-logo">
-                        <span class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600" data-i18n="footer-brand-name">NodePass</span>
+                        <span class="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">NodePass</span>
                     </div>
-                    <p class="text-gray-400 mt-2" data-i18n="footer-desc">Lightweight TCP/UDP tunnel solution</p>
+                    <p class="text-gray-400 mt-2" data-i18n="footer-desc"></p>
                 </div>
                 <div class="flex space-x-6">
                     <a href="https://github.com/yosebyte/nodepass" class="text-gray-400 hover:text-white transition-colors cursor-pointer" data-i18n="footer-github-link">
@@ -445,19 +372,17 @@ $ nodepass "master://:10101/api?log=debug&tls=1" </pre>
                 </div>
             </div>
             <div class="border-t border-gray-700 mt-8 pt-8 text-center text-gray-500 text-sm">
-                <p data-i18n="footer-copyright">&copy; 2025 𝐘𝐨𝐬𝐞𝐛𝐲𝐭𝐞. All rights reserved.</p>
+                <p data-i18n="footer-copyright"></p>
             </div>
         </div>
     </footer>
 
-    <!-- 返回顶部按钮 -->
     <button id="back-to-top" class="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 hidden opacity-0 transition-all duration-300" data-i18n="back-to-top">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
         </svg>
     </button>
 
-    <script src="https://cdn.jsdelivr.net/npm/swiper@8/swiper-bundle.min.js"></script>
     <script src="./scripts.js"></script>
 </body>
 </html>

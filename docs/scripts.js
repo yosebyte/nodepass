@@ -1,6 +1,4 @@
-// 页面加载完成后初始化所有功能
 document.addEventListener('DOMContentLoaded', () => {
-    // 初始化所有功能
     [
         initParticles,
         initScrollAnimations,
@@ -15,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     ].forEach(fn => fn());
 });
 
-// 初始化粒子背景
 function initParticles() {
     particlesJS('particles-js', {
         particles: {
@@ -23,8 +20,7 @@ function initParticles() {
             color: { value: "#6875F5" },
             shape: {
                 type: "circle",
-                stroke: { width: 0, color: "#000000" },
-                polygon: { nb_sides: 5 }
+                stroke: { width: 0 }
             },
             opacity: {
                 value: 0.5,
@@ -34,7 +30,7 @@ function initParticles() {
             size: {
                 value: 3,
                 random: true,
-                anim: { enable: false, speed: 40, size_min: 0.1, sync: false }
+                anim: { enable: false }
             },
             line_linked: {
                 enable: true,
@@ -50,51 +46,24 @@ function initParticles() {
                 random: false,
                 straight: false,
                 out_mode: "out",
-                bounce: false,
-                attract: { enable: false, rotateX: 600, rotateY: 1200 }
+                bounce: false
             }
         },
         interactivity: {
             detect_on: "canvas",
             events: {
-                onhover: { enable: false, mode: "grab" },
-                onclick: { enable: false, mode: "push" },
+                onhover: { enable: false },
+                onclick: { enable: false },
                 resize: true
-            },
-            modes: {
-                grab: { distance: 140, line_linked: { opacity: 1 } },
-                bubble: { distance: 400, size: 40, duration: 2, opacity: 8, speed: 3 },
-                repulse: { distance: 200, duration: 0.4 },
-                push: { particles_nb: 4 },
-                remove: { particles_nb: 2 }
             }
         },
         retina_detect: true
     });
 }
 
-// 初始化滚动动画
 function initScrollAnimations() {
     gsap.registerPlugin(ScrollTrigger);
     
-    // Hero 部分动画
-    const heroElements = [
-        {el: '.logo-container', delay: 0.3},
-        {el: '.hero-title', delay: 0.6},
-        {el: '.hero-description', delay: 0.9},
-        {el: '.hero-buttons', delay: 1.2}
-    ];
-    
-    heroElements.forEach(item => {
-        gsap.to(item.el, {
-            opacity: 1,
-            y: 0,
-            duration: 1,
-            delay: item.delay
-        });
-    });
-    
-    // 通用滚动动画函数
     const createScrollAnimation = (selector, stagger = 0) => {
         const elements = document.querySelectorAll(selector);
         elements.forEach((el, index) => {
@@ -117,16 +86,13 @@ function initScrollAnimations() {
         });
     };
     
-    // 应用滚动动画到各部分
     createScrollAnimation('.feature-card', 0.2);
     createScrollAnimation('.demo-title');
-    createScrollAnimation('.demo-content');
     createScrollAnimation('.resources-title');
     createScrollAnimation('.resources-links');
     createScrollAnimation('.download-section');
 }
 
-// 特性卡片鼠标悬停3D效果
 function initCardHover() {
     document.querySelectorAll('.card-3d').forEach(card => {
         const handleMouseMove = (e) => {
@@ -150,7 +116,6 @@ function initCardHover() {
     });
 }
 
-// 导航栏滚动效果和平滑滚动
 function initNavbar() {
     const navbar = document.getElementById('navbar');
     
@@ -159,13 +124,11 @@ function initNavbar() {
     });
 }
 
-// 平滑滚动
 function initSmoothScroll() {
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener('click', function (e) {
             e.preventDefault();
             
-            // 关闭移动端菜单（如果打开）
             const mobileMenu = document.getElementById('mobile-menu');
             if (mobileMenu.classList.contains('block')) {
                 mobileMenu.classList.replace('block', 'hidden');
@@ -188,7 +151,6 @@ function initSmoothScroll() {
     });
 }
 
-// 终端打字效果
 function initTerminalTyping() {
     const terminalText = document.getElementById('terminal-text');
     if (!terminalText) return;
@@ -203,39 +165,35 @@ function initTerminalTyping() {
         if (i < text.length) {
             const char = text.charAt(i);
             
-            // 处理HTML标签
             if (char === '<') isTagOpen = true;
             if (char === '>') isTagOpen = false;
             
-            // 如果当前字符属于HTML标签，不做延迟
             if (isTagOpen) {
                 while (i < text.length && text.charAt(i) !== '>') {
                     terminalText.innerHTML += text.charAt(i);
                     i++;
                 }
                 if (i < text.length) {
-                    terminalText.innerHTML += text.charAt(i); // 添加 '>'
+                    terminalText.innerHTML += text.charAt(i);
                     i++;
                 }
                 requestAnimationFrame(typeWriter);
             } else {
-                // 普通文本字符一个个打出
                 terminalText.innerHTML += char;
                 i++;
                 
-                // 动态调整速度
                 let speed = 20;
-                if (char === '#') speed = 50 + Math.random() * 100;
-                else if (char === '$') speed = 100 + Math.random() * 200;
-                else if (char === '\n') speed = 300 + Math.random() * 200;
-                else speed = 10 + Math.random() * 30;
+                if (char === '#' || char === '$' || char === '\n') {
+                    speed = 100 + Math.random() * 100;
+                } else {
+                    speed = 10 + Math.random() * 30;
+                }
                 
                 setTimeout(typeWriter, speed);
             }
         }
     }
     
-    // 交叉观察器优化
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
@@ -248,12 +206,11 @@ function initTerminalTyping() {
     observer.observe(terminalText.parentElement.parentElement);
 }
 
-// 返回顶部按钮
 function initBackToTop() {
     const backToTopButton = document.getElementById('back-to-top');
     if (!backToTopButton) return;
     
-    const toggleButtonVisibility = () => {
+    window.addEventListener('scroll', () => {
         const isVisible = window.scrollY > 300;
         if (isVisible) {
             backToTopButton.classList.remove('hidden');
@@ -262,9 +219,7 @@ function initBackToTop() {
             backToTopButton.classList.add('opacity-0');
             setTimeout(() => backToTopButton.classList.add('hidden'), 300);
         }
-    };
-    
-    window.addEventListener('scroll', toggleButtonVisibility);
+    });
     
     backToTopButton.addEventListener('click', () => {
         gsap.to(window, {
@@ -275,7 +230,6 @@ function initBackToTop() {
     });
 }
 
-// 移动菜单交互
 function initMobileMenu() {
     const mobileMenuButton = document.getElementById('mobile-menu-button');
     const mobileMenu = document.getElementById('mobile-menu');
@@ -287,19 +241,16 @@ function initMobileMenu() {
     }
 }
 
-// 语言切换功能
 function initLanguageToggle() {
-    // 翻译数据
     const translations = {
         'en': {
             'features': 'Features',
             'architecture': 'Architecture',
             'documentation': 'Documentation',
             'repository': 'Repository',
-            'title': 'NodePass',
             'subtitle': 'NodePass is a secure, efficient TCP/UDP tunneling solution that delivers fast, reliable access across network restrictions using pre-established TLS/TCP connections.',
             'github': 'GitHub Project',
-            'learn-more': 'Learn More',
+            'learn-more': 'Coming Soon',
             'features-title': 'Core Features',
             'feature1-title': 'High-Performance Tunnel',
             'feature1-desc': 'Lightweight tunnel implemented in Go, with extremely low latency and high throughput, supporting large-scale concurrent connections.',
@@ -314,8 +265,6 @@ function initLanguageToggle() {
             'feature6-title': 'Cross-Platform Compatible',
             'feature6-desc': 'Supports Linux, Windows, macOS, and other operating systems, can be seamlessly deployed and run in various environments.',
             'how-it-works': 'NodePass Architecture',
-            'node-architecture': 'Node Architecture',
-            'architecture-desc': 'NodePass uses a unique three-layer architecture:',
             'master-node-1': 'Master API',
             'master-node-2': 'Master API',
             'server-component': 'Server',
@@ -367,10 +316,9 @@ function initLanguageToggle() {
             'architecture': '架构',
             'documentation': '文档',
             'repository': '仓库',
-            'title': 'NodePass',
             'subtitle': '通用TCP/UDP隧道解决方案，免配置单文件多模式，采用控制数据双路分离架构，内置零延迟自适应连接池，实现跨网络限制的快速安全访问。',
             'github': 'GitHub项目',
-            'learn-more': '了解更多',
+            'learn-more': '即将推出',
             'features-title': '核心特性',
             'feature1-title': '高性能隧道',
             'feature1-desc': '使用Go语言实现的轻量级隧道，具有极低的延迟和高吞吐量，支持大规模并发连接。',
@@ -385,8 +333,6 @@ function initLanguageToggle() {
             'feature6-title': '跨平台兼容',
             'feature6-desc': '支持Linux、Windows、macOS等操作系统，可以在各种环境中无缝部署和运行。',
             'how-it-works': 'NodePass架构',
-            'node-architecture': '节点架构',
-            'architecture-desc': 'NodePass使用独特的三层架构：',
             'master-node-1': '主控API',
             'master-node-2': '主控API',
             'server-component': '服务端',
@@ -435,16 +381,10 @@ function initLanguageToggle() {
         }
     };
     
-    // 语言切换函数
-    const toggleAndApplyLanguage = (currentLang) => {
-        const newLang = currentLang === 'en' ? 'zh' : 'en';
-        applyTranslation(newLang);
-        return newLang;
-    };
+    let currentLang = localStorage.getItem('nodepass-lang') || 'en';
+    if (!['en', 'zh'].includes(currentLang)) currentLang = 'en';
     
-    // 应用翻译
     const applyTranslation = (lang) => {
-        // 更新文本内容
         document.querySelectorAll('[data-i18n]').forEach(element => {
             const key = element.getAttribute('data-i18n');
             if (translations[lang][key]) {
@@ -452,33 +392,29 @@ function initLanguageToggle() {
             }
         });
         
-        // 更新语言显示
         ['current-lang', 'mobile-current-lang'].forEach(id => {
             const langElem = document.getElementById(id);
             if (langElem) langElem.textContent = lang.toUpperCase();
         });
         
-        // 更新文档链接
         document.querySelectorAll('[data-langurl-en]').forEach(link => {
             const enUrl = link.getAttribute('data-langurl-en');
             const zhUrl = link.getAttribute('data-langurl-zh');
             link.setAttribute('href', lang === 'en' ? enUrl : zhUrl);
         });
         
-        // 保存语言设置
         localStorage.setItem('nodepass-lang', lang);
         
         return lang;
     };
     
-    // 获取初始语言
-    let currentLang = localStorage.getItem('nodepass-lang') || 'en';
-    if (!['en', 'zh'].includes(currentLang)) currentLang = 'en';
+    const toggleAndApplyLanguage = (currentLang) => {
+        const newLang = currentLang === 'en' ? 'zh' : 'en';
+        return applyTranslation(newLang);
+    };
     
-    // 应用初始语言
     applyTranslation(currentLang);
     
-    // 添加事件监听器
     ['language-toggle', 'mobile-language-toggle'].forEach(id => {
         const toggle = document.getElementById(id);
         if (toggle) {
@@ -489,56 +425,45 @@ function initLanguageToggle() {
     });
 }
 
-// 初始化架构图动画
 function initArchitectureDiagram() {
-    // 检查架构图是否存在
     const diagram = document.querySelector('.architecture-diagram');
     if (!diagram) return;
     
-    // 绘制连接线
     drawConnectionLines();
     
-    // 响应窗口大小变化
     window.addEventListener('resize', debounce(drawConnectionLines, 250));
 }
 
-// 简单的防抖函数
 function debounce(func, wait) {
     let timeout;
     return function() {
-        const context = this;
-        const args = arguments;
         clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), wait);
+        timeout = setTimeout(() => func.apply(this, arguments), wait);
     };
 }
 
-// 绘制节点之间的连接线
 function drawConnectionLines() {
     const connectionLinesContainer = document.getElementById('connection-lines');
     if (!connectionLinesContainer) return;
     
-    // 清空现有连接线
     connectionLinesContainer.innerHTML = '';
     
-    // 获取节点位置
     const masterTopNode = document.querySelector('.arch-layer[data-node-type="master-top"]');
     const masterBottomNode = document.querySelector('.arch-layer[data-node-type="master-bottom"]');
     
     if (!masterTopNode || !masterBottomNode) return;
     
-    const createSvg = () => {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '100%');
-        svg.setAttribute('height', '100%');
-        svg.style.position = 'absolute';
-        svg.style.top = '0';
-        svg.style.left = '0';
-        svg.style.pointerEvents = 'none';
-        return svg;
-    };
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.style.position = 'absolute';
+    svg.style.top = '0';
+    svg.style.left = '0';
+    svg.style.pointerEvents = 'none';
     
-    const getElementRect = (element, containerRect) => {
+    const containerRect = connectionLinesContainer.getBoundingClientRect();
+    
+    const getElementRect = (element) => {
         const rect = element.getBoundingClientRect();
         return {
             left: rect.left - containerRect.left,
@@ -565,7 +490,6 @@ function drawConnectionLines() {
         if (isDashed) {
             path.setAttribute('stroke-dasharray', '4,4');
             
-            // 添加动画
             const animate = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
             animate.setAttribute('attributeName', 'stroke-dashoffset');
             animate.setAttribute('from', '0');
@@ -578,11 +502,6 @@ function drawConnectionLines() {
         return path;
     };
     
-    // 绘制连接线
-    const svg = createSvg();
-    const containerRect = connectionLinesContainer.getBoundingClientRect();
-    
-    // 获取各元素位置
     const topServerElement = masterTopNode.querySelector('.bg-indigo-900');
     const topClientElement = masterTopNode.querySelector('.bg-green-900');
     const bottomServerElement = masterBottomNode.querySelector('.bg-indigo-900');
@@ -590,12 +509,11 @@ function drawConnectionLines() {
     
     if (!topServerElement || !topClientElement || !bottomServerElement || !bottomClientElement) return;
     
-    const topServerRect = getElementRect(topServerElement, containerRect);
-    const topClientRect = getElementRect(topClientElement, containerRect);
-    const bottomServerRect = getElementRect(bottomServerElement, containerRect);
-    const bottomClientRect = getElementRect(bottomClientElement, containerRect);
+    const topServerRect = getElementRect(topServerElement);
+    const topClientRect = getElementRect(topClientElement);
+    const bottomServerRect = getElementRect(bottomServerElement);
+    const bottomClientRect = getElementRect(bottomClientElement);
     
-    // 计算连接点
     const topServerBottom = {
         x: topServerRect.left + topServerRect.width / 2,
         y: topServerRect.bottom
@@ -616,35 +534,31 @@ function drawConnectionLines() {
         y: bottomClientRect.top
     };
     
-    // 创建连接线路径
     const offset = 15;
     
-    // Server > Client 连接
     svg.appendChild(createPath(
         topServerBottom.x, topServerBottom.y,
         bottomClientTop.x, bottomClientTop.y,
-        -offset, '#3B82F6', true // 蓝色控制通道
+        -offset, '#3B82F6', true
     ));
     
     svg.appendChild(createPath(
         topServerBottom.x, topServerBottom.y,
         bottomClientTop.x, bottomClientTop.y,
-        offset, '#10B981', true // 绿色数据通道
-    ));
-    
-    // Client > Server 连接
-    svg.appendChild(createPath(
-        topClientBottom.x, topClientBottom.y,
-        bottomServerTop.x, bottomServerTop.y,
-        -offset, '#3B82F6', true // 蓝色控制通道
+        offset, '#10B981', true
     ));
     
     svg.appendChild(createPath(
         topClientBottom.x, topClientBottom.y,
         bottomServerTop.x, bottomServerTop.y,
-        offset, '#10B981', true // 绿色数据通道
+        -offset, '#3B82F6', true
     ));
     
-    // 添加到容器
+    svg.appendChild(createPath(
+        topClientBottom.x, topClientBottom.y,
+        bottomServerTop.x, bottomServerTop.y,
+        offset, '#10B981', true
+    ));
+    
     connectionLinesContainer.appendChild(svg);
 }
