@@ -99,6 +99,22 @@ Join our [discussions](https://github.com/yosebyte/nodepass/discussions) to shar
 
 Project `NodePass` is licensed under the [MIT LICENSE](LICENSE).
 
+## 🤝 Sponsors
+
+<table>
+  <tr>
+    <td width="220" align="center">
+      <a href="https://as211392.com">
+        <img src="https://cdn.yobc.de/assets/dreamcloud.png" width="200" alt="DreamCloud">
+      </a>
+    </td>
+    <td>
+      <div><b>DreamCloud</b></div>
+      <div><a href="https://as211392.com">https://as211392.com</a></div>
+    </td>
+  </tr>
+</table>
+
 ## ⭐ Stargazers
 
 [![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)

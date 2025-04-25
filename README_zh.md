@@ -99,6 +99,22 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 `NodePass`项目根据[MIT许可证](LICENSE)授权。
 
+## 🤝 赞助商
+
+<table>
+  <tr>
+    <td width="220" align="center">
+      <a href="https://as211392.com">
+        <img src="https://cdn.yobc.de/assets/dreamcloud.png" width="200" alt="DreamCloud">
+      </a>
+    </td>
+    <td>
+      <div><b>DreamCloud</b></div>
+      <div><a href="https://as211392.com">https://as211392.com</a></div>
+    </td>
+  </tr>
+</table>
+
 ## ⭐ Star趋势
 
 [![Stargazers over time](https://starchart.cc/yosebyte/nodepass.svg?variant=adaptive)](https://starchart.cc/yosebyte/nodepass)
