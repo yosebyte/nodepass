@@ -93,7 +93,9 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 ## 💬 讨论
 
-加入我们的[讨论](https://github.com/yosebyte/nodepass/discussions)，分享您的经验和想法。
+加入我们的[讨论区](https://github.com/yosebyte/nodepass/discussions)分享您的经验和想法。
+
+加入我们的[Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。
 
 ## 📄 许可协议
 

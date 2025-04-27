@@ -95,6 +95,8 @@ Contributions are welcome! Please feel free to submit issues, feature requests, 
 
 Join our [discussions](https://github.com/yosebyte/nodepass/discussions) to share your experiences and ideas.
 
+Join our [Telegram channel](https://t.me/NodePassChannel) for updates and community support.
+
 ## 📄 License
 
 Project `NodePass` is licensed under the [MIT LICENSE](LICENSE).
