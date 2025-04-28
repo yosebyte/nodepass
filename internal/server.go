@@ -20,7 +20,7 @@ import (
 // Server 实现服务器模式功能
 type Server struct {
 	Common                          // 继承通用功能
-	serverMU       sync.Mutex       // 服务器互斥锁
+	mu             sync.Mutex       // 互斥锁
 	tunnelListener net.Listener     // 隧道监听器
 	targetListener *net.TCPListener // 目标监听器
 	tlsConfig      *tls.Config      // TLS配置
@@ -212,7 +212,7 @@ func (s *Server) healthCheck() error {
 			return s.ctx.Err()
 		default:
 			// 发送心跳包
-			if !s.serverMU.TryLock() {
+			if !s.mu.TryLock() {
 				continue
 			}
 			// 定期刷新连接池
@@ -223,7 +223,7 @@ func (s *Server) healthCheck() error {
 
 				_, err := s.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
 				if err != nil {
-					s.serverMU.Unlock()
+					s.mu.Unlock()
 					return err
 				}
 
@@ -235,11 +235,11 @@ func (s *Server) healthCheck() error {
 				// 定期发送心跳包
 				_, err := s.tunnelTCPConn.Write([]byte("\n"))
 				if err != nil {
-					s.serverMU.Unlock()
+					s.mu.Unlock()
 					return err
 				}
 			}
-			s.serverMU.Unlock()
+			s.mu.Unlock()
 			time.Sleep(reportInterval)
 		}
 	}
@@ -296,9 +296,9 @@ func (s *Server) serverTCPLoop() {
 					Fragment: "1", // TCP模式
 				}
 
-				s.serverMU.Lock()
+				s.mu.Lock()
 				_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
-				s.serverMU.Unlock()
+				s.mu.Unlock()
 
 				if err != nil {
 					s.logger.Error("Write failed: %v", err)
@@ -367,9 +367,9 @@ func (s *Server) serverUDPLoop() {
 					Fragment: "2", // UDP模式
 				}
 
-				s.serverMU.Lock()
+				s.mu.Lock()
 				_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
-				s.serverMU.Unlock()
+				s.mu.Unlock()
 
 				if err != nil {
 					s.logger.Error("Write failed: %v", err)

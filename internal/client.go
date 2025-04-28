@@ -240,6 +240,7 @@ func (c *Client) clientTCPOnce(id string) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
+		c.tunnelPool.AddError()
 		return
 	}
 
@@ -290,6 +291,7 @@ func (c *Client) clientUDPOnce(id string) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v", id)
+		c.tunnelPool.AddError()
 		return
 	}
 
