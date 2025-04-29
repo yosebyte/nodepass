@@ -33,6 +33,7 @@ import (
 const (
 	openAPIVersion = "v1"
 	stateFileName  = "nodepass.gob"
+	sseRetryTime   = 3000
 )
 
 // Swagger UI HTML模板
@@ -58,14 +59,16 @@ const swaggerUIHTML = `<!DOCTYPE html>
 
 // Master 实现主控模式功能
 type Master struct {
-	Common                 // 继承通用功能
-	prefix    string       // API前缀
-	instances sync.Map     // 实例映射表
-	server    *http.Server // HTTP服务器
-	logLevel  string       // 日志级别
-	tlsConfig *tls.Config  // TLS配置
-	masterURL *url.URL     // 主控URL
-	statePath string       // 实例状态持久化文件路径
+	Common                            // 继承通用功能
+	prefix        string              // API前缀
+	instances     sync.Map            // 实例映射表
+	server        *http.Server        // HTTP服务器
+	logLevel      string              // 日志级别
+	tlsConfig     *tls.Config         // TLS配置
+	masterURL     *url.URL            // 主控URL
+	statePath     string              // 实例状态持久化文件路径
+	subscribers   sync.Map            // SSE订阅者映射表
+	notifyChannel chan *InstanceEvent // 事件通知通道
 }
 
 // Instance 实例信息
@@ -81,6 +84,13 @@ type Instance struct {
 	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+}
+
+// InstanceEvent 实例事件信息
+type InstanceEvent struct {
+	Type     string    `json:"type"`     // 事件类型：initial, create, update, delete, shutdown
+	Time     time.Time `json:"time"`     // 事件时间
+	Instance *Instance `json:"instance"` // 关联的实例
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -120,9 +130,15 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
-			continue
+
+			// 发送流量更新事件
+			w.master.notifyChannel <- &InstanceEvent{
+				Type:     "update",
+				Time:     time.Now(),
+				Instance: w.instance,
+			}
 		}
-		// 输出常规日志
+		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 	}
 
@@ -165,16 +181,20 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsCode: tlsCode,
 			logger:  logger,
 		},
-		prefix:    fmt.Sprintf("%s/%s", prefix, openAPIVersion),
-		logLevel:  parsedURL.Query().Get("log"),
-		tlsConfig: tlsConfig,
-		masterURL: parsedURL,
-		statePath: filepath.Join(stateDir, stateFileName),
+		prefix:        fmt.Sprintf("%s/%s", prefix, openAPIVersion),
+		logLevel:      parsedURL.Query().Get("log"),
+		tlsConfig:     tlsConfig,
+		masterURL:     parsedURL,
+		statePath:     filepath.Join(stateDir, stateFileName),
+		notifyChannel: make(chan *InstanceEvent, 1024),
 	}
 	master.tunnelAddr = host
 
 	// 加载持久化的实例状态
 	master.loadState()
+
+	// 启动事件分发器
+	master.startEventDispatcher()
 
 	return master
 }
@@ -190,6 +210,7 @@ func (m *Master) Manage() {
 		fmt.Sprintf("%s/instances/", m.prefix):   m.handleInstanceDetail,
 		fmt.Sprintf("%s/openapi.json", m.prefix): m.handleOpenAPISpec,
 		fmt.Sprintf("%s/docs", m.prefix):         m.handleSwaggerUI,
+		fmt.Sprintf("%s/events", m.prefix):       m.handleSSE,
 	}
 
 	// 注册路由处理器
@@ -243,11 +264,52 @@ func (m *Master) Manage() {
 // Shutdown 关闭主控
 func (m *Master) Shutdown(ctx context.Context) error {
 	return m.shutdown(ctx, func() {
+		// 声明一个已关闭通道的集合，避免重复关闭
+		var closedChannels sync.Map
+
 		var wg sync.WaitGroup
+
+		// 给所有订阅者一个关闭通知
+		m.subscribers.Range(func(key, value any) bool {
+			subscriberChan := value.(chan *InstanceEvent)
+			wg.Add(1)
+			go func(ch chan *InstanceEvent) {
+				defer wg.Done()
+				// 非阻塞的方式发送关闭事件
+				select {
+				case ch <- &InstanceEvent{
+					Type: "shutdown",
+					Time: time.Now(),
+				}:
+				default:
+					// 不可用，忽略
+				}
+			}(subscriberChan)
+			return true
+		})
+
+		// 等待所有订阅者处理完关闭事件
+		time.Sleep(100 * time.Millisecond)
+
+		// 关闭所有订阅者通道
+		m.subscribers.Range(func(key, value any) bool {
+			subscriberChan := value.(chan *InstanceEvent)
+			// 检查通道是否已关闭，如果没有则关闭它
+			if _, loaded := closedChannels.LoadOrStore(subscriberChan, true); !loaded {
+				wg.Add(1)
+				go func(k any, ch chan *InstanceEvent) {
+					defer wg.Done()
+					close(ch)
+					m.subscribers.Delete(k)
+				}(key, subscriberChan)
+			}
+			return true
+		})
 
 		// 停止所有运行中的实例
 		m.instances.Range(func(key, value any) bool {
 			instance := value.(*Instance)
+			// 如果实例正在运行，则停止它
 			if instance.Status == "running" && instance.cmd != nil && instance.cmd.Process != nil {
 				wg.Add(1)
 				go func(inst *Instance) {
@@ -259,6 +321,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 		})
 
 		wg.Wait()
+
+		// 关闭事件通知通道，停止事件分发器
+		close(m.notifyChannel)
 
 		// 保存实例状态
 		if err := m.saveState(); err != nil {
@@ -302,25 +367,34 @@ func (m *Master) saveState() error {
 		return err
 	}
 	tempPath := tempFile.Name()
-	defer os.Remove(tempPath) // 确保在任何情况下删除临时文件
+
+	// 删除临时文件的函数，只在错误情况下使用
+	removeTemp := func() {
+		if _, err := os.Stat(tempPath); err == nil {
+			os.Remove(tempPath)
+		}
+	}
 
 	// 编码数据
 	encoder := gob.NewEncoder(tempFile)
 	if err := encoder.Encode(persistentData); err != nil {
 		m.logger.Error("Encode instances failed: %v", err)
 		tempFile.Close()
+		removeTemp()
 		return err
 	}
 
 	// 关闭文件
 	if err := tempFile.Close(); err != nil {
 		m.logger.Error("Close temp failed: %v", err)
+		removeTemp()
 		return err
 	}
 
 	// 原子地替换文件
 	if err := os.Rename(tempPath, m.statePath); err != nil {
 		m.logger.Error("Rename temp failed: %v", err)
+		removeTemp()
 		return err
 	}
 
@@ -436,6 +510,13 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		}()
 		writeJSON(w, http.StatusCreated, instance)
 
+		// 发送创建事件
+		m.notifyChannel <- &InstanceEvent{
+			Type:     "create",
+			Time:     time.Now(),
+			Instance: instance,
+		}
+
 	default:
 		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -486,6 +567,13 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, instance)
 
+		// 发送更新事件
+		m.notifyChannel <- &InstanceEvent{
+			Type:     "update",
+			Time:     time.Now(),
+			Instance: instance,
+		}
+
 	case http.MethodDelete:
 		// 删除实例
 		if instance.Status == "running" {
@@ -496,9 +584,118 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 		m.saveState()
 		w.WriteHeader(http.StatusNoContent)
 
+		// 发送删除事件
+		m.notifyChannel <- &InstanceEvent{
+			Type:     "delete",
+			Time:     time.Now(),
+			Instance: instance,
+		}
+
 	default:
 		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleSSE 处理SSE连接请求
+func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
+	// 验证是否为GET请求
+	if r.Method != http.MethodGet {
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 设置SSE相关响应头
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// 创建唯一的订阅者ID
+	subscriberID := generateID()
+
+	// 创建一个通道用于接收事件
+	events := make(chan *InstanceEvent, 10)
+
+	// 注册订阅者
+	m.subscribers.Store(subscriberID, events)
+	defer m.subscribers.Delete(subscriberID)
+
+	// 发送初始重试间隔
+	fmt.Fprintf(w, "retry: %d\n\n", sseRetryTime)
+
+	// 获取当前所有实例并发送初始状态
+	m.instances.Range(func(_, value any) bool {
+		instance := value.(*Instance)
+		event := &InstanceEvent{
+			Type:     "initial",
+			Time:     time.Now(),
+			Instance: instance,
+		}
+
+		data, err := json.Marshal(event)
+		if err == nil {
+			fmt.Fprintf(w, "event: instance\ndata: %s\n\n", data)
+			w.(http.Flusher).Flush()
+		}
+		return true
+	})
+
+	// 设置客户端连接超时
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// 客户端连接关闭标志
+	connectionClosed := make(chan struct{})
+
+	// 监听客户端连接是否关闭，但不关闭通道，留给Shutdown处理
+	go func() {
+		<-ctx.Done()
+		close(connectionClosed)
+		// 只从映射表中移除，但不关闭通道
+		m.subscribers.Delete(subscriberID)
+	}()
+
+	// 持续发送事件到客户端
+	for {
+		select {
+		case <-connectionClosed:
+			return
+		case event, ok := <-events:
+			if !ok {
+				return
+			}
+
+			// 序列化事件数据
+			data, err := json.Marshal(event)
+			if err != nil {
+				m.logger.Error("Event marshal error: %v", err)
+				continue
+			}
+
+			// 发送事件
+			fmt.Fprintf(w, "event: instance\ndata: %s\n\n", data)
+			w.(http.Flusher).Flush()
+		}
+	}
+}
+
+// startEventDispatcher 启动事件分发器
+func (m *Master) startEventDispatcher() {
+	go func() {
+		for event := range m.notifyChannel {
+			// 向所有订阅者分发事件
+			m.subscribers.Range(func(_, value any) bool {
+				eventChan := value.(chan *InstanceEvent)
+				// 非阻塞方式发送事件
+				select {
+				case eventChan <- event:
+				default:
+					// 不可用，忽略
+				}
+				return true
+			})
+		}
+	}()
 }
 
 // findInstance 查找实例
@@ -519,6 +716,12 @@ func (m *Master) startInstance(instance *Instance) {
 			return
 		}
 	}
+
+	// 保存原始流量统计
+	originalTCPRX := instance.TCPRX
+	originalTCPTX := instance.TCPTX
+	originalUDPRX := instance.UDPRX
+	originalUDPTX := instance.UDPTX
 
 	// 获取可执行文件路径
 	execPath, err := os.Executable()
@@ -548,10 +751,24 @@ func (m *Master) startInstance(instance *Instance) {
 	} else {
 		instance.cmd = cmd
 		instance.Status = "running"
+
+		// 恢复原始流量统计
+		instance.TCPRX = originalTCPRX
+		instance.TCPTX = originalTCPTX
+		instance.UDPRX = originalUDPRX
+		instance.UDPTX = originalUDPTX
+
 		go m.monitorInstance(instance, cmd)
 	}
 
 	m.instances.Store(instance.ID, instance)
+
+	// 发送启动事件
+	m.notifyChannel <- &InstanceEvent{
+		Type:     "update",
+		Time:     time.Now(),
+		Instance: instance,
+	}
 }
 
 // monitorInstance 监控实例状态
@@ -577,6 +794,18 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 					instance.Status = "stopped"
 				}
 				m.instances.Store(instance.ID, instance)
+
+				// 安全地发送停止事件，避免向已关闭的通道发送
+				select {
+				case m.notifyChannel <- &InstanceEvent{
+					Type:     "update",
+					Time:     time.Now(),
+					Instance: instance,
+				}:
+					// 成功发送事件
+				default:
+					// 不可用，忽略
+				}
 			}
 		}
 	}
@@ -624,6 +853,13 @@ func (m *Master) stopInstance(instance *Instance) {
 
 	// 保存状态变更
 	m.saveState()
+
+	// 发送停止事件
+	m.notifyChannel <- &InstanceEvent{
+		Type:     "update",
+		Time:     time.Now(),
+		Instance: instance,
+	}
 }
 
 // enhanceURL 增强URL，添加日志级别和TLS配置
@@ -730,7 +966,17 @@ func generateOpenAPISpec() string {
       },
       "delete": {
         "summary": "Delete instance",
-        "responses": {"204": {"description": "Deleted"}, "404": {"description": "Not found"}}
+        "responses": {"204": {"description": "Deleted"}, "404": {"description": "Not found"}
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "Subscribe to instance events",
+        "responses": {
+          "200": {"description": "Success", "content": {"text/event-stream": {}}},
+          "405": {"description": "Method not allowed"}
+        }
       }
     }
   },
