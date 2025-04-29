@@ -149,19 +149,3 @@ func (c *Common) GetTCPStats() (uint64, uint64) {
 func (c *Common) GetUDPStats() (uint64, uint64) {
 	return atomic.LoadUint64(&c.udpBytesReceived), atomic.LoadUint64(&c.udpBytesSent)
 }
-
-// 统计数据定期报告
-func (c *Common) statsReporter() {
-	for {
-		select {
-		case <-c.ctx.Done():
-			return
-		default:
-			tcpReceived, tcpSent := c.GetTCPStats()
-			udpReceived, udpSent := c.GetUDPStats()
-			c.logger.Debug("Periodic reporter: TRAFFIC_STATS|TCP_RX=%d|TCP_TX=%d|UDP_RX=%d|UDP_TX=%d",
-				tcpReceived, tcpSent, udpReceived, udpSent)
-		}
-		time.Sleep(reportInterval)
-	}
-}

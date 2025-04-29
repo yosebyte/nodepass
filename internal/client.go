@@ -4,7 +4,6 @@ package internal
 import (
 	"bufio"
 	"context"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -92,7 +91,6 @@ func (c *Client) Start() error {
 
 	go c.tunnelPool.ClientManager()
 	go c.clientLaunch()
-	go c.statsReporter()
 
 	return c.signalQueue()
 }
@@ -273,14 +271,11 @@ func (c *Client) clientTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	bytesReceived, bytesSent, err := conn.DataExchange(remoteConn, targetConn)
+	bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
 	c.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
 
-	if err == io.EOF {
-		c.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
-	} else {
-		c.logger.Debug("Exchange complete: %v", err)
-	}
+	// 交换完成，广播统计信息
+	c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
 }
 
 // clientUDPOnce 处理单个UDP请求
@@ -358,6 +353,7 @@ func (c *Client) clientUDPOnce(id string) {
 	}
 
 	c.AddUDPSent(uint64(n))
-	bytesReceived, bytesSent := c.GetUDPStats()
-	c.logger.Debug("Transfer complete: %v bytes transferred", bytesReceived+bytesSent)
+
+	// 传输完成，广播统计信息
+	c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
 }

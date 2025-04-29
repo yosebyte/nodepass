@@ -4,7 +4,6 @@ package internal
 import (
 	"context"
 	"crypto/tls"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -91,7 +90,6 @@ func (s *Server) Start() error {
 
 	go s.tunnelPool.ServerManager()
 	go s.serverLaunch()
-	go s.statsReporter()
 
 	return s.healthCheck()
 }
@@ -309,14 +307,11 @@ func (s *Server) serverTCPLoop() {
 				s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				bytesReceived, bytesSent, err := conn.DataExchange(remoteConn, targetConn)
+				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
 				s.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
 
-				if err == io.EOF {
-					s.logger.Debug("Exchange complete: %v bytes exchanged", bytesReceived+bytesSent)
-				} else {
-					s.logger.Debug("Exchange complete: %v", err)
-				}
+				// 交换完成，广播统计信息
+				s.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
 			}(targetConn)
 		}
 	}
@@ -401,8 +396,9 @@ func (s *Server) serverUDPLoop() {
 				}
 
 				s.AddUDPSent(uint64(n))
-				bytesReceived, bytesSent := s.GetUDPStats()
-				s.logger.Debug("Transfer complete: %v bytes transferred", bytesReceived+bytesSent)
+
+				// 传输完成，广播统计信息
+				s.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
