@@ -48,6 +48,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/v1/instances/{id}` | GET | Get details about a specific instance |
 | `/v1/instances/{id}` | PATCH | Update or control a specific instance |
 | `/v1/instances/{id}` | DELETE | Remove a specific instance |
+| `/v1/events` | GET | Subscribe to instance events using SSE |
 | `/v1/openapi.json` | GET | OpenAPI specification |
 | `/v1/docs` | GET | Swagger UI documentation |
 
@@ -112,7 +113,29 @@ For proper lifecycle management:
    }
    ```
 
-2. **Status Monitoring**: Poll status periodically
+2. **Status Monitoring**: Monitor instance state changes
+   
+   NodePass provides two methods for monitoring instance status:
+   
+   A. **Using SSE (Recommended)**: Receive real-time events via persistent connection
+   ```javascript
+   function connectToEventSource() {
+     const eventSource = new EventSource(`${API_URL}/v1/events`);
+     
+     eventSource.addEventListener('instance', (event) => {
+       const data = JSON.parse(event.data);
+       // Process different event types: initial, create, update, delete
+       // ...see the "Real-time Event Monitoring with SSE" section for implementation details
+     });
+     
+     // Error handling and reconnection logic
+     // ...see previous example
+     
+     return eventSource;
+   }
+   ```
+   
+   B. **Traditional Polling (Alternative)**: Use in environments where SSE is not supported
    ```javascript
    function startInstanceMonitoring(instanceId, interval = 5000) {
      return setInterval(async () => {
@@ -135,6 +158,8 @@ For proper lifecycle management:
    }
    ```
 
+   **Recommendation:** Prefer the SSE approach as it provides more efficient real-time monitoring and reduces server load. Only use the polling approach for client environments with specific compatibility needs or where SSE is not supported.
+
 3. **Control Operations**: Start, stop, restart instances
    ```javascript
    async function controlInstance(instanceId, action) {
@@ -149,6 +174,108 @@ For proper lifecycle management:
      return data.success;
    }
    ```
+
+### Real-time Event Monitoring with SSE
+
+NodePass now supports Server-Sent Events (SSE) for real-time monitoring of instance state changes. This allows frontend applications to receive instant notifications about instance creation, updates, and deletions without polling.
+
+#### Using the SSE Endpoint
+
+The SSE endpoint is available at:
+```
+GET /v1/events
+```
+
+This endpoint establishes a persistent connection that delivers events in real-time using the SSE protocol format.
+
+#### Event Types
+
+The following event types are supported:
+
+1. `initial` - Sent when a connection is established, containing the current state of all instances
+2. `create` - Sent when a new instance is created
+3. `update` - Sent when an instance is updated (status change, start/stop operations)
+4. `delete` - Sent when an instance is deleted
+5. `shutdown` - Sent when the master service is about to shut down, notifying frontend applications to close their connections
+
+#### JavaScript Client Implementation
+
+Here's an example of how to consume the SSE endpoint in a JavaScript frontend:
+
+```javascript
+function connectToEventSource() {
+  const eventSource = new EventSource(`${API_URL}/v1/events`);
+  
+  eventSource.addEventListener('instance', (event) => {
+    const data = JSON.parse(event.data);
+    
+    switch (data.type) {
+      case 'initial':
+        console.log('Initial instance state:', data.instance);
+        updateInstanceUI(data.instance);
+        break;
+      case 'create':
+        console.log('Instance created:', data.instance);
+        addInstanceToUI(data.instance);
+        break;
+      case 'update':
+        console.log('Instance updated:', data.instance);
+        updateInstanceUI(data.instance);
+        break;
+      case 'delete':
+        console.log('Instance deleted:', data.instance);
+        removeInstanceFromUI(data.instance.id);
+        break;
+      case 'shutdown':
+        console.log('Master service is shutting down');
+        // Close the event source and show notification
+        eventSource.close();
+        showShutdownNotification();
+        break;
+    }
+  });
+  
+  eventSource.addEventListener('error', (error) => {
+    console.error('SSE connection error:', error);
+    // Attempt to reconnect after a delay
+    setTimeout(() => {
+      eventSource.close();
+      connectToEventSource();
+    }, 5000);
+  });
+  
+  return eventSource;
+}
+
+// 初始化SSE连接
+const eventSource = connectToEventSource();
+
+// 在应用程序关闭时清理连接
+function cleanup() {
+  if (eventSource) {
+    eventSource.close();
+  }
+}
+```
+
+#### Benefits of SSE over Polling
+
+Using SSE for instance monitoring offers several advantages over traditional polling:
+
+1. **Reduced Latency**: Changes are delivered in real-time
+2. **Reduced Server Load**: Eliminates unnecessary polling requests
+3. **Bandwidth Efficiency**: Only sends data when changes occur
+4. **Native Browser Support**: Built-in browser support without additional libraries
+5. **Automatic Reconnection**: Browsers automatically reconnect if the connection is lost
+
+#### Best Practices for SSE Implementation
+
+When implementing SSE in your frontend:
+
+1. **Handle Reconnection**: While browsers attempt to reconnect automatically, implement custom logic for persistent connections
+2. **Process Events Efficiently**: Keep event processing fast to avoid UI blocking
+3. **Implement Fallback**: For environments where SSE is not supported, implement a polling fallback
+4. **Handle Errors**: Properly handle connection errors and disconnects
 
 ### Traffic Statistics
 

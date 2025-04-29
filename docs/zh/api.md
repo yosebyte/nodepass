@@ -48,6 +48,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/v1/instances/{id}` | GET | 获取特定实例的详细信息 |
 | `/v1/instances/{id}` | PATCH | 更新或控制特定实例 |
 | `/v1/instances/{id}` | DELETE | 删除特定实例 |
+| `/v1/events` | GET | 使用SSE订阅实例事件通知 |
 | `/v1/openapi.json` | GET | OpenAPI规范 |
 | `/v1/docs` | GET | Swagger UI文档 |
 
@@ -57,6 +58,108 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 - 使用带有认证的反向代理
 - 通过网络策略限制访问
 - 启用TLS加密（`tls=1`或`tls=2`）
+
+### 使用SSE实时事件监控
+
+NodePass现在支持服务器发送事件(SSE)功能，用于实时监控实例状态变化。这使前端应用能够即时接收实例创建、更新和删除的通知，无需轮询。
+
+#### 使用SSE端点
+
+SSE端点位于：
+```
+GET /v1/events
+```
+
+此端点建立持久连接，使用SSE协议格式实时传递事件。
+
+#### 事件类型
+
+支持以下事件类型：
+
+1. `initial` - 连接建立时发送，包含所有实例的当前状态
+2. `create` - 创建新实例时发送
+3. `update` - 实例更新时发送（状态变更、启动/停止操作）
+4. `delete` - 实例被删除时发送
+5. `shutdown` - 主控服务即将关闭时发送，通知前端应用关闭连接
+
+#### JavaScript客户端实现
+
+以下是JavaScript前端消费SSE端点的示例：
+
+```javascript
+function connectToEventSource() {
+  const eventSource = new EventSource(`${API_URL}/v1/events`);
+  
+  eventSource.addEventListener('instance', (event) => {
+    const data = JSON.parse(event.data);
+    
+    switch (data.type) {
+      case 'initial':
+        console.log('初始实例状态:', data.instance);
+        updateInstanceUI(data.instance);
+        break;
+      case 'create':
+        console.log('实例已创建:', data.instance);
+        addInstanceToUI(data.instance);
+        break;
+      case 'update':
+        console.log('实例已更新:', data.instance);
+        updateInstanceUI(data.instance);
+        break;
+      case 'delete':
+        console.log('实例已删除:', data.instance);
+        removeInstanceFromUI(data.instance.id);
+        break;
+      case 'shutdown':
+        console.log('主控服务即将关闭');
+        // 关闭事件源并显示通知
+        eventSource.close();
+        showShutdownNotification();
+        break;
+    }
+  });
+  
+  eventSource.addEventListener('error', (error) => {
+    console.error('SSE连接错误:', error);
+    // 延迟后尝试重新连接
+    setTimeout(() => {
+      eventSource.close();
+      connectToEventSource();
+    }, 5000);
+  });
+  
+  return eventSource;
+}
+
+// 初始化SSE连接
+const eventSource = connectToEventSource();
+
+// 在应用程序关闭时清理连接
+function cleanup() {
+  if (eventSource) {
+    eventSource.close();
+  }
+}
+```
+
+#### SSE相比轮询的优势
+
+使用SSE监控实例状态比传统轮询提供多种优势：
+
+1. **减少延迟**：变更实时传递
+2. **减轻服务器负载**：消除不必要的轮询请求
+3. **带宽效率**：只在发生变更时发送数据
+4. **原生浏览器支持**：无需额外库的内置浏览器支持
+5. **自动重连**：浏览器在连接丢失时自动重连
+
+#### SSE实现的最佳实践
+
+在前端实现SSE时：
+
+1. **处理重连**：虽然浏览器会自动尝试重连，但应实现自定义逻辑以确保持久连接
+2. **高效处理事件**：保持事件处理快速，避免UI阻塞
+3. **实现回退机制**：在不支持SSE的环境中，实现轮询回退
+4. **处理错误**：正确处理连接错误和断开
 
 ## 前端集成指南
 
@@ -102,7 +205,29 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    }
    ```
 
-2. **状态监控**：定期轮询状态
+2. **状态监控**：监控实例状态变化
+   
+   NodePass提供两种监控实例状态的方法：
+   
+   A. **使用SSE（推荐）**：通过持久连接接收实时事件
+   ```javascript
+   function connectToEventSource() {
+     const eventSource = new EventSource(`${API_URL}/v1/events`);
+     
+     eventSource.addEventListener('instance', (event) => {
+       const data = JSON.parse(event.data);
+       // 处理不同类型的事件：initial, create, update, delete
+       // ...处理逻辑见前面的"使用SSE实时事件监控"部分
+     });
+     
+     // 错误处理和重连逻辑
+     // ...详见前面的示例
+     
+     return eventSource;
+   }
+   ```
+   
+   B. **传统轮询（备选）**：在不支持SSE的环境中使用
    ```javascript
    function startInstanceMonitoring(instanceId, interval = 5000) {
      return setInterval(async () => {
@@ -124,6 +249,8 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      }, interval);
    }
    ```
+
+   **选择建议：** 优先使用SSE方式，它提供更高效的实时监控，减轻服务器负担。仅在客户端不支持SSE或需要特定环境兼容性时使用轮询方式。
 
 3. **控制操作**：启动、停止、重启实例
    ```javascript
