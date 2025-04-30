@@ -54,10 +54,66 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 ### API认证
 
-主控API目前尚未实现认证机制。在生产环境部署时，建议：
-- 使用带有认证的反向代理
-- 通过网络策略限制访问
-- 启用TLS加密（`tls=1`或`tls=2`）
+NodePass主控API现在支持API Key认证，可以防止未经授权的访问。系统会在首次启动时自动生成一个API Key。
+
+#### API Key特点
+
+1. **自动生成**：首次启动主控模式时自动创建
+2. **持久化存储**：API Key与其他实例配置一起保存在`nodepass.gob`文件中
+3. **重启后保留**：重启主控后API Key保持不变
+4. **选择性保护**：仅保护关键API端点，公共文档仍可访问
+
+#### 受保护的端点
+
+以下端点需要API Key认证：
+- `/v1/instances`（所有方法）
+- `/v1/instances/{id}`（所有方法）
+- `/v1/events`
+
+以下端点可公开访问（无需API Key）：
+- `/v1/openapi.json`
+- `/v1/docs`
+
+#### 如何使用API Key
+
+在API请求中包含API Key：
+
+```javascript
+// 使用API Key进行实例管理请求
+async function getInstances() {
+  const response = await fetch(`${API_URL}/v1/instances`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': 'your-api-key-here'
+    }
+  });
+  
+  return await response.json();
+}
+```
+
+#### 如何获取和重新生成API Key
+
+API Key可以在系统启动日志中找到，也可以通过以下方式重新生成：
+
+```javascript
+// 重新生成API Key（需要知道当前的API Key）
+async function regenerateApiKey() {
+  const response = await fetch(`${API_URL}/v1/instances/${apiKeyID}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'current-api-key'
+    },
+    body: JSON.stringify({ action: 'restart' })
+  });
+  
+  const result = await response.json();
+  return result.url; // 新的API Key
+}
+```
+
+**注意**: API Key ID 固定为 `********`（八个星号）。在内部实现中，这是一个特殊的实例ID，用于存储和管理API Key。
 
 ### 使用SSE实时事件监控
 
@@ -70,7 +126,7 @@ SSE端点位于：
 GET /v1/events
 ```
 
-此端点建立持久连接，使用SSE协议格式实时传递事件。
+此端点建立持久连接，使用SSE协议格式实时传递事件。如果启用了API Key认证，需要在请求头中包含有效的API Key。
 
 #### 事件类型
 
@@ -81,6 +137,7 @@ GET /v1/events
 3. `update` - 实例更新时发送（状态变更、启动/停止操作）
 4. `delete` - 实例被删除时发送
 5. `shutdown` - 主控服务即将关闭时发送，通知前端应用关闭连接
+6. `log` - 实例产生新日志内容时发送，包含日志文本
 
 #### JavaScript客户端实现
 
@@ -88,8 +145,13 @@ GET /v1/events
 
 ```javascript
 function connectToEventSource() {
-  const eventSource = new EventSource(`${API_URL}/v1/events`);
+  const eventSource = new EventSource(`${API_URL}/v1/events`, {
+    // 如果需要认证，原生EventSource不支持自定义请求头
+    // 需要使用fetch API实现自定义SSE客户端
+  });
   
+  // 如果使用API Key，需要使用自定义实现代替原生EventSource
+  // 下面是使用原生EventSource的示例
   eventSource.addEventListener('instance', (event) => {
     const data = JSON.parse(event.data);
     
@@ -109,6 +171,10 @@ function connectToEventSource() {
       case 'delete':
         console.log('实例已删除:', data.instance);
         removeInstanceFromUI(data.instance.id);
+        break;
+      case 'log':
+        console.log(`实例 ${data.instance.id} 日志:`, data.logs);
+        appendLogToInstanceUI(data.instance.id, data.logs);
         break;
       case 'shutdown':
         console.log('主控服务即将关闭');
@@ -131,14 +197,94 @@ function connectToEventSource() {
   return eventSource;
 }
 
-// 初始化SSE连接
-const eventSource = connectToEventSource();
+// 使用API Key创建SSE连接的示例
+function connectToEventSourceWithApiKey(apiKey) {
+  // 原生EventSource不支持自定义请求头，需要使用fetch API
+  fetch(`${API_URL}/v1/events`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey,
+      'Cache-Control': 'no-cache'
+    }
+  }).then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP错误: ${response.status}`);
+    }
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    function processStream() {
+      reader.read().then(({ value, done }) => {
+        if (done) {
+          console.log('连接已关闭');
+          // 尝试重新连接
+          setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+          return;
+        }
+        
+        buffer += decoder.decode(value, { stream: true });
+        
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          const eventMatch = line.match(/^event: (.+)$/m);
+          const dataMatch = line.match(/^data: (.+)$/m);
+          
+          if (eventMatch && dataMatch) {
+            const data = JSON.parse(dataMatch[1]);
+            // 处理事件 - 见上面的switch代码
+          }
+        }
+        
+        processStream();
+      }).catch(error => {
+        console.error('读取错误:', error);
+        // 尝试重新连接
+        setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+      });
+    }
+    
+    processStream();
+  }).catch(error => {
+    console.error('连接错误:', error);
+    // 尝试重新连接
+    setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+  });
+}
+```
 
-// 在应用程序关闭时清理连接
-function cleanup() {
-  if (eventSource) {
-    eventSource.close();
+#### 处理实例日志
+
+新增的`log`事件类型允许实时接收和显示实例的日志输出。这对于监控和调试非常有用：
+
+```javascript
+// 处理日志事件
+function appendLogToInstanceUI(instanceId, logText) {
+  // 找到或创建日志容器
+  let logContainer = document.getElementById(`logs-${instanceId}`);
+  if (!logContainer) {
+    logContainer = document.createElement('div');
+    logContainer.id = `logs-${instanceId}`;
+    document.getElementById('instance-container').appendChild(logContainer);
   }
+  
+  // 创建新的日志条目
+  const logEntry = document.createElement('div');
+  logEntry.className = 'log-entry';
+  
+  // 可以在这里解析ANSI颜色代码或格式化日志
+  logEntry.textContent = logText;
+  
+  // 添加到容器
+  logContainer.appendChild(logEntry);
+  
+  // 滚动到最新日志
+  logContainer.scrollTop = logContainer.scrollHeight;
 }
 ```
 
@@ -160,6 +306,7 @@ function cleanup() {
 2. **高效处理事件**：保持事件处理快速，避免UI阻塞
 3. **实现回退机制**：在不支持SSE的环境中，实现轮询回退
 4. **处理错误**：正确处理连接错误和断开
+5. **日志管理**：为每个实例维护日志缓冲区，避免无限制增长
 
 ## 前端集成指南
 
@@ -186,7 +333,10 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    async function createNodePassInstance(config) {
      const response = await fetch(`${API_URL}/v1/instances`, {
        method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key
+       },
        body: JSON.stringify({
          url: `server://0.0.0.0:${config.port}/${config.target}?tls=${config.tls}`
        })
@@ -212,11 +362,16 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    A. **使用SSE（推荐）**：通过持久连接接收实时事件
    ```javascript
    function connectToEventSource() {
-     const eventSource = new EventSource(`${API_URL}/v1/events`);
+     const eventSource = new EventSource(`${API_URL}/v1/events`, {
+       // 如果需要认证，需要使用自定义实现
+     });
+     
+     // 或者使用带API Key的自定义实现
+     // connectToEventSourceWithApiKey(apiKey);
      
      eventSource.addEventListener('instance', (event) => {
        const data = JSON.parse(event.data);
-       // 处理不同类型的事件：initial, create, update, delete
+       // 处理不同类型的事件：initial, create, update, delete, log
        // ...处理逻辑见前面的"使用SSE实时事件监控"部分
      });
      
@@ -232,7 +387,11 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    function startInstanceMonitoring(instanceId, interval = 5000) {
      return setInterval(async () => {
        try {
-         const response = await fetch(`${API_URL}/v1/instances/${instanceId}`);
+         const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
+           headers: {
+             'X-API-Key': apiKey // 如果启用了API Key
+           }
+         });
          const data = await response.json();
          
          if (data.success) {
@@ -258,7 +417,10 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      // action可以是: start, stop, restart
      const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
        method: 'PATCH',  // 注意：API已更新为使用PATCH方法而非PUT
-       headers: { 'Content-Type': 'application/json' },
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
        body: JSON.stringify({ action })
      });
      

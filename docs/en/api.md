@@ -54,10 +54,66 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 ### API Authentication
 
-The Master API currently does not implement authentication. When deploying in production environments, it's recommended to:
-- Use a reverse proxy with authentication
-- Restrict access using network policies
-- Enable TLS encryption (`tls=1` or `tls=2`)
+The Master API now supports API Key authentication to prevent unauthorized access. The system automatically generates an API Key on first startup.
+
+#### API Key Features
+
+1. **Automatic Generation**: Created automatically when master mode is first started
+2. **Persistent Storage**: The API Key is saved along with other instance configurations in the `nodepass.gob` file
+3. **Retention After Restart**: The API Key remains the same after restarting the master
+4. **Selective Protection**: Only critical API endpoints are protected, public documentation remains accessible
+
+#### Protected Endpoints
+
+The following endpoints require API Key authentication:
+- `/v1/instances` (all methods)
+- `/v1/instances/{id}` (all methods)
+- `/v1/events`
+
+The following endpoints are publicly accessible (no API Key required):
+- `/v1/openapi.json`
+- `/v1/docs`
+
+#### How to Use the API Key
+
+Include the API Key in your API requests:
+
+```javascript
+// Using an API Key for instance management requests
+async function getInstances() {
+  const response = await fetch(`${API_URL}/v1/instances`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': 'your-api-key-here'
+    }
+  });
+  
+  return await response.json();
+}
+```
+
+#### How to Get and Regenerate API Key
+
+The API Key can be found in the system startup logs, and can be regenerated using:
+
+```javascript
+// Regenerate the API Key (requires knowing the current API Key)
+async function regenerateApiKey() {
+  const response = await fetch(`${API_URL}/v1/instances/${apiKeyID}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'current-api-key'
+    },
+    body: JSON.stringify({ action: 'restart' })
+  });
+  
+  const result = await response.json();
+  return result.url; // The new API Key
+}
+```
+
+**Note**: The API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
 
 ## Frontend Integration Guidelines
 
@@ -120,18 +176,116 @@ For proper lifecycle management:
    A. **Using SSE (Recommended)**: Receive real-time events via persistent connection
    ```javascript
    function connectToEventSource() {
-     const eventSource = new EventSource(`${API_URL}/v1/events`);
-     
-     eventSource.addEventListener('instance', (event) => {
-       const data = JSON.parse(event.data);
-       // Process different event types: initial, create, update, delete
-       // ...see the "Real-time Event Monitoring with SSE" section for implementation details
+     const eventSource = new EventSource(`${API_URL}/v1/events`, {
+       // If authentication is needed, native EventSource doesn't support custom headers
+       // Need to use fetch API to implement a custom SSE client
      });
      
-     // Error handling and reconnection logic
-     // ...see previous example
+     // If using API Key, use custom implementation instead of native EventSource
+     // Example using native EventSource (for non-protected endpoints)
+     eventSource.addEventListener('instance', (event) => {
+       const data = JSON.parse(event.data);
+       
+       switch (data.type) {
+         case 'initial':
+           console.log('Initial instance state:', data.instance);
+           updateInstanceUI(data.instance);
+           break;
+         case 'create':
+           console.log('Instance created:', data.instance);
+           addInstanceToUI(data.instance);
+           break;
+         case 'update':
+           console.log('Instance updated:', data.instance);
+           updateInstanceUI(data.instance);
+           break;
+         case 'delete':
+           console.log('Instance deleted:', data.instance);
+           removeInstanceFromUI(data.instance.id);
+           break;
+         case 'log':
+           console.log(`Instance ${data.instance.id} log:`, data.logs);
+           appendLogToInstanceUI(data.instance.id, data.logs);
+           break;
+         case 'shutdown':
+           console.log('Master service is shutting down');
+           // Close the event source and show notification
+           eventSource.close();
+           showShutdownNotification();
+           break;
+       }
+     });
+     
+     eventSource.addEventListener('error', (error) => {
+       console.error('SSE connection error:', error);
+       // Attempt to reconnect after a delay
+       setTimeout(() => {
+         eventSource.close();
+         connectToEventSource();
+       }, 5000);
+     });
      
      return eventSource;
+   }
+   
+   // Example of creating SSE connection with API Key
+   function connectToEventSourceWithApiKey(apiKey) {
+     // Native EventSource doesn't support custom headers, need to use fetch API
+     fetch(`${API_URL}/v1/events`, {
+       method: 'GET',
+       headers: {
+         'X-API-Key': apiKey,
+         'Cache-Control': 'no-cache'
+       }
+     }).then(response => {
+       if (!response.ok) {
+         throw new Error(`HTTP error: ${response.status}`);
+       }
+       
+       const reader = response.body.getReader();
+       const decoder = new TextDecoder();
+       let buffer = '';
+       
+       function processStream() {
+         reader.read().then(({ value, done }) => {
+           if (done) {
+             console.log('Connection closed');
+             // Try to reconnect
+             setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+             return;
+           }
+           
+           buffer += decoder.decode(value, { stream: true });
+           
+           const lines = buffer.split('\n\n');
+           buffer = lines.pop() || '';
+           
+           for (const line of lines) {
+             if (line.trim() === '') continue;
+             
+             const eventMatch = line.match(/^event: (.+)$/m);
+             const dataMatch = line.match(/^data: (.+)$/m);
+             
+             if (eventMatch && dataMatch) {
+               const data = JSON.parse(dataMatch[1]);
+               // Process events - see switch code above
+             }
+           }
+           
+           processStream();
+         }).catch(error => {
+           console.error('Read error:', error);
+           // Try to reconnect
+           setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+         });
+       }
+       
+       processStream();
+     }).catch(error => {
+       console.error('Connection error:', error);
+       // Try to reconnect
+       setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+     });
    }
    ```
    
@@ -197,6 +351,45 @@ The following event types are supported:
 3. `update` - Sent when an instance is updated (status change, start/stop operations)
 4. `delete` - Sent when an instance is deleted
 5. `shutdown` - Sent when the master service is about to shut down, notifying frontend applications to close their connections
+6. `log` - Sent when an instance produces new log content, including the log text
+
+#### Handling Instance Logs
+
+The new `log` event type allows for real-time reception and display of instance log output. This is useful for monitoring and debugging:
+
+```javascript
+// Handle log events
+function appendLogToInstanceUI(instanceId, logText) {
+  // Find or create log container
+  let logContainer = document.getElementById(`logs-${instanceId}`);
+  if (!logContainer) {
+    logContainer = document.createElement('div');
+    logContainer.id = `logs-${instanceId}`;
+    document.getElementById('instance-container').appendChild(logContainer);
+  }
+  
+  // Create new log entry
+  const logEntry = document.createElement('div');
+  logEntry.className = 'log-entry';
+  
+  // Can parse ANSI color codes or format logs here
+  logEntry.textContent = logText;
+  
+  // Add to container
+  logContainer.appendChild(logEntry);
+  
+  // Scroll to latest log
+  logContainer.scrollTop = logContainer.scrollHeight;
+}
+```
+
+When implementing log handling, consider the following best practices:
+
+1. **Buffer Management**: Limit the number of log entries to prevent memory issues
+2. **ANSI Color Parsing**: Parse ANSI color codes in logs for better readability
+3. **Filtering Options**: Provide options to filter logs by severity or content
+4. **Search Functionality**: Allow users to search within instance logs
+5. **Log Persistence**: Optionally save logs to local storage for review after page refresh
 
 #### JavaScript Client Implementation
 
@@ -204,8 +397,13 @@ Here's an example of how to consume the SSE endpoint in a JavaScript frontend:
 
 ```javascript
 function connectToEventSource() {
-  const eventSource = new EventSource(`${API_URL}/v1/events`);
+  const eventSource = new EventSource(`${API_URL}/v1/events`, {
+    // If authentication is needed, native EventSource doesn't support custom headers
+    // Need to use fetch API to implement a custom SSE client
+  });
   
+  // If using API Key, use custom implementation instead of native EventSource
+  // Example using native EventSource (for non-protected endpoints)
   eventSource.addEventListener('instance', (event) => {
     const data = JSON.parse(event.data);
     
@@ -225,6 +423,10 @@ function connectToEventSource() {
       case 'delete':
         console.log('Instance deleted:', data.instance);
         removeInstanceFromUI(data.instance.id);
+        break;
+      case 'log':
+        console.log(`Instance ${data.instance.id} log:`, data.logs);
+        appendLogToInstanceUI(data.instance.id, data.logs);
         break;
       case 'shutdown':
         console.log('Master service is shutting down');
@@ -247,14 +449,64 @@ function connectToEventSource() {
   return eventSource;
 }
 
-// 初始化SSE连接
-const eventSource = connectToEventSource();
-
-// 在应用程序关闭时清理连接
-function cleanup() {
-  if (eventSource) {
-    eventSource.close();
-  }
+// Example of creating SSE connection with API Key
+function connectToEventSourceWithApiKey(apiKey) {
+  // Native EventSource doesn't support custom headers, need to use fetch API
+  fetch(`${API_URL}/v1/events`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey,
+      'Cache-Control': 'no-cache'
+    }
+  }).then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status}`);
+    }
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    
+    function processStream() {
+      reader.read().then(({ value, done }) => {
+        if (done) {
+          console.log('Connection closed');
+          // Try to reconnect
+          setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+          return;
+        }
+        
+        buffer += decoder.decode(value, { stream: true });
+        
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          const eventMatch = line.match(/^event: (.+)$/m);
+          const dataMatch = line.match(/^data: (.+)$/m);
+          
+          if (eventMatch && dataMatch) {
+            const data = JSON.parse(dataMatch[1]);
+            // Process events - see switch code above
+          }
+        }
+        
+        processStream();
+      }).catch(error => {
+        console.error('Read error:', error);
+        // Try to reconnect
+        setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+      });
+    }
+    
+    processStream();
+  }).catch(error => {
+    console.error('Connection error:', error);
+    // Try to reconnect
+    setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
+  });
 }
 ```
 
