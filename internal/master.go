@@ -31,9 +31,10 @@ import (
 
 // 常量定义
 const (
-	openAPIVersion = "v1"
-	stateFileName  = "nodepass.gob"
-	sseRetryTime   = 3000
+	openAPIVersion = "v1"           // OpenAPI版本
+	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
+	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
+	apiKeyID       = "********"     // API Key的特殊ID
 )
 
 // Swagger UI HTML模板
@@ -74,7 +75,7 @@ type Master struct {
 // Instance 实例信息
 type Instance struct {
 	ID         string             `json:"id"`        // 实例ID
-	Type       string             `json:"type"`      // 实例类型（client或server）
+	Type       string             `json:"type"`      // 实例类型
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
 	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
@@ -88,9 +89,10 @@ type Instance struct {
 
 // InstanceEvent 实例事件信息
 type InstanceEvent struct {
-	Type     string    `json:"type"`     // 事件类型：initial, create, update, delete, shutdown
-	Time     time.Time `json:"time"`     // 事件时间
-	Instance *Instance `json:"instance"` // 关联的实例
+	Type     string    `json:"type"`           // 事件类型：initial, create, update, delete, shutdown, log
+	Time     time.Time `json:"time"`           // 事件时间
+	Instance *Instance `json:"instance"`       // 关联的实例
+	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -140,6 +142,14 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		}
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
+
+		// 发送日志事件
+		w.master.notifyChannel <- &InstanceEvent{
+			Type:     "log",
+			Time:     time.Now(),
+			Instance: w.instance,
+			Logs:     line,
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -152,7 +162,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 func setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Cache-Control")
 }
 
 // NewMaster 创建新的主控实例
@@ -203,26 +213,91 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 func (m *Master) Manage() {
 	m.logger.Info("Master started: %v%v", m.tunnelAddr, m.prefix)
 
-	// 设置HTTP路由
-	mux := http.NewServeMux()
-	endpoints := map[string]http.HandlerFunc{
-		fmt.Sprintf("%s/instances", m.prefix):    m.handleInstances,
-		fmt.Sprintf("%s/instances/", m.prefix):   m.handleInstanceDetail,
-		fmt.Sprintf("%s/openapi.json", m.prefix): m.handleOpenAPISpec,
-		fmt.Sprintf("%s/docs", m.prefix):         m.handleSwaggerUI,
-		fmt.Sprintf("%s/events", m.prefix):       m.handleSSE,
+	// 初始化API Key
+	apiKey, ok := m.findInstance(apiKeyID)
+	if !ok {
+		// 如果不存在API Key实例，则创建一个
+		apiKey = &Instance{
+			ID:  apiKeyID,
+			URL: generateAPIKey(),
+		}
+		m.instances.Store(apiKeyID, apiKey)
+		m.saveState()
+		m.logger.Info("API Key created: %v", apiKey.URL)
+	} else {
+		m.logger.Info("API Key loaded: %v", apiKey.URL)
 	}
 
-	// 注册路由处理器
-	for path, handler := range endpoints {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+	// 设置HTTP路由
+	mux := http.NewServeMux()
+
+	// 创建需要API Key认证的端点
+	protectedEndpoints := map[string]http.HandlerFunc{
+		fmt.Sprintf("%s/instances", m.prefix):  m.handleInstances,
+		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
+		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
+	}
+
+	// 创建不需要API Key认证的端点
+	publicEndpoints := map[string]http.HandlerFunc{
+		fmt.Sprintf("%s/openapi.json", m.prefix): m.handleOpenAPISpec,
+		fmt.Sprintf("%s/docs", m.prefix):         m.handleSwaggerUI,
+	}
+
+	// API Key 认证中间件
+	apiKeyMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			// 设置跨域响应头
 			setCorsHeaders(w)
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-			handler(w, r)
-		})
+
+			// 读取API Key，如果存在的话
+			apiKeyInstance, keyExists := m.findInstance(apiKeyID)
+			if keyExists && apiKeyInstance.URL != "" {
+				// 检查请求头中的API Key
+				reqAPIKey := r.Header.Get("X-API-Key")
+				if reqAPIKey == "" {
+					// API Key不存在，返回未授权错误
+					httpError(w, "Unauthorized: API key required", http.StatusUnauthorized)
+					return
+				}
+
+				// 验证API Key
+				if reqAPIKey != apiKeyInstance.URL {
+					httpError(w, "Unauthorized: Invalid API key", http.StatusUnauthorized)
+					return
+				}
+			}
+
+			// 调用原始处理器
+			next(w, r)
+		}
+	}
+
+	// CORS 中间件
+	corsMiddleware := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			// 设置跨域响应头
+			setCorsHeaders(w)
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			next(w, r)
+		}
+	}
+
+	// 注册受保护的端点
+	for path, handler := range protectedEndpoints {
+		mux.HandleFunc(path, apiKeyMiddleware(handler))
+	}
+
+	// 注册公共端点
+	for path, handler := range publicEndpoints {
+		mux.HandleFunc(path, corsMiddleware(handler))
 	}
 
 	// 创建HTTP服务器
@@ -549,20 +624,30 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 			Action string `json:"action"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
-			switch reqData.Action {
-			case "start":
-				if instance.Status != "running" {
+			// API Key 特殊处理
+			if id == apiKeyID && reqData.Action == "restart" {
+				// 重新生成 API Key
+				instance.URL = generateAPIKey()
+				m.instances.Store(apiKeyID, instance)
+				m.saveState()
+				m.logger.Info("API Key regenerated: %v", instance.URL)
+			} else if reqData.Action != "" {
+				// 普通实例的操作处理
+				switch reqData.Action {
+				case "start":
+					if instance.Status != "running" {
+						go m.startInstance(instance)
+					}
+				case "stop":
+					if instance.Status == "running" {
+						m.stopInstance(instance)
+					}
+				case "restart":
+					if instance.Status == "running" {
+						m.stopInstance(instance)
+					}
 					go m.startInstance(instance)
 				}
-			case "stop":
-				if instance.Status == "running" {
-					m.stopInstance(instance)
-				}
-			case "restart":
-				if instance.Status == "running" {
-					m.stopInstance(instance)
-				}
-				go m.startInstance(instance)
 			}
 		}
 		writeJSON(w, http.StatusOK, instance)
@@ -905,6 +990,13 @@ func generateID() string {
 	return hex.EncodeToString(bytes)
 }
 
+// generateAPIKey 生成API Key
+func generateAPIKey() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
 // httpError 返回HTTP错误
 func httpError(w http.ResponseWriter, message string, statusCode int) {
 	setCorsHeaders(w)
@@ -931,18 +1023,25 @@ func generateOpenAPISpec() string {
     "version": "%s"
   },
   "servers": [{"url": "/{prefix}/v1", "variables": {"prefix": {"default": "api", "description": "API prefix path"}}}],
+  "security": [{"ApiKeyAuth": []}],
   "paths": {
     "/instances": {
       "get": {
         "summary": "List all instances",
-        "responses": {"200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Instance"}}}}}}
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Instance"}}}}},
+          "401": {"description": "Unauthorized"}
+        }
       },
       "post": {
         "summary": "Create a new instance",
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateInstanceRequest"}}}},
         "responses": {
           "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
           "400": {"description": "Invalid input"},
+		  "401": {"description": "Unauthorized"},
           "404": {"description": "Not found"}
         }
       }
@@ -951,36 +1050,70 @@ func generateOpenAPISpec() string {
       "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
       "get": {
         "summary": "Get instance details",
+        "security": [{"ApiKeyAuth": []}],
         "responses": {
           "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+          "401": {"description": "Unauthorized"},
           "404": {"description": "Not found"}
         }
       },
       "patch": {
         "summary": "Update instance",
+        "security": [{"ApiKeyAuth": []}],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateInstanceRequest"}}}},
         "responses": {
           "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+          "401": {"description": "Unauthorized"},
           "404": {"description": "Not found"}
         }
       },
       "delete": {
         "summary": "Delete instance",
-        "responses": {"204": {"description": "Deleted"}, "404": {"description": "Not found"}
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "204": {"description": "Deleted"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Not found"}
         }
       }
     },
     "/events": {
       "get": {
         "summary": "Subscribe to instance events",
+		"security": [{"ApiKeyAuth": []}],
         "responses": {
           "200": {"description": "Success", "content": {"text/event-stream": {}}},
+		  "401": {"description": "Unauthorized"},
           "405": {"description": "Method not allowed"}
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "Get OpenAPI specification",
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {}}}
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "summary": "Get Swagger UI",
+        "responses": {
+          "200": {"description": "Success", "content": {"text/html": {}}}
         }
       }
     }
   },
   "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API Key for authentication"
+      }
+    },
     "schemas": {
       "Instance": {
         "type": "object",
@@ -988,11 +1121,11 @@ func generateOpenAPISpec() string {
           "id": {"type": "string", "description": "Unique identifier"},
           "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
           "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
-          "url": {"type": "string", "description": "Command string"},
-          "tcprx": {"type": "integer", "format": "int64", "description": "TCP bytes received"},
-          "tcptx": {"type": "integer", "format": "int64", "description": "TCP bytes sent"},
-          "udprx": {"type": "integer", "format": "int64", "description": "UDP bytes received"},
-          "udptx": {"type": "integer", "format": "int64", "description": "UDP bytes sent"}
+          "url": {"type": "string", "description": "Command string or API Key"},
+          "tcprx": {"type": "integer", "format": "int64", "description": "TCP received bytes"},
+          "tcptx": {"type": "integer", "format": "int64", "description": "TCP transmitted bytes"},
+          "udprx": {"type": "integer", "format": "int64", "description": "UDP received bytes"},
+          "udptx": {"type": "integer", "format": "int64", "description": "UDP transmitted bytes"}
         }
       },
       "CreateInstanceRequest": {
@@ -1002,7 +1135,9 @@ func generateOpenAPISpec() string {
       },
       "UpdateInstanceRequest": {
         "type": "object",
-        "properties": {"action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action"}}
+        "properties": {
+          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"}
+        }
       }
     }
   }
