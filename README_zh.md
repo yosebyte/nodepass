@@ -99,7 +99,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 ## 📄 许可协议
 
-`NodePass`项目根据[MIT许可证](LICENSE)授权。
+`NodePass`项目根据[BSD 3-Clause许可证](LICENSE)授权。
 
 ## 🤝 赞助商
 
