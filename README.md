@@ -99,7 +99,7 @@ Join our [Telegram channel](https://t.me/NodePassChannel) for updates and commun
 
 ## 📄 License
 
-Project `NodePass` is licensed under the [MIT LICENSE](LICENSE).
+Project `NodePass` is licensed under the [BSD 3-Clause License](LICENSE).
 
 ## 🤝 Sponsors
 
