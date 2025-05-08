@@ -5,12 +5,12 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/yosebyte/x/log"
+	"github.com/NodePassProject/logs"
 )
 
 var (
 	// 全局日志记录器
-	logger = log.NewLogger(log.Info, true)
+	logger = logs.NewLogger(logs.Info, true)
 	// 程序版本
 	version = "dev"
 )
@@ -41,26 +41,26 @@ func getParsedURL(args []string) *url.URL {
 func initLogLevel(level string) {
 	switch level {
 	case "debug":
-		logger.SetLogLevel(log.Debug)
+		logger.SetLogLevel(logs.Debug)
 		logger.Debug("Init log level: DEBUG")
 	case "warn":
-		logger.SetLogLevel(log.Warn)
+		logger.SetLogLevel(logs.Warn)
 		logger.Warn("Init log level: WARN")
 	case "error":
-		logger.SetLogLevel(log.Error)
+		logger.SetLogLevel(logs.Error)
 		logger.Error("Init log level: ERROR")
 	case "fatal":
-		logger.SetLogLevel(log.Fatal)
+		logger.SetLogLevel(logs.Fatal)
 		logger.Fatal("Init log level: FATAL")
 	default:
-		logger.SetLogLevel(log.Info)
+		logger.SetLogLevel(logs.Info)
 		logger.Info("Init log level: INFO")
 	}
 }
 
 // 输出帮助信息并退出程序
 func getExitInfo() {
-	logger.SetLogLevel(log.Info)
+	logger.SetLogLevel(logs.Info)
 	logger.Info(`Version: %v %v/%v
 
 ╭─────────────────────────────────────────────────────────────╮

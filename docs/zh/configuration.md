@@ -57,6 +57,7 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 | `NP_MAX_POOL_CAPACITY` | 最大连接池大小 | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 5s | `export NP_UDP_READ_TIMEOUT=10s` |
+| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 5s | `export NP_TCP_READ_TIMEOUT=10s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP拨号超时 | 5s | `export NP_UDP_DIAL_TIMEOUT=10s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP拨号超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=10s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
@@ -115,6 +116,20 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 - `NP_UDP_DIAL_TIMEOUT`：UDP拨号超时
   - 对于高延迟网络增加此值
   - 对于需要快速连接的应用减少此值
+
+### TCP设置
+
+对于TCP连接的优化：
+
+- `NP_TCP_READ_TIMEOUT`：TCP读取操作超时
+  - 对于高延迟网络或响应慢的服务器增加此值
+  - 对于需要快速检测断开连接的应用降低此值
+  - 影响数据传输过程中的等待时间
+
+- `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
+  - 对于网络条件不稳定的环境增加此值
+  - 对于需要快速判断连接成功与否的应用减少此值
+  - 影响初始连接建立阶段
 
 ### 服务管理设置
 

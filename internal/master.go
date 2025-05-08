@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yosebyte/x/log"
+	"github.com/NodePassProject/logs"
 )
 
 // 常量定义
@@ -166,7 +166,7 @@ func setCorsHeaders(w http.ResponseWriter) {
 }
 
 // NewMaster 创建新的主控实例
-func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *Master {
+func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Master {
 	// 解析主机地址
 	host, err := net.ResolveTCPAddr("tcp", parsedURL.Host)
 	if err != nil {

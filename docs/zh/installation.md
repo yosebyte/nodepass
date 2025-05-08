@@ -96,8 +96,6 @@ bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)
 nodepass
 ```
 
-![np-cli](https://cdn.yobc.de/assets/np-cli.png)
-
 ## 下一步
 
 安装NodePass后，您可以：

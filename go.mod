@@ -1,5 +1,10 @@
 module github.com/yosebyte/nodepass
 
-go 1.24.1
+go 1.24.3
 
-require github.com/yosebyte/x v1.1.12
+require (
+	github.com/NodePassProject/cert v1.0.0
+	github.com/NodePassProject/conn v1.0.0
+	github.com/NodePassProject/logs v1.0.0
+	github.com/NodePassProject/pool v1.0.0
+)
