@@ -12,8 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yosebyte/x/conn"
-	"github.com/yosebyte/x/log"
+	"github.com/NodePassProject/conn"
+	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/pool"
 )
 
 // Server 实现服务器模式功能
@@ -24,10 +25,11 @@ type Server struct {
 	targetListener *net.TCPListener // 目标监听器
 	tlsConfig      *tls.Config      // TLS配置
 	semaphore      chan struct{}    // 信号量通道
+	clientIP       string           // 客户端IP
 }
 
 // NewServer 创建新的服务器实例
-func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *log.Logger) *Server {
+func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Server {
 	server := &Server{
 		Common: Common{
 			tlsCode: tlsCode,
@@ -86,7 +88,7 @@ func (s *Server) Start() error {
 	}
 
 	// 初始化隧道连接池
-	s.tunnelPool = conn.NewServerPool(s.tlsConfig, s.tunnelListener)
+	s.tunnelPool = pool.NewServerPool(s.clientIP, s.tlsConfig, s.tunnelListener)
 
 	go s.tunnelPool.ServerManager()
 	go s.serverLaunch()
@@ -173,6 +175,9 @@ func (s *Server) tunnelHandshake() error {
 		return err
 	}
 	s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
+
+	// 记录客户端IP
+	s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
 
 	// 构建并发送隧道URL到客户端
 	tunnelURL := &url.URL{
@@ -311,7 +316,8 @@ func (s *Server) serverTCPLoop() {
 				s.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
 
 				// 交换完成，广播统计信息
-				s.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
+				s.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+					s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
 			}(targetConn)
 		}
 	}
@@ -374,31 +380,27 @@ func (s *Server) serverUDPLoop() {
 				s.logger.Debug("UDP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
 				s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
 
-				// 发送数据到远程连接
-				_, err = remoteConn.Write(buffer[:n])
+				// 处理UDP/TCP数据交换
+				udpToTcp, tcpToUdp, err := conn.DataTransfer(
+					s.targetUDPConn,
+					remoteConn,
+					clientAddr, // 有UDP地址，自动确定为服务器模式
+					buffer[:n],
+					udpDataBufSize,
+					tcpReadTimeout,
+				)
+
 				if err != nil {
-					s.logger.Error("Write failed: %v", err)
+					s.logger.Error("Transfer failed: %v", err)
 					return
 				}
 
-				// 读取远程连接的响应
-				n, err = remoteConn.Read(buffer)
-				if err != nil {
-					s.logger.Error("Read failed: %v", err)
-					return
-				}
-
-				// 将响应发送回客户端
-				_, err = s.targetUDPConn.WriteToUDP(buffer[:n], clientAddr)
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-
-				s.AddUDPSent(uint64(n))
+				s.AddUDPReceived(udpToTcp)
+				s.AddUDPSent(tcpToUdp)
 
 				// 传输完成，广播统计信息
-				s.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
+				s.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+					s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}

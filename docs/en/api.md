@@ -634,8 +634,6 @@ For example:
 http://localhost:9090/api/v1/docs
 ```
 
-![np-api](https://cdn.yobc.de/assets/np-api.png)
-
 The Swagger UI provides a convenient way to explore and test the API directly in your browser. You can execute API calls against your running NodePass Master instance and see the actual responses.
 
 ## Best Practices

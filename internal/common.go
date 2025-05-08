@@ -1,4 +1,4 @@
-// 内部工具包，提供共享功能
+// 内部包，提供共享功能
 package internal
 
 import (
@@ -11,14 +11,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yosebyte/x/conn"
-	"github.com/yosebyte/x/log"
+	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/pool"
 )
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
 	tlsCode          string             // TLS模式代码
-	logger           *log.Logger        // 日志记录器
+	logger           *logs.Logger       // 日志记录器
 	tunnelAddr       *net.TCPAddr       // 隧道地址
 	targetAddr       string             // 目标地址字符串
 	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
@@ -26,7 +26,7 @@ type Common struct {
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
 	targetTCPConn    *net.TCPConn       // 目标TCP连接
 	targetUDPConn    *net.UDPConn       // 目标UDP连接
-	tunnelPool       *conn.Pool         // 隧道连接池
+	tunnelPool       *pool.Pool         // 隧道连接池
 	ctx              context.Context    // 上下文
 	cancel           context.CancelFunc // 取消函数
 	tcpBytesReceived uint64             // TCP接收字节数
@@ -43,6 +43,7 @@ var (
 	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
 	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 5*time.Second)  // UDP读取超时
 	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)  // UDP拨号超时
+	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 5*time.Second)  // TCP读取超时
 	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)  // TCP拨号超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔

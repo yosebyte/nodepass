@@ -544,8 +544,6 @@ http(s)://<api_addr>[<prefix>]/v1/docs
 http://localhost:9090/api/v1/docs
 ```
 
-![np-api](https://cdn.yobc.de/assets/np-api.png)
-
 Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试API。您可以针对运行中的NodePass主控实例执行API调用，并查看实际响应。
 
 ## 最佳实践

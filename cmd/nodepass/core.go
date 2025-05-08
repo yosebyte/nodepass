@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/NodePassProject/cert"
 	"github.com/yosebyte/nodepass/internal"
-	x "github.com/yosebyte/x/tls"
 )
 
 // 根据URL方案分派到不同的运行模式
@@ -47,7 +47,7 @@ func runMaster(parsedURL *url.URL) {
 // 获取TLS配置
 func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 	// 生成基本TLS配置
-	tlsConfig, err := x.GenerateTLSConfig("yosebyte/nodepass:" + version)
+	tlsConfig, err := cert.NewTLSConfig("yosebyte/nodepass:" + version)
 	if err != nil {
 		logger.Error("Generate failed: %v", err)
 		logger.Warn("TLS code-0: nil cert")
@@ -102,7 +102,7 @@ func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 		if cert.Leaf != nil {
 			logger.Info("TLS code-2: %v with TLS 1.3", cert.Leaf.Subject.CommonName)
 		} else {
-			logger.Warn("TLS code-2: unknown with TLS 1.3")
+			logger.Warn("TLS code-2: unknown cert name with TLS 1.3")
 		}
 		return tlsCode, tlsConfig
 

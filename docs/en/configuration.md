@@ -57,6 +57,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_MAX_POOL_CAPACITY` | Maximum connection pool size | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 5s | `export NP_UDP_READ_TIMEOUT=10s` |
+| `NP_TCP_READ_TIMEOUT` | Timeout for TCP read operations | 5s | `export NP_TCP_READ_TIMEOUT=10s` |
 | `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 5s | `export NP_UDP_DIAL_TIMEOUT=10s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 5s | `export NP_TCP_DIAL_TIMEOUT=10s` |
 | `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
@@ -115,6 +116,20 @@ For applications relying heavily on UDP traffic:
 - `NP_UDP_DIAL_TIMEOUT`: Timeout for establishing UDP connections
   - Increase for high-latency networks or applications with slow response times
   - Decrease for low-latency applications requiring quick failover
+
+### TCP Settings
+
+For optimizing TCP connections:
+
+- `NP_TCP_READ_TIMEOUT`: Timeout for TCP read operations
+  - Increase for high-latency networks or servers with slow response times
+  - Decrease for applications that need to detect disconnections quickly
+  - Affects wait time during data transfer phases
+
+- `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
+  - Increase for unstable network conditions
+  - Decrease for applications that need quick connection success/failure determination
+  - Affects initial connection establishment phase
 
 ### Service Management Settings
 
