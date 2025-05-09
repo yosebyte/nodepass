@@ -615,69 +615,85 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		// 获取实例信息
-		writeJSON(w, http.StatusOK, instance)
-
+		m.handleGetInstance(w, instance)
 	case http.MethodPatch:
-		// 更新实例状态
-		var reqData struct {
-			Action string `json:"action"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
-			// API Key 特殊处理
-			if id == apiKeyID && reqData.Action == "restart" {
-				// 重新生成 API Key
-				instance.URL = generateAPIKey()
-				m.instances.Store(apiKeyID, instance)
-				m.saveState()
-				m.logger.Info("API Key regenerated: %v", instance.URL)
-			} else if reqData.Action != "" {
-				// 普通实例的操作处理
-				switch reqData.Action {
-				case "start":
-					if instance.Status != "running" {
-						go m.startInstance(instance)
-					}
-				case "stop":
-					if instance.Status == "running" {
-						m.stopInstance(instance)
-					}
-				case "restart":
-					if instance.Status == "running" {
-						m.stopInstance(instance)
-					}
-					go m.startInstance(instance)
-				}
-			}
-		}
-		writeJSON(w, http.StatusOK, instance)
-
-		// 发送更新事件
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "update",
-			Time:     time.Now(),
-			Instance: instance,
-		}
-
+		m.handlePatchInstance(w, r, id, instance)
 	case http.MethodDelete:
-		// 删除实例
+		m.handleDeleteInstance(w, id, instance)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetInstance 处理获取实例信息请求
+func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
+	writeJSON(w, http.StatusOK, instance)
+}
+
+// handlePatchInstance 处理更新实例状态请求
+func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
+	var reqData struct {
+		Action string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
+		if id == apiKeyID && reqData.Action == "restart" {
+			m.regenerateAPIKey(instance)
+		} else if reqData.Action != "" {
+			m.processInstanceAction(instance, reqData.Action)
+		}
+	}
+	writeJSON(w, http.StatusOK, instance)
+
+	// 发送更新事件
+	m.notifyChannel <- &InstanceEvent{
+		Type:     "update",
+		Time:     time.Now(),
+		Instance: instance,
+	}
+}
+
+// regenerateAPIKey 重新生成API Key
+func (m *Master) regenerateAPIKey(instance *Instance) {
+	instance.URL = generateAPIKey()
+	m.instances.Store(apiKeyID, instance)
+	m.saveState()
+	m.logger.Info("API Key regenerated: %v", instance.URL)
+}
+
+// processInstanceAction 处理实例操作
+func (m *Master) processInstanceAction(instance *Instance, action string) {
+	switch action {
+	case "start":
+		if instance.Status != "running" {
+			go m.startInstance(instance)
+		}
+	case "stop":
 		if instance.Status == "running" {
 			m.stopInstance(instance)
 		}
-		m.instances.Delete(id)
-		// 删除实例后保存状态
-		m.saveState()
-		w.WriteHeader(http.StatusNoContent)
-
-		// 发送删除事件
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "delete",
-			Time:     time.Now(),
-			Instance: instance,
+	case "restart":
+		if instance.Status == "running" {
+			m.stopInstance(instance)
 		}
+		go m.startInstance(instance)
+	}
+}
 
-	default:
-		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+// handleDeleteInstance 处理删除实例请求
+func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance *Instance) {
+	if instance.Status == "running" {
+		m.stopInstance(instance)
+	}
+	m.instances.Delete(id)
+	// 删除实例后保存状态
+	m.saveState()
+	w.WriteHeader(http.StatusNoContent)
+
+	// 发送删除事件
+	m.notifyChannel <- &InstanceEvent{
+		Type:     "delete",
+		Time:     time.Now(),
+		Instance: instance,
 	}
 }
 
