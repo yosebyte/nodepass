@@ -21,9 +21,7 @@ master://<api_addr>/<prefix>?<log>&<tls>
 
 Where:
 - `<api_addr>` is the address specified in the master mode URL (e.g., `0.0.0.0:9090`)
-- `<prefix>` is the optional API prefix (if not specified, a randomly generated ID will be used as the prefix)
-
-**Note:** If no custom prefix is specified, the system will automatically generate a random prefix for enhanced security. The generated prefix will be displayed in the startup logs.
+- `<prefix>` is the optional API prefix (if not specified, `/api` will be used as the prefix)
 
 ### Starting Master Mode
 
