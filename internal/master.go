@@ -177,7 +177,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 设置API前缀
 	prefix := parsedURL.Path
 	if prefix == "" || prefix == "/" {
-		prefix = fmt.Sprintf("/%s", generateID())
+		prefix = "/api"
 	} else {
 		prefix = strings.TrimRight(prefix, "/")
 	}
