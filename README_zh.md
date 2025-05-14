@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="500">
+  <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="448">
 
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/yosebyte/nodepass/total.svg)](https://github.com/yosebyte/nodepass/releases)
@@ -46,7 +46,7 @@
 - **预编译二进制文件**: 从[发布页面](https://github.com/yosebyte/nodepass/releases)下载。
 - **Go安装**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
 - **容器镜像**: `docker pull ghcr.io/yosebyte/nodepass:latest`
-- **管理脚本**: `bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)`
+- **部署脚本**: `bash <(curl -sSL https://run.nodepass.eu/np.sh)`
 
 ### 🚀 基本用法
 

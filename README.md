@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="500">
+  <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="448">
 
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/yosebyte/nodepass/total.svg)](https://github.com/yosebyte/nodepass/releases)
@@ -46,7 +46,7 @@ English | [简体中文](README_zh.md)
 - **Pre-built Binaries**: Download from [releases page](https://github.com/yosebyte/nodepass/releases).
 - **Go Install**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
 - **Container Image**: `docker pull ghcr.io/yosebyte/nodepass:latest`
-- **Management Script**: `bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)`
+- **Deployment Script**: `bash <(curl -sSL https://run.nodepass.eu/np.sh)`
 
 ### 🚀 Basic Usage
 
