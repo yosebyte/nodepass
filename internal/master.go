@@ -158,7 +158,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// 设置跨域响应头
+// setCorsHeaders 设置跨域响应头
 func setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH, POST, DELETE, OPTIONS")
@@ -978,7 +978,7 @@ func (m *Master) enhanceURL(instanceURL string, instanceType string) string {
 		query.Set("log", m.logLevel)
 	}
 
-	// 为服务器实例设置TLS配置
+	// 为服务端实例设置TLS配置
 	if instanceType == "server" && m.tlsCode != "0" {
 		if query.Get("tls") == "" {
 			query.Set("tls", m.tlsCode)
@@ -1032,7 +1032,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, data any) {
 // generateOpenAPISpec 生成OpenAPI规范文档
 func generateOpenAPISpec() string {
 	return fmt.Sprintf(`{
-  "openapi": "3.0.0",
+  "openapi": "3.1.1",
   "info": {
     "title": "NodePass API",
     "description": "API for managing NodePass server and client instances",
@@ -1138,10 +1138,10 @@ func generateOpenAPISpec() string {
           "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
           "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
           "url": {"type": "string", "description": "Command string or API Key"},
-          "tcprx": {"type": "integer", "format": "int64", "description": "TCP received bytes"},
-          "tcptx": {"type": "integer", "format": "int64", "description": "TCP transmitted bytes"},
-          "udprx": {"type": "integer", "format": "int64", "description": "UDP received bytes"},
-          "udptx": {"type": "integer", "format": "int64", "description": "UDP transmitted bytes"}
+          "tcprx": {"type": "integer", "description": "TCP received bytes"},
+          "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
+          "udprx": {"type": "integer", "description": "UDP received bytes"},
+          "udptx": {"type": "integer", "description": "UDP transmitted bytes"}
         }
       },
       "CreateInstanceRequest": {
