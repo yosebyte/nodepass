@@ -15,14 +15,14 @@ var (
 	version = "dev"
 )
 
-// 程序入口点
+// main 程序入口
 func main() {
 	parsedURL := getParsedURL(os.Args)
 	initLogLevel(parsedURL.Query().Get("log"))
 	coreDispatch(parsedURL)
 }
 
-// 解析URL参数
+// getParsedURL 解析URL参数
 func getParsedURL(args []string) *url.URL {
 	if len(args) < 2 {
 		getExitInfo()
@@ -37,7 +37,7 @@ func getParsedURL(args []string) *url.URL {
 	return parsedURL
 }
 
-// 初始化日志级别
+// initLogLevel 初始化日志级别
 func initLogLevel(level string) {
 	switch level {
 	case "debug":
@@ -58,7 +58,7 @@ func initLogLevel(level string) {
 	}
 }
 
-// 输出帮助信息并退出程序
+// getExitInfo 输出帮助信息并退出程序
 func getExitInfo() {
 	logger.SetLogLevel(logs.Info)
 	logger.Info(`Version: %v %v/%v
