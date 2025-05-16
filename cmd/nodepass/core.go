@@ -9,7 +9,7 @@ import (
 	"github.com/yosebyte/nodepass/internal"
 )
 
-// 根据URL方案分派到不同的运行模式
+// coreDispatch 根据URL方案分派到不同的运行模式
 func coreDispatch(parsedURL *url.URL) {
 	switch parsedURL.Scheme {
 	case "server":
@@ -18,33 +18,35 @@ func coreDispatch(parsedURL *url.URL) {
 		runClient(parsedURL)
 	case "master":
 		runMaster(parsedURL)
+	case "worker":
+		getExitInfo() // TODO
 	default:
 		logger.Fatal("Unknown core: %v", parsedURL.Scheme)
 		getExitInfo()
 	}
 }
 
-// 运行服务器模式
+// runServer 运行服务端模式
 func runServer(parsedURL *url.URL) {
 	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
 	server := internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
 	server.Manage()
 }
 
-// 运行客户端模式
+// runClient 运行客户端模式
 func runClient(parsedURL *url.URL) {
 	client := internal.NewClient(parsedURL, logger)
 	client.Manage()
 }
 
-// 运行主控模式
+// runMaster 运行主控模式
 func runMaster(parsedURL *url.URL) {
 	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
 	master := internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger)
 	master.Manage()
 }
 
-// 获取TLS配置
+// getTLSProtocol 获取TLS配置
 func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 	// 生成基本TLS配置
 	tlsConfig, err := cert.NewTLSConfig("yosebyte/nodepass:" + version)
