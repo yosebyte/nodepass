@@ -1,52 +1,49 @@
-// 内部包，实现服务器模式功能
+// 内部包，实现服务端模式功能
 package internal
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"net"
 	"net/url"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
 )
 
-// Server 实现服务器模式功能
+// Server 实现服务端模式功能
 type Server struct {
-	Common                          // 继承通用功能
-	mu             sync.Mutex       // 互斥锁
-	tunnelListener net.Listener     // 隧道监听器
-	targetListener *net.TCPListener // 目标监听器
-	tlsConfig      *tls.Config      // TLS配置
-	semaphore      chan struct{}    // 信号量通道
-	clientIP       string           // 客户端IP
+	Common                      // 继承共享功能
+	tunnelListener net.Listener // 隧道监听器
+	tlsConfig      *tls.Config  // TLS配置
+	clientIP       string       // 客户端IP
 }
 
-// NewServer 创建新的服务器实例
+// NewServer 创建新的服务端实例
 func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Server {
 	server := &Server{
 		Common: Common{
-			tlsCode: tlsCode,
-			logger:  logger,
+			tlsCode:    tlsCode,
+			logger:     logger,
+			semaphore:  make(chan struct{}, semaphoreLimit),
+			signalChan: make(chan string, semaphoreLimit),
 		},
 		tlsConfig: tlsConfig,
-		semaphore: make(chan struct{}, semaphoreLimit),
 	}
 	server.getAddress(parsedURL)
 	return server
 }
 
-// Manage 管理服务器生命周期
+// Manage 管理服务端生命周期
 func (s *Server) Manage() {
 	s.logger.Info("Server started: %v/%v", s.tunnelAddr, s.targetTCPAddr)
 
-	// 启动服务器并处理重启
+	// 启动服务端并处理重启
 	go func() {
 		for {
 			if err := s.Start(); err != nil {
@@ -73,13 +70,24 @@ func (s *Server) Manage() {
 	}
 }
 
-// Start 启动服务器
+// Start 启动服务端
 func (s *Server) Start() error {
 	s.initContext()
 
-	// 初始化监听器
-	if err := s.initListener(); err != nil {
+	// 初始化隧道监听器
+	if err := s.initTunnelListener(); err != nil {
 		return err
+	}
+
+	// 检查目标地址是否为本机接口地址之一
+	if s.isLocalAddress(s.targetTCPAddr.IP) {
+		// 初始化目标监听器
+		if err := s.initTargetListener(); err != nil {
+			return err
+		}
+		s.dataFlow = "-"
+	} else {
+		s.dataFlow = "+"
 	}
 
 	// 与客户端进行握手
@@ -91,12 +99,18 @@ func (s *Server) Start() error {
 	s.tunnelPool = pool.NewServerPool(s.clientIP, s.tlsConfig, s.tunnelListener)
 
 	go s.tunnelPool.ServerManager()
-	go s.serverLaunch()
 
+	switch s.dataFlow {
+	case "-":
+		go s.commonLoop()
+	case "+":
+		go s.commonOnce()
+		go s.commonQueue()
+	}
 	return s.healthCheck()
 }
 
-// Stop 停止服务器
+// Stop 停止服务端
 func (s *Server) Stop() {
 	// 取消上下文
 	if s.cancel != nil {
@@ -139,35 +153,18 @@ func (s *Server) Stop() {
 		s.tunnelListener.Close()
 		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListener.Addr())
 	}
+
+	// 清空信号通道
+	for {
+		select {
+		case <-s.signalChan:
+		default:
+			return
+		}
+	}
 }
 
-// 初始化监听器
-func (s *Server) initListener() error {
-	// 初始化隧道监听器
-	tunnelListener, err := net.ListenTCP("tcp", s.tunnelAddr)
-	if err != nil {
-		return err
-	}
-	s.tunnelListener = tunnelListener
-
-	// 初始化目标TCP监听器
-	targetListener, err := net.ListenTCP("tcp", s.targetTCPAddr)
-	if err != nil {
-		return err
-	}
-	s.targetListener = targetListener
-
-	// 初始化目标UDP监听器
-	targetUDPConn, err := net.ListenUDP("udp", s.targetUDPAddr)
-	if err != nil {
-		return err
-	}
-	s.targetUDPConn = targetUDPConn
-
-	return nil
-}
-
-// 与客户端进行握手
+// tunnelHandshake 与客户端进行握手
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
 	tunnelTCPConn, err := s.tunnelListener.Accept()
@@ -175,12 +172,14 @@ func (s *Server) tunnelHandshake() error {
 		return err
 	}
 	s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
+	s.bufReader = bufio.NewReader(s.tunnelTCPConn)
 
 	// 记录客户端IP
 	s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
 
 	// 构建并发送隧道URL到客户端
 	tunnelURL := &url.URL{
+		Host:     s.dataFlow,
 		Fragment: s.tlsCode,
 	}
 	_, err = s.tunnelTCPConn.Write([]byte(tunnelURL.String() + "\n"))
@@ -193,20 +192,62 @@ func (s *Server) tunnelHandshake() error {
 	return nil
 }
 
-// 启动服务器处理循环
-func (s *Server) serverLaunch() {
-	for {
-		// 等待连接池准备就绪
-		if s.tunnelPool.Ready() {
-			go s.serverTCPLoop()
-			go s.serverUDPLoop()
-			return
-		}
-		time.Sleep(time.Millisecond)
+// initTunnelListener 初始化隧道监听器
+func (s *Server) initTunnelListener() error {
+	// 初始化隧道监听器
+	tunnelListener, err := net.ListenTCP("tcp", s.tunnelAddr)
+	if err != nil {
+		return err
 	}
+	s.tunnelListener = tunnelListener
+
+	return nil
 }
 
-// 健康检查
+// isLocalAddress 检查IP地址是否为本机接口地址之一
+func (s *Server) isLocalAddress(ip net.IP) bool {
+	// 处理未指定的IP地址
+	if ip.IsUnspecified() || ip == nil {
+		return true
+	}
+
+	// 添加例外，另有他用
+	if ip.Equal(net.ParseIP("127.1.1.1")) {
+		return false
+	}
+
+	// 获取本机所有网络接口
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		s.logger.Error("Get interfaces failed: %v", err)
+		return false
+	}
+
+	// 遍历所有网络接口
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		// 遍历接口的所有地址
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				if v.IP.Equal(ip) {
+					return true
+				}
+			case *net.IPAddr:
+				if v.IP.Equal(ip) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// healthCheck 定期检查连接状态
 func (s *Server) healthCheck() error {
 	lastFlushed := time.Now()
 	for {
@@ -244,164 +285,6 @@ func (s *Server) healthCheck() error {
 			}
 			s.mu.Unlock()
 			time.Sleep(reportInterval)
-		}
-	}
-}
-
-// TCP请求处理循环
-func (s *Server) serverTCPLoop() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		default:
-			// 接受来自目标的TCP连接
-			targetConn, err := s.targetListener.Accept()
-			if err != nil {
-				continue
-			}
-
-			defer func() {
-				if targetConn != nil {
-					targetConn.Close()
-				}
-			}()
-
-			s.targetTCPConn = targetConn.(*net.TCPConn)
-			s.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-
-			// 使用信号量限制并发数
-			s.semaphore <- struct{}{}
-
-			go func(targetConn net.Conn) {
-				defer func() { <-s.semaphore }()
-
-				// 从连接池获取连接
-				id, remoteConn := s.tunnelPool.ServerGet()
-				if remoteConn == nil {
-					s.logger.Error("Get failed: %v", id)
-					return
-				}
-
-				s.logger.Debug("Tunnel connection: %v <- active %v", id, s.tunnelPool.Active())
-
-				defer func() {
-					if remoteConn != nil {
-						remoteConn.Close()
-					}
-				}()
-
-				s.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-
-				// 构建并发送启动URL到客户端
-				launchURL := &url.URL{
-					Host:     id,
-					Fragment: "1", // TCP模式
-				}
-
-				s.mu.Lock()
-				_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
-				s.mu.Unlock()
-
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-
-				s.logger.Debug("TCP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
-				s.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-
-				// 交换数据
-				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
-				s.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
-
-				// 交换完成，广播统计信息
-				s.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-					s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
-			}(targetConn)
-		}
-	}
-}
-
-// UDP请求处理循环
-func (s *Server) serverUDPLoop() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			return
-		default:
-			// 读取来自目标的UDP数据
-			buffer := make([]byte, udpDataBufSize)
-			n, clientAddr, err := s.targetUDPConn.ReadFromUDP(buffer)
-			if err != nil {
-				continue
-			}
-
-			s.AddUDPReceived(uint64(n))
-			s.logger.Debug("Target connection: %v <-> %v", s.targetUDPConn.LocalAddr(), clientAddr)
-
-			// 从连接池获取连接
-			id, remoteConn := s.tunnelPool.ServerGet()
-			if remoteConn == nil {
-				continue
-			}
-
-			s.logger.Debug("Tunnel connection: %v <- active %v", id, s.tunnelPool.Active())
-
-			defer func() {
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
-			}()
-
-			s.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-
-			// 使用信号量限制并发数
-			s.semaphore <- struct{}{}
-
-			go func(buffer []byte, n int, clientAddr *net.UDPAddr, remoteConn net.Conn) {
-				defer func() { <-s.semaphore }()
-
-				// 构建并发送启动URL到客户端
-				launchURL := &url.URL{
-					Host:     id,
-					Fragment: "2", // UDP模式
-				}
-
-				s.mu.Lock()
-				_, err = s.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
-				s.mu.Unlock()
-
-				if err != nil {
-					s.logger.Error("Write failed: %v", err)
-					return
-				}
-
-				s.logger.Debug("UDP launch signal: %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
-				s.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), s.targetUDPConn.LocalAddr())
-
-				// 处理UDP/TCP数据交换
-				udpToTcp, tcpToUdp, err := conn.DataTransfer(
-					s.targetUDPConn,
-					remoteConn,
-					clientAddr, // 有UDP地址，自动确定为服务器模式
-					buffer[:n],
-					udpDataBufSize,
-					tcpReadTimeout,
-				)
-
-				if err != nil {
-					s.logger.Error("Transfer failed: %v", err)
-					return
-				}
-
-				s.AddUDPReceived(udpToTcp)
-				s.AddUDPSent(tcpToUdp)
-
-				// 传输完成，广播统计信息
-				s.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-					s.tcpBytesReceived, s.tcpBytesSent, s.udpBytesReceived, s.udpBytesSent)
-			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
 }
