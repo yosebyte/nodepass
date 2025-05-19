@@ -132,7 +132,55 @@ func (c *Common) initTargetListener() error {
 	return nil
 }
 
-// shutdown 优雅关闭
+// stop 共用停止服务
+func (c *Common) stop() {
+	// 取消上下文
+	if c.cancel != nil {
+		c.cancel()
+	}
+
+	// 关闭隧道连接池
+	if c.tunnelPool != nil {
+		active := c.tunnelPool.Active()
+		c.tunnelPool.Close()
+		c.logger.Debug("Tunnel connection closed: active %v", active)
+	}
+
+	// 关闭UDP连接
+	if c.targetUDPConn != nil {
+		c.targetUDPConn.Close()
+		c.logger.Debug("Target connection closed: %v", c.targetUDPConn.LocalAddr())
+	}
+
+	// 关闭TCP连接
+	if c.targetTCPConn != nil {
+		c.targetTCPConn.Close()
+		c.logger.Debug("Target connection closed: %v", c.targetTCPConn.LocalAddr())
+	}
+
+	// 关闭隧道连接
+	if c.tunnelTCPConn != nil {
+		c.tunnelTCPConn.Close()
+		c.logger.Debug("Tunnel connection closed: %v", c.tunnelTCPConn.LocalAddr())
+	}
+
+	// 关闭目标监听器
+	if c.targetListener != nil {
+		c.targetListener.Close()
+		c.logger.Debug("Target listener closed: %v", c.targetListener.Addr())
+	}
+
+	// 清空信号通道
+	for {
+		select {
+		case <-c.signalChan:
+		default:
+			return
+		}
+	}
+}
+
+// shutdown 共用优雅关闭
 func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	done := make(chan struct{})
 	go func() {

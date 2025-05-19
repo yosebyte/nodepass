@@ -49,7 +49,7 @@ func (s *Server) Manage() {
 			if err := s.Start(); err != nil {
 				s.logger.Error("Server error: %v", err)
 				time.Sleep(serviceCooldown)
-				s.Stop()
+				s.stop()
 				s.logger.Info("Server restarted")
 			}
 		}
@@ -63,7 +63,7 @@ func (s *Server) Manage() {
 	// 执行关闭过程
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := s.shutdown(shutdownCtx, s.Stop); err != nil {
+	if err := s.shutdown(shutdownCtx, s.stop); err != nil {
 		s.logger.Error("Server shutdown error: %v", err)
 	} else {
 		s.logger.Info("Server shutdown complete")
@@ -108,60 +108,6 @@ func (s *Server) Start() error {
 		go s.commonQueue()
 	}
 	return s.healthCheck()
-}
-
-// Stop 停止服务端
-func (s *Server) Stop() {
-	// 取消上下文
-	if s.cancel != nil {
-		s.cancel()
-	}
-
-	// 关闭隧道连接池
-	if s.tunnelPool != nil {
-		active := s.tunnelPool.Active()
-		s.tunnelPool.Close()
-		s.logger.Debug("Tunnel connection closed: active %v", active)
-	}
-
-	// 关闭UDP连接
-	if s.targetUDPConn != nil {
-		s.targetUDPConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetUDPConn.LocalAddr())
-	}
-
-	// 关闭TCP连接
-	if s.targetTCPConn != nil {
-		s.targetTCPConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetTCPConn.LocalAddr())
-	}
-
-	// 关闭隧道连接
-	if s.tunnelTCPConn != nil {
-		s.tunnelTCPConn.Close()
-		s.logger.Debug("Tunnel connection closed: %v", s.tunnelTCPConn.LocalAddr())
-	}
-
-	// 关闭目标监听器
-	if s.targetListener != nil {
-		s.targetListener.Close()
-		s.logger.Debug("Target listener closed: %v", s.targetListener.Addr())
-	}
-
-	// 关闭隧道监听器
-	if s.tunnelListener != nil {
-		s.tunnelListener.Close()
-		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListener.Addr())
-	}
-
-	// 清空信号通道
-	for {
-		select {
-		case <-s.signalChan:
-		default:
-			return
-		}
-	}
 }
 
 // tunnelHandshake 与客户端进行握手
