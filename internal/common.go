@@ -403,7 +403,7 @@ func (c *Common) commonUDPLoop() {
 				c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 
 				// 处理UDP/TCP数据交换
-				udpToTcp, tcpToUdp, err := conn.DataTransfer(
+				udpToTcp, tcpToUdp, _ := conn.DataTransfer(
 					c.targetUDPConn,
 					remoteConn,
 					clientAddr,
@@ -411,11 +411,6 @@ func (c *Common) commonUDPLoop() {
 					udpDataBufSize,
 					tcpReadTimeout,
 				)
-
-				if err != nil {
-					c.logger.Error("Transfer failed: %v", err)
-					return
-				}
 
 				// 传输完成，广播统计信息
 				c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
@@ -548,7 +543,7 @@ func (c *Common) commonUDPOnce(id string) {
 	c.logger.Debug("Target connection: %v <-> %v", targetUDPConn.LocalAddr(), targetUDPConn.RemoteAddr())
 
 	// 处理UDP/TCP数据交换
-	udpToTcp, tcpToUdp, err := conn.DataTransfer(
+	udpToTcp, tcpToUdp, _ := conn.DataTransfer(
 		c.targetUDPConn,
 		remoteConn,
 		nil,
@@ -556,11 +551,6 @@ func (c *Common) commonUDPOnce(id string) {
 		udpDataBufSize,
 		udpReadTimeout,
 	)
-
-	if err != nil {
-		c.logger.Error("Transfer failed: %v", err)
-		return
-	}
 
 	// 交换完成，广播统计信息
 	c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
