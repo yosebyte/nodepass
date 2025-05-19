@@ -46,7 +46,7 @@ func (s *Server) Manage() {
 	// 启动服务端并处理重启
 	go func() {
 		for {
-			if err := s.Start(); err != nil {
+			if err := s.start(); err != nil {
 				s.logger.Error("Server error: %v", err)
 				time.Sleep(serviceCooldown)
 				s.stop()
@@ -70,8 +70,8 @@ func (s *Server) Manage() {
 	}
 }
 
-// Start 启动服务端
-func (s *Server) Start() error {
+// start 启动服务端
+func (s *Server) start() error {
 	s.initContext()
 
 	// 初始化隧道监听器
@@ -191,46 +191,4 @@ func (s *Server) isLocalAddress(ip net.IP) bool {
 		}
 	}
 	return false
-}
-
-// healthCheck 定期检查连接状态
-func (s *Server) healthCheck() error {
-	lastFlushed := time.Now()
-	for {
-		select {
-		case <-s.ctx.Done():
-			return s.ctx.Err()
-		default:
-			// 发送心跳包
-			if !s.mu.TryLock() {
-				continue
-			}
-			// 定期刷新连接池
-			if time.Since(lastFlushed) >= ReloadInterval {
-				flushURL := &url.URL{
-					Fragment: "0", // 刷新模式
-				}
-
-				_, err := s.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
-				if err != nil {
-					s.mu.Unlock()
-					return err
-				}
-
-				s.tunnelPool.Flush()
-				lastFlushed = time.Now()
-				time.Sleep(reportInterval) // 等待连接池刷新完成
-				s.logger.Debug("Tunnel pool reset: %v active connections", s.tunnelPool.Active())
-			} else {
-				// 定期发送心跳包
-				_, err := s.tunnelTCPConn.Write([]byte("\n"))
-				if err != nil {
-					s.mu.Unlock()
-					return err
-				}
-			}
-			s.mu.Unlock()
-			time.Sleep(reportInterval)
-		}
-	}
 }

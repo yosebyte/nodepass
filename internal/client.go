@@ -43,7 +43,7 @@ func (c *Client) Manage() {
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
-			if err := c.Start(); err != nil {
+			if err := c.start(); err != nil {
 				c.logger.Error("Client error: %v", err)
 				time.Sleep(serviceCooldown)
 				c.stop()
@@ -67,8 +67,8 @@ func (c *Client) Manage() {
 	}
 }
 
-// Start 启动客户端服务
-func (c *Client) Start() error {
+// start 启动客户端服务
+func (c *Client) start() error {
 	c.initContext()
 
 	// 与隧道服务端进行握手
@@ -93,6 +93,7 @@ func (c *Client) Start() error {
 	switch c.dataFlow {
 	case "-":
 		go c.commonOnce()
+		go c.commonQueue()
 	case "+":
 		// 初始化目标监听器
 		if err := c.initTargetListener(); err != nil {
@@ -100,7 +101,7 @@ func (c *Client) Start() error {
 		}
 		go c.commonLoop()
 	}
-	return c.commonQueue()
+	return c.healthCheck()
 }
 
 // tunnelHandshake 与隧道服务端进行握手

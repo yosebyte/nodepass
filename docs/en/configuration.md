@@ -56,10 +56,10 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_MIN_POOL_CAPACITY` | Minimum connection pool size | 16 | `export NP_MIN_POOL_CAPACITY=32` |
 | `NP_MAX_POOL_CAPACITY` | Maximum connection pool size | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 5s | `export NP_UDP_READ_TIMEOUT=10s` |
-| `NP_TCP_READ_TIMEOUT` | Timeout for TCP read operations | 5s | `export NP_TCP_READ_TIMEOUT=10s` |
-| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 5s | `export NP_UDP_DIAL_TIMEOUT=10s` |
-| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 5s | `export NP_TCP_DIAL_TIMEOUT=10s` |
+| `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 15s | `export NP_UDP_READ_TIMEOUT=30s` |
+| `NP_TCP_READ_TIMEOUT` | Timeout for TCP read operations | 15s | `export NP_TCP_READ_TIMEOUT=30s` |
+| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 15s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 15s | `export NP_TCP_DIAL_TIMEOUT=30s` |
 | `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |
@@ -177,7 +177,7 @@ export NP_MAX_POOL_CAPACITY=2048
 export NP_MIN_POOL_INTERVAL=100ms
 export NP_MAX_POOL_INTERVAL=1s
 export NP_SEMAPHORE_LIMIT=4096
-export NP_UDP_READ_TIMEOUT=2s
+export NP_UDP_READ_TIMEOUT=10s
 export NP_REPORT_INTERVAL=1s
 ```
 

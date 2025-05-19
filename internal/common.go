@@ -45,10 +45,10 @@ var (
 	minPoolCapacity = getEnvAsInt("NP_MIN_POOL_CAPACITY", 16)                 // 最小池容量
 	maxPoolCapacity = getEnvAsInt("NP_MAX_POOL_CAPACITY", 1024)               // 最大池容量
 	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
-	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 5*time.Second)  // UDP读取超时
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)  // UDP拨号超时
-	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 5*time.Second)  // TCP读取超时
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)  // TCP拨号超时
+	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 15*time.Second) // UDP读取超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 15*time.Second) // UDP拨号超时
+	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 15*time.Second) // TCP读取超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 15*time.Second) // TCP拨号超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
 	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
@@ -220,6 +220,44 @@ func (c *Common) commonQueue() error {
 	}
 }
 
+// healthCheck 共用健康度检查
+func (c *Common) healthCheck() error {
+	flushURL := &url.URL{Fragment: "0"} // 连接池刷新信号
+	for {
+		select {
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		default:
+			if !c.mu.TryLock() {
+				continue
+			}
+
+			// 连接池健康度检查
+			if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
+				// 发送刷新信号到对端
+				_, err := c.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
+				if err != nil {
+					c.mu.Unlock()
+					return err
+				}
+				c.tunnelPool.Flush()
+				time.Sleep(reportInterval) // 等待连接池刷新完成
+				c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
+			} else {
+				// 发送普通心跳包
+				_, err := c.tunnelTCPConn.Write([]byte("\n"))
+				if err != nil {
+					c.mu.Unlock()
+					return err
+				}
+			}
+
+			c.mu.Unlock()
+			time.Sleep(reportInterval)
+		}
+	}
+}
+
 // commonLoop 共用处理循环
 func (c *Common) commonLoop() {
 	for {
@@ -265,6 +303,7 @@ func (c *Common) commonTCPLoop() {
 				id, remoteConn := c.tunnelPool.ServerGet()
 				if remoteConn == nil {
 					c.logger.Error("Get failed: %v", id)
+					c.tunnelPool.AddError()
 					return
 				}
 
@@ -325,6 +364,7 @@ func (c *Common) commonUDPLoop() {
 			// 从连接池获取连接
 			id, remoteConn := c.tunnelPool.ServerGet()
 			if remoteConn == nil {
+				c.tunnelPool.AddError()
 				continue
 			}
 
@@ -417,6 +457,7 @@ func (c *Common) commonOnce() {
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL.Host)
 			default:
+				// 健康检查或无效信号
 			}
 		}
 	}
