@@ -43,10 +43,10 @@ func (c *Client) Manage() {
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
-			if err := c.Start(); err != nil {
+			if err := c.start(); err != nil {
 				c.logger.Error("Client error: %v", err)
 				time.Sleep(serviceCooldown)
-				c.Stop()
+				c.stop()
 				c.logger.Info("Client restarted")
 			}
 		}
@@ -60,15 +60,15 @@ func (c *Client) Manage() {
 	// 执行关闭过程
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := c.shutdown(shutdownCtx, c.Stop); err != nil {
+	if err := c.shutdown(shutdownCtx, c.stop); err != nil {
 		c.logger.Error("Client shutdown error: %v", err)
 	} else {
 		c.logger.Info("Client shutdown complete")
 	}
 }
 
-// Start 启动客户端服务
-func (c *Client) Start() error {
+// start 启动客户端服务
+func (c *Client) start() error {
 	c.initContext()
 
 	// 与隧道服务端进行握手
@@ -93,6 +93,7 @@ func (c *Client) Start() error {
 	switch c.dataFlow {
 	case "-":
 		go c.commonOnce()
+		go c.commonQueue()
 	case "+":
 		// 初始化目标监听器
 		if err := c.initTargetListener(); err != nil {
@@ -100,55 +101,7 @@ func (c *Client) Start() error {
 		}
 		go c.commonLoop()
 	}
-	return c.commonQueue()
-}
-
-// Stop 停止客户端服务
-func (c *Client) Stop() {
-	// 取消上下文
-	if c.cancel != nil {
-		c.cancel()
-	}
-
-	// 关闭隧道连接池
-	if c.tunnelPool != nil {
-		active := c.tunnelPool.Active()
-		c.tunnelPool.Close()
-		c.logger.Debug("Tunnel connection closed: active %v", active)
-	}
-
-	// 关闭UDP连接
-	if c.targetUDPConn != nil {
-		c.targetUDPConn.Close()
-		c.logger.Debug("Target connection closed: %v", c.targetUDPConn.LocalAddr())
-	}
-
-	// 关闭TCP连接
-	if c.targetTCPConn != nil {
-		c.targetTCPConn.Close()
-		c.logger.Debug("Target connection closed: %v", c.targetTCPConn.LocalAddr())
-	}
-
-	// 关闭隧道连接
-	if c.tunnelTCPConn != nil {
-		c.tunnelTCPConn.Close()
-		c.logger.Debug("Tunnel connection closed: %v", c.tunnelTCPConn.LocalAddr())
-	}
-
-	// 关闭目标监听器
-	if c.targetListener != nil {
-		c.targetListener.Close()
-		c.logger.Debug("Target listener closed: %v", c.targetListener.Addr())
-	}
-
-	// 清空信号通道
-	for {
-		select {
-		case <-c.signalChan:
-		default:
-			return
-		}
-	}
+	return c.healthCheck()
 }
 
 // tunnelHandshake 与隧道服务端进行握手

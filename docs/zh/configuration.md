@@ -56,10 +56,10 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 | `NP_MIN_POOL_CAPACITY` | 最小连接池大小 | 16 | `export NP_MIN_POOL_CAPACITY=32` |
 | `NP_MAX_POOL_CAPACITY` | 最大连接池大小 | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 5s | `export NP_UDP_READ_TIMEOUT=10s` |
-| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 5s | `export NP_TCP_READ_TIMEOUT=10s` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP拨号超时 | 5s | `export NP_UDP_DIAL_TIMEOUT=10s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP拨号超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=10s` |
+| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 15s | `export NP_UDP_READ_TIMEOUT=30s` |
+| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 15s | `export NP_TCP_READ_TIMEOUT=30s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP拨号超时 | 15s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP拨号超时 | 15s | `export NP_TCP_DIAL_TIMEOUT=30s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
@@ -177,7 +177,7 @@ export NP_MAX_POOL_CAPACITY=2048
 export NP_MIN_POOL_INTERVAL=100ms
 export NP_MAX_POOL_INTERVAL=1s
 export NP_SEMAPHORE_LIMIT=4096
-export NP_UDP_READ_TIMEOUT=2s
+export NP_UDP_READ_TIMEOUT=10s
 export NP_REPORT_INTERVAL=1s
 ```
 

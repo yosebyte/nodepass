@@ -46,10 +46,10 @@ func (s *Server) Manage() {
 	// 启动服务端并处理重启
 	go func() {
 		for {
-			if err := s.Start(); err != nil {
+			if err := s.start(); err != nil {
 				s.logger.Error("Server error: %v", err)
 				time.Sleep(serviceCooldown)
-				s.Stop()
+				s.stop()
 				s.logger.Info("Server restarted")
 			}
 		}
@@ -63,15 +63,15 @@ func (s *Server) Manage() {
 	// 执行关闭过程
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	if err := s.shutdown(shutdownCtx, s.Stop); err != nil {
+	if err := s.shutdown(shutdownCtx, s.stop); err != nil {
 		s.logger.Error("Server shutdown error: %v", err)
 	} else {
 		s.logger.Info("Server shutdown complete")
 	}
 }
 
-// Start 启动服务端
-func (s *Server) Start() error {
+// start 启动服务端
+func (s *Server) start() error {
 	s.initContext()
 
 	// 初始化隧道监听器
@@ -108,60 +108,6 @@ func (s *Server) Start() error {
 		go s.commonQueue()
 	}
 	return s.healthCheck()
-}
-
-// Stop 停止服务端
-func (s *Server) Stop() {
-	// 取消上下文
-	if s.cancel != nil {
-		s.cancel()
-	}
-
-	// 关闭隧道连接池
-	if s.tunnelPool != nil {
-		active := s.tunnelPool.Active()
-		s.tunnelPool.Close()
-		s.logger.Debug("Tunnel connection closed: active %v", active)
-	}
-
-	// 关闭UDP连接
-	if s.targetUDPConn != nil {
-		s.targetUDPConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetUDPConn.LocalAddr())
-	}
-
-	// 关闭TCP连接
-	if s.targetTCPConn != nil {
-		s.targetTCPConn.Close()
-		s.logger.Debug("Target connection closed: %v", s.targetTCPConn.LocalAddr())
-	}
-
-	// 关闭隧道连接
-	if s.tunnelTCPConn != nil {
-		s.tunnelTCPConn.Close()
-		s.logger.Debug("Tunnel connection closed: %v", s.tunnelTCPConn.LocalAddr())
-	}
-
-	// 关闭目标监听器
-	if s.targetListener != nil {
-		s.targetListener.Close()
-		s.logger.Debug("Target listener closed: %v", s.targetListener.Addr())
-	}
-
-	// 关闭隧道监听器
-	if s.tunnelListener != nil {
-		s.tunnelListener.Close()
-		s.logger.Debug("Tunnel listener closed: %v", s.tunnelListener.Addr())
-	}
-
-	// 清空信号通道
-	for {
-		select {
-		case <-s.signalChan:
-		default:
-			return
-		}
-	}
 }
 
 // tunnelHandshake 与客户端进行握手
@@ -245,46 +191,4 @@ func (s *Server) isLocalAddress(ip net.IP) bool {
 		}
 	}
 	return false
-}
-
-// healthCheck 定期检查连接状态
-func (s *Server) healthCheck() error {
-	lastFlushed := time.Now()
-	for {
-		select {
-		case <-s.ctx.Done():
-			return s.ctx.Err()
-		default:
-			// 发送心跳包
-			if !s.mu.TryLock() {
-				continue
-			}
-			// 定期刷新连接池
-			if time.Since(lastFlushed) >= ReloadInterval {
-				flushURL := &url.URL{
-					Fragment: "0", // 刷新模式
-				}
-
-				_, err := s.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
-				if err != nil {
-					s.mu.Unlock()
-					return err
-				}
-
-				s.tunnelPool.Flush()
-				lastFlushed = time.Now()
-				time.Sleep(reportInterval) // 等待连接池刷新完成
-				s.logger.Debug("Tunnel pool reset: %v active connections", s.tunnelPool.Active())
-			} else {
-				// 定期发送心跳包
-				_, err := s.tunnelTCPConn.Write([]byte("\n"))
-				if err != nil {
-					s.mu.Unlock()
-					return err
-				}
-			}
-			s.mu.Unlock()
-			time.Sleep(reportInterval)
-		}
-	}
 }
