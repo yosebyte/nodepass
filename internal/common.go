@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/NodePassProject/conn"
@@ -20,28 +19,24 @@ import (
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
-	mu               sync.Mutex         // 互斥锁
-	tlsCode          string             // TLS模式代码
-	dataFlow         string             // 数据流向
-	logger           *logs.Logger       // 日志记录器
-	tunnelAddr       *net.TCPAddr       // 隧道地址
-	targetAddr       string             // 目标地址字符串
-	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
-	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
-	targetListener   *net.TCPListener   // 目标监听器
-	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
-	targetTCPConn    *net.TCPConn       // 目标TCP连接
-	targetUDPConn    *net.UDPConn       // 目标UDP连接
-	tunnelPool       *pool.Pool         // 隧道连接池
-	semaphore        chan struct{}      // 信号量通道
-	bufReader        *bufio.Reader      // 缓冲读取器
-	signalChan       chan string        // 信号通道
-	ctx              context.Context    // 上下文
-	cancel           context.CancelFunc // 取消函数
-	tcpBytesReceived uint64             // TCP接收字节数
-	tcpBytesSent     uint64             // TCP发送字节数
-	udpBytesReceived uint64             // UDP接收字节数
-	udpBytesSent     uint64             // UDP发送字节数
+	mu             sync.Mutex         // 互斥锁
+	tlsCode        string             // TLS模式代码
+	dataFlow       string             // 数据流向
+	logger         *logs.Logger       // 日志记录器
+	tunnelAddr     *net.TCPAddr       // 隧道地址
+	targetAddr     string             // 目标地址字符串
+	targetTCPAddr  *net.TCPAddr       // 目标TCP地址
+	targetUDPAddr  *net.UDPAddr       // 目标UDP地址
+	targetListener *net.TCPListener   // 目标监听器
+	tunnelTCPConn  *net.TCPConn       // 隧道TCP连接
+	targetTCPConn  *net.TCPConn       // 目标TCP连接
+	targetUDPConn  *net.UDPConn       // 目标UDP连接
+	tunnelPool     *pool.Pool         // 隧道连接池
+	semaphore      chan struct{}      // 信号量通道
+	bufReader      *bufio.Reader      // 缓冲读取器
+	signalChan     chan string        // 信号通道
+	ctx            context.Context    // 上下文
+	cancel         context.CancelFunc // 取消函数
 }
 
 // 配置变量，可通过环境变量调整
@@ -255,11 +250,9 @@ func (c *Common) commonTCPLoop() {
 
 				// 交换数据
 				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
-				c.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
 
 				// 交换完成，广播统计信息
-				c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-					c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
+				c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
 			}(targetConn)
 		}
 	}
@@ -279,7 +272,6 @@ func (c *Common) commonUDPLoop() {
 				continue
 			}
 
-			c.AddUDPReceived(uint64(n))
 			c.logger.Debug("Target connection: %v <-> %v", c.targetUDPConn.LocalAddr(), clientAddr)
 
 			// 从连接池获取连接
@@ -337,12 +329,8 @@ func (c *Common) commonUDPLoop() {
 					return
 				}
 
-				c.AddUDPReceived(udpToTcp)
-				c.AddUDPSent(tcpToUdp)
-
 				// 传输完成，广播统计信息
-				c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-					c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
+				c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
@@ -427,11 +415,9 @@ func (c *Common) commonTCPOnce(id string) {
 
 	// 交换数据
 	bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
-	c.AddTCPStats(uint64(bytesReceived), uint64(bytesSent))
 
 	// 交换完成，广播统计信息
-	c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-		c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
+	c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -487,36 +473,6 @@ func (c *Common) commonUDPOnce(id string) {
 		return
 	}
 
-	c.AddUDPReceived(tcpToUdp)
-	c.AddUDPSent(udpToTcp)
-
 	// 交换完成，广播统计信息
-	c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-		c.tcpBytesReceived, c.tcpBytesSent, c.udpBytesReceived, c.udpBytesSent)
-}
-
-// AddTCPStats 添加TCP统计数据
-func (c *Common) AddTCPStats(received, sent uint64) {
-	atomic.AddUint64(&c.tcpBytesReceived, received)
-	atomic.AddUint64(&c.tcpBytesSent, sent)
-}
-
-// AddUDPReceived 添加UDP接收统计
-func (c *Common) AddUDPReceived(bytes uint64) {
-	atomic.AddUint64(&c.udpBytesReceived, bytes)
-}
-
-// AddUDPSent 添加UDP发送统计
-func (c *Common) AddUDPSent(bytes uint64) {
-	atomic.AddUint64(&c.udpBytesSent, bytes)
-}
-
-// GetTCPStats 获取TCP统计数据
-func (c *Common) GetTCPStats() (uint64, uint64) {
-	return atomic.LoadUint64(&c.tcpBytesReceived), atomic.LoadUint64(&c.tcpBytesSent)
-}
-
-// GetUDPStats 获取UDP统计数据
-func (c *Common) GetUDPStats() (uint64, uint64) {
-	return atomic.LoadUint64(&c.udpBytesReceived), atomic.LoadUint64(&c.udpBytesSent)
+	c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
 }
