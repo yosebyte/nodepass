@@ -18,10 +18,9 @@ import (
 
 // Server 实现服务端模式功能
 type Server struct {
-	Common                      // 继承共享功能
-	tunnelListener net.Listener // 隧道监听器
-	tlsConfig      *tls.Config  // TLS配置
-	clientIP       string       // 客户端IP
+	Common                // 继承共享功能
+	tlsConfig *tls.Config // TLS配置
+	clientIP  string      // 客户端IP
 }
 
 // NewServer 创建新的服务端实例
@@ -39,8 +38,8 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	return server
 }
 
-// Manage 管理服务端生命周期
-func (s *Server) Manage() {
+// Run 管理服务端生命周期
+func (s *Server) Run() {
 	s.logger.Info("Server started: %v/%v", s.tunnelAddr, s.targetTCPAddr)
 
 	// 启动服务端并处理重启

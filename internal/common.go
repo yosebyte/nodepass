@@ -28,6 +28,7 @@ type Common struct {
 	targetTCPAddr  *net.TCPAddr       // 目标TCP地址
 	targetUDPAddr  *net.UDPAddr       // 目标UDP地址
 	targetListener *net.TCPListener   // 目标监听器
+	tunnelListener net.Listener       // 隧道监听器
 	tunnelTCPConn  *net.TCPConn       // 隧道TCP连接
 	targetTCPConn  *net.TCPConn       // 目标TCP连接
 	targetUDPConn  *net.UDPConn       // 目标UDP连接
@@ -168,6 +169,12 @@ func (c *Common) stop() {
 	if c.targetListener != nil {
 		c.targetListener.Close()
 		c.logger.Debug("Target listener closed: %v", c.targetListener.Addr())
+	}
+
+	// 关闭隧道监听器
+	if c.tunnelListener != nil {
+		c.tunnelListener.Close()
+		c.logger.Debug("Tunnel listener closed: %v", c.tunnelListener.Addr())
 	}
 
 	// 清空信号通道
