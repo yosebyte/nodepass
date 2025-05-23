@@ -36,8 +36,8 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 	return client
 }
 
-// Manage 管理客户端生命周期
-func (c *Client) Manage() {
+// Run 管理客户端生命周期
+func (c *Client) Run() {
 	c.logger.Info("Client started: %v/%v", c.tunnelAddr, c.targetTCPAddr)
 
 	// 启动客户端服务并处理重启

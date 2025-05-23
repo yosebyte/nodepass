@@ -11,39 +11,24 @@ import (
 
 // coreDispatch 根据URL方案分派到不同的运行模式
 func coreDispatch(parsedURL *url.URL) {
-	switch parsedURL.Scheme {
-	case "server":
-		runServer(parsedURL)
+	var core interface{ Run() }
+
+	switch scheme := parsedURL.Scheme; scheme {
+	case "server", "master":
+		tlsCode, tlsConfig := getTLSProtocol(parsedURL)
+		if scheme == "server" {
+			core = internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
+		} else {
+			core = internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger)
+		}
 	case "client":
-		runClient(parsedURL)
-	case "master":
-		runMaster(parsedURL)
-	case "worker":
-		getExitInfo() // TODO
+		core = internal.NewClient(parsedURL, logger)
 	default:
-		logger.Fatal("Unknown core: %v", parsedURL.Scheme)
+		logger.Fatal("Unknown core: %v", scheme)
 		getExitInfo()
 	}
-}
 
-// runServer 运行服务端模式
-func runServer(parsedURL *url.URL) {
-	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
-	server := internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
-	server.Manage()
-}
-
-// runClient 运行客户端模式
-func runClient(parsedURL *url.URL) {
-	client := internal.NewClient(parsedURL, logger)
-	client.Manage()
-}
-
-// runMaster 运行主控模式
-func runMaster(parsedURL *url.URL) {
-	tlsCode, tlsConfig := getTLSProtocol(parsedURL)
-	master := internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger)
-	master.Manage()
+	core.Run()
 }
 
 // getTLSProtocol 获取TLS配置

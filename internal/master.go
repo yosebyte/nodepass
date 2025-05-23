@@ -209,8 +209,8 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	return master
 }
 
-// Manage 管理主控生命周期
-func (m *Master) Manage() {
+// Run 管理主控生命周期
+func (m *Master) Run() {
 	m.logger.Info("Master started: %v%v", m.tunnelAddr, m.prefix)
 
 	// 初始化API Key
