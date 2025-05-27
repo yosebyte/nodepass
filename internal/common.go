@@ -119,6 +119,7 @@ func (c *Common) initTargetListener() error {
 	// 初始化目标TCP监听器
 	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
 	if err != nil {
+		targetListener.Close()
 		return err
 	}
 	c.targetListener = targetListener
@@ -126,11 +127,63 @@ func (c *Common) initTargetListener() error {
 	// 初始化目标UDP监听器
 	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
 	if err != nil {
+		targetUDPConn.Close()
 		return err
 	}
 	c.targetUDPConn = targetUDPConn
 
 	return nil
+}
+
+// initTunnelListener 初始化隧道监听器
+func (c *Common) initTunnelListener() error {
+	// 初始化隧道监听器
+	tunnelListener, err := net.ListenTCP("tcp", c.tunnelAddr)
+	if err != nil {
+		tunnelListener.Close()
+		return err
+	}
+	c.tunnelListener = tunnelListener
+
+	return nil
+}
+
+// isLocalAddress 检查IP地址是否为本机接口地址之一
+func (c *Common) isLocalAddress(ip net.IP) bool {
+	// 处理未指定的IP地址
+	if ip.IsUnspecified() || ip == nil {
+		return true
+	}
+
+	// 获取本机所有网络接口
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		c.logger.Error("Get interfaces failed: %v", err)
+		return false
+	}
+
+	// 遍历所有网络接口
+	for _, iface := range interfaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		// 遍历接口的所有地址
+		for _, addr := range addrs {
+			switch v := addr.(type) {
+			case *net.IPNet:
+				if v.IP.Equal(ip) {
+					return true
+				}
+			case *net.IPAddr:
+				if v.IP.Equal(ip) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // stop 共用停止服务

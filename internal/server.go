@@ -28,6 +28,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
+			dataFlow:   "+",
 			logger:     logger,
 			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
@@ -78,15 +79,11 @@ func (s *Server) start() error {
 		return err
 	}
 
-	// 检查目标地址是否为本机接口地址之一
+	// 通过目标地址判断数据流向
 	if s.isLocalAddress(s.targetTCPAddr.IP) {
-		// 初始化目标监听器
-		if err := s.initTargetListener(); err != nil {
-			return err
+		if err := s.initTargetListener(); err == nil {
+			s.dataFlow = "-"
 		}
-		s.dataFlow = "-"
-	} else {
-		s.dataFlow = "+"
 	}
 
 	// 与客户端进行握手
@@ -135,59 +132,4 @@ func (s *Server) tunnelHandshake() error {
 	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
 	s.logger.Debug("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
 	return nil
-}
-
-// initTunnelListener 初始化隧道监听器
-func (s *Server) initTunnelListener() error {
-	// 初始化隧道监听器
-	tunnelListener, err := net.ListenTCP("tcp", s.tunnelAddr)
-	if err != nil {
-		return err
-	}
-	s.tunnelListener = tunnelListener
-
-	return nil
-}
-
-// isLocalAddress 检查IP地址是否为本机接口地址之一
-func (s *Server) isLocalAddress(ip net.IP) bool {
-	// 处理未指定的IP地址
-	if ip.IsUnspecified() || ip == nil {
-		return true
-	}
-
-	// 添加例外，另有他用
-	if ip.Equal(net.ParseIP("127.1.1.1")) {
-		return false
-	}
-
-	// 获取本机所有网络接口
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		s.logger.Error("Get interfaces failed: %v", err)
-		return false
-	}
-
-	// 遍历所有网络接口
-	for _, iface := range interfaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		// 遍历接口的所有地址
-		for _, addr := range addrs {
-			switch v := addr.(type) {
-			case *net.IPNet:
-				if v.IP.Equal(ip) {
-					return true
-				}
-			case *net.IPAddr:
-				if v.IP.Equal(ip) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
