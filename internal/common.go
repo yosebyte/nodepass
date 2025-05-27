@@ -119,7 +119,9 @@ func (c *Common) initTargetListener() error {
 	// 初始化目标TCP监听器
 	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
 	if err != nil {
-		targetListener.Close()
+		if targetListener != nil {
+			targetListener.Close()
+		}
 		return err
 	}
 	c.targetListener = targetListener
@@ -127,7 +129,9 @@ func (c *Common) initTargetListener() error {
 	// 初始化目标UDP监听器
 	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
 	if err != nil {
-		targetUDPConn.Close()
+		if targetUDPConn != nil {
+			targetUDPConn.Close()
+		}
 		return err
 	}
 	c.targetUDPConn = targetUDPConn
@@ -140,7 +144,9 @@ func (c *Common) initTunnelListener() error {
 	// 初始化隧道监听器
 	tunnelListener, err := net.ListenTCP("tcp", c.tunnelAddr)
 	if err != nil {
-		tunnelListener.Close()
+		if tunnelListener != nil {
+			tunnelListener.Close()
+		}
 		return err
 	}
 	c.tunnelListener = tunnelListener
