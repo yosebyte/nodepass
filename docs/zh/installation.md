@@ -75,18 +75,14 @@ docker run -d --name nodepass-client \
 
 ### 方式5：使用管理脚本(仅限Linux)
 
-对于Linux系统，我们提供了一个交互式管理脚本，便于安装和服务管理：
+对于Linux系统，我们提供了一键脚本：
 
 ```bash
-bash <(curl -sL https://cdn.yobc.de/shell/nodepass.sh)
+bash <(curl -sSL https://run.nodepass.eu/np.sh)
 ```
 
-此脚本提供了一个交互式菜单，可以：
-- 安装或更新NodePass
-- 创建和配置多个nodepass服务
-- 管理（启动/停止/重启/删除）nodepass服务
-- 自动设置systemd服务
-- 使用可自定义选项配置客户端和服务器模式
+- 本脚本提供了简单易用的 master 模式，即 API 模式的安装、配置和管理功能。
+- 详情请参阅[https://github.com/NodePassProject/npsh](https://github.com/NodePassProject/npsh)
 
 ## 验证安装
 
