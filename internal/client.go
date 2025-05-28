@@ -82,6 +82,7 @@ func (c *Client) start() error {
 		maxPoolCapacity,
 		minPoolInterval,
 		maxPoolInterval,
+		reportInterval,
 		c.tlsCode,
 		c.tunnelName,
 		func() (net.Conn, error) {
@@ -113,6 +114,8 @@ func (c *Client) tunnelHandshake() error {
 	}
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
 	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
+	c.tunnelTCPConn.SetKeepAlive(true)
+	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
 	// 读取隧道URL
 	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
