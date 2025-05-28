@@ -92,7 +92,11 @@ func (s *Server) start() error {
 	}
 
 	// 初始化隧道连接池
-	s.tunnelPool = pool.NewServerPool(s.clientIP, s.tlsConfig, s.tunnelListener)
+	s.tunnelPool = pool.NewServerPool(
+		s.clientIP,
+		s.tlsConfig,
+		s.tunnelListener,
+		reportInterval)
 
 	go s.tunnelPool.ServerManager()
 
@@ -115,6 +119,8 @@ func (s *Server) tunnelHandshake() error {
 	}
 	s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
 	s.bufReader = bufio.NewReader(s.tunnelTCPConn)
+	s.tunnelTCPConn.SetKeepAlive(true)
+	s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
 	// 记录客户端IP
 	s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
