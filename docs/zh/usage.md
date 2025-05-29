@@ -13,7 +13,7 @@ nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 其中：
 - `<core>`：指定操作模式（`server`、`client`或`master`）
 - `<tunnel_addr>`：控制通道通信的隧道端点地址
-- `<target_addr>`：转发流量的目标地址（或在master模式下的API前缀）
+- `<target_addr>`：业务数据的目标地址，支持双向模式（或在master模式下的API前缀）
 - `<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`fatal`）
 - `<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）- 仅适用于server/master模式
 - `<cert_file>`：证书文件路径（当`tls=2`时）- 仅适用于server/master模式
@@ -23,9 +23,9 @@ nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 
 NodePass提供三种互补的运行模式，以适应各种部署场景。
 
-### 服务器模式
+### 服务端模式
 
-服务器模式监听客户端连接并通过隧道从目标地址转发流量。
+服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
 nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
@@ -34,7 +34,7 @@ nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 #### 参数
 
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
-- `target_addr`：服务器监听传入连接(TCP和UDP)的地址，这些连接将被隧道传输到客户端(例如, 10.1.0.1:8080)
+- `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, fatal)
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
@@ -43,30 +43,37 @@ nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 - `crt`：证书文件路径（当`tls=2`时必需）
 - `key`：私钥文件路径（当`tls=2`时必需）
 
-#### 服务器模式工作原理
+#### 服务端模式工作原理
 
-在服务器模式下，NodePass：
+在服务端模式下，NodePass支持两种数据流方向：
+
+**模式一：服务端接收流量**（target_addr为本地地址）
 1. 在`tunnel_addr`上监听TCP隧道连接（控制通道）
 2. 在`target_addr`上监听传入的TCP和UDP流量
-3. 当`target_addr`收到连接时，通过未加密的TCP隧道向客户端发送信号
+3. 当`target_addr`收到连接时，通过控制通道向客户端发送信号
 4. 为每个连接创建具有指定TLS加密级别的数据通道
+
+**模式二：服务端发送流量**（target_addr为远程地址）
+1. 在`tunnel_addr`上监听TCP隧道连接（控制通道）
+2. 等待客户端在其本地监听，并通过隧道接收连接
+3. 建立到远程`target_addr`的连接并转发数据
 
 #### 示例
 
 ```bash
-# 数据通道无TLS加密
+# 数据通道无TLS加密 - 服务端接收模式
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
-# 自签名证书（自动生成）
-nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1"
+# 自签名证书（自动生成） - 服务端发送模式
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=1"
 
-# 自定义域名证书
+# 自定义域名证书 - 服务端接收模式
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 客户端模式
 
-客户端模式连接到NodePass服务器并将流量转发到本地目标地址。
+客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
 nodepass client://<tunnel_addr>/<target_addr>?log=<level>
@@ -74,26 +81,33 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 
 #### 参数
 
-- `tunnel_addr`：要连接的NodePass服务器隧道端点地址(例如, 10.1.0.1:10101)
-- `target_addr`：流量将被转发到的本地地址(例如, 127.0.0.1:8080)
+- `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
+- `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, fatal)
 
 #### 客户端模式工作原理
 
-在客户端模式下，NodePass：
-1. 连接到服务器的未加密TCP隧道端点（控制通道）
-2. 通过此控制通道监听来自服务器的信号
-3. 当收到信号时，使用服务器指定的TLS安全级别建立数据连接
-4. 在`target_addr`建立本地连接并转发流量
+在客户端模式下，NodePass支持两种数据流方向：
+
+**模式一：客户端接收流量**（当服务端发送流量时）
+1. 连接到服务端的TCP隧道端点（控制通道）
+2. 在本地监听端口，等待通过隧道传入的连接
+3. 建立到本地`target_addr`的连接并转发数据
+
+**模式二：客户端发送流量**（当服务端接收流量时）
+1. 连接到服务端的TCP隧道端点（控制通道）
+2. 通过控制通道监听来自服务端的信号
+3. 当收到信号时，使用服务端指定的TLS安全级别建立数据连接
+4. 建立到`target_addr`的本地连接并转发流量
 
 #### 示例
 
 ```bash
-# 连接到NodePass服务器并自动采用其TLS安全策略
+# 连接到NodePass服务端并自动采用其TLS安全策略 - 客户端发送模式
 nodepass client://server.example.com:10101/127.0.0.1:8080
 
-# 使用调试日志连接
-nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
+# 使用调试日志连接 - 客户端接收模式  
+nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
 ```
 
 ### 主控模式 (API)
@@ -120,7 +134,7 @@ nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&ke
 
 在主控模式下，NodePass：
 1. 运行一个RESTful API服务器，允许动态管理NodePass实例
-2. 提供用于创建、启动、停止和监控客户端和服务器实例的端点
+2. 提供用于创建、启动、停止和监控客户端和服务端实例的端点
 3. 包含用于轻松API探索的Swagger UI，位于`{prefix}/v1/docs`
 4. 自动继承通过API创建的实例的TLS和日志设置
 
@@ -177,6 +191,22 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
   -H "Content-Type: application/json" \
   -d '{"action":"restart"}'
 ```
+
+## 双向数据流说明
+
+NodePass支持灵活的双向数据流配置：
+
+### 服务端接收模式 (dataFlow: "-")
+- **服务端**：在target_addr监听传入连接，通过隧道转发到客户端
+- **客户端**：连接到本地target_addr提供服务
+- **使用场景**：将内网服务暴露给外网访问
+
+### 服务端发送模式 (dataFlow: "+")  
+- **服务端**：连接到远程target_addr获取数据，通过隧道发送到客户端
+- **客户端**：在本地监听，接收来自服务端的连接
+- **使用场景**：通过隧道代理访问远程服务
+
+系统会根据target_addr是否为本地地址自动选择合适的数据流方向。
 
 ## 下一步
 
