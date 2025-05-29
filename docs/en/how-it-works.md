@@ -23,12 +23,14 @@ NodePass creates a network architecture with separate channels for control and d
    - Listens for control connections on the tunnel endpoint
    - When traffic arrives at the target endpoint, signals the client via the control channel
    - Establishes data channels with the specified TLS mode when needed
+   - Supports bidirectional data flow: connections can be initiated from either server or client side
 
 4. **Client Mode Operation**:
    - Connects to the server's control channel
    - Listens for signals indicating incoming connections
    - Creates data connections using the TLS security level specified by the server
    - Forwards data between the secure channel and local target
+   - Supports bidirectional data flow: data flow direction is automatically selected based on target address
 
 5. **Protocol Support**:
    - **TCP**: Full bidirectional streaming with persistent connections
@@ -36,9 +38,17 @@ NodePass creates a network architecture with separate channels for control and d
 
 ## Data Transmission Flow
 
-NodePass establishes a bidirectional data flow through its tunnel architecture, supporting both TCP and UDP protocols:
+NodePass establishes a bidirectional data flow through its tunnel architecture, supporting both TCP and UDP protocols. The system supports two data flow directions:
 
-### Server-Side Flow
+### Data Flow Direction Explanation
+- **Server Receives Mode (dataFlow: "-")**: Server listens on target address, client listens locally, data flows from target address to client local
+- **Server Sends Mode (dataFlow: "+")**: Server connects to remote target address, client listens locally, data flows from client local to remote target
+
+The data flow direction is automatically determined based on whether the target address is a local address:
+- If target address is a local address (localhost, 127.0.0.1, etc.), uses Server Receives Mode
+- If target address is a remote address, uses Server Sends Mode
+
+### Server-Side Flow (Server Receives Mode)
 1. **Connection Initiation**:
    ```
    [Target Client] → [Target Listener] → [Server: Target Connection Created]
