@@ -130,7 +130,7 @@ func (s *Server) tunnelHandshake() error {
 		Host:     s.dataFlow,
 		Fragment: s.tlsCode,
 	}
-	_, err = s.tunnelTCPConn.Write([]byte(tunnelURL.String() + "\n"))
+	_, err = s.tunnelTCPConn.Write(append(xor([]byte(tunnelURL.String())), '\n'))
 	if err != nil {
 		return err
 	}

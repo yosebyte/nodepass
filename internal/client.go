@@ -3,12 +3,12 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"net"
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -122,7 +122,7 @@ func (c *Client) tunnelHandshake() error {
 	if err != nil {
 		return err
 	}
-	tunnelSignal := strings.TrimSpace(string(rawTunnelURL))
+	tunnelSignal := string(xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
 	c.logger.Debug("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
 
 	// 解析隧道URL

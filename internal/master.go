@@ -636,8 +636,11 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Action string `json:"action"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
-		if id == apiKeyID && reqData.Action == "restart" {
-			m.regenerateAPIKey(instance)
+		if id == apiKeyID {
+			// API Key实例只允许restart操作
+			if reqData.Action == "restart" {
+				m.regenerateAPIKey(instance)
+			}
 		} else if reqData.Action != "" {
 			m.processInstanceAction(instance, reqData.Action)
 		}
