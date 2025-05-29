@@ -3,6 +3,7 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"net"
 	"net/url"
@@ -76,6 +77,14 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// xor 对数据进行异或处理
+func xor(data []byte) []byte {
+	for i := range data {
+		data[i] ^= byte(128)
+	}
+	return data
 }
 
 // getAddress 解析和设置地址信息
@@ -274,7 +283,7 @@ func (c *Common) commonQueue() error {
 			if err != nil {
 				return err
 			}
-			signal := strings.TrimSpace(string(rawSignal))
+			signal := string(xor(bytes.TrimSuffix(rawSignal, []byte{'\n'})))
 
 			// 将信号发送到通道
 			select {
@@ -301,7 +310,7 @@ func (c *Common) healthCheck() error {
 			// 连接池健康度检查
 			if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 				// 发送刷新信号到对端
-				_, err := c.tunnelTCPConn.Write([]byte(flushURL.String() + "\n"))
+				_, err := c.tunnelTCPConn.Write(append(xor([]byte(flushURL.String())), '\n'))
 				if err != nil {
 					c.mu.Unlock()
 					return err
@@ -390,7 +399,7 @@ func (c *Common) commonTCPLoop() {
 				}
 
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
+				_, err = c.tunnelTCPConn.Write(append(xor([]byte(launchURL.String())), '\n'))
 				c.mu.Unlock()
 
 				if err != nil {
@@ -457,7 +466,7 @@ func (c *Common) commonUDPLoop() {
 				}
 
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write([]byte(launchURL.String() + "\n"))
+				_, err = c.tunnelTCPConn.Write(append(xor([]byte(launchURL.String())), '\n'))
 				c.mu.Unlock()
 
 				if err != nil {
