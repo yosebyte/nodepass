@@ -91,6 +91,11 @@ func (s *Server) start() error {
 		return err
 	}
 
+	// 握手之后把UDP监听关掉
+	if s.tunnelUDPConn != nil {
+		s.tunnelUDPConn.Close()
+	}
+
 	// 初始化隧道连接池
 	s.tunnelPool = pool.NewServerPool(
 		s.clientIP,
