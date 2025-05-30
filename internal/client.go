@@ -28,6 +28,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		Common: Common{
 			logger:     logger,
 			semaphore:  make(chan struct{}, semaphoreLimit),
+			errChan:    make(chan error, 2),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tunnelName: parsedURL.Hostname(),
@@ -71,44 +72,69 @@ func (c *Client) Run() {
 func (c *Client) start() error {
 	c.initContext()
 
-	// 与隧道服务端进行握手
-	if err := c.tunnelHandshake(); err != nil {
-		return err
-	}
-
-	// 初始化隧道连接池
-	c.tunnelPool = pool.NewClientPool(
-		minPoolCapacity,
-		maxPoolCapacity,
-		minPoolInterval,
-		maxPoolInterval,
-		reportInterval,
-		c.tlsCode,
-		c.tunnelName,
-		func() (net.Conn, error) {
-			return net.DialTCP("tcp", nil, c.tunnelAddr)
-		})
-
-	go c.tunnelPool.ClientManager()
-
-	switch c.dataFlow {
-	case "-":
-		go c.commonOnce()
-		go c.commonQueue()
-	case "+":
-		// 初始化目标监听器
-		if err := c.initTargetListener(); err != nil {
+	// 通过隧道地址判断是否单端转发或双端握手
+	if c.isLocalAddress(c.tunnelTCPAddr.IP) {
+		if err := c.initTunnelListener(); err != nil {
 			return err
 		}
-		go c.commonLoop()
+
+		// 初始化连接池
+		c.tunnelPool = pool.NewClientPool(
+			minPoolCapacity,
+			maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			true,
+			c.tunnelName,
+			func() (net.Conn, error) {
+				return net.DialTCP("tcp", nil, c.targetTCPAddr)
+			})
+
+		go c.tunnelPool.ClientManager()
+
+		return c.singleLoop()
+	} else {
+		if err := c.tunnelHandshake(); err != nil {
+			return err
+		}
+
+		// 初始化连接池
+		c.tunnelPool = pool.NewClientPool(
+			minPoolCapacity,
+			maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			false,
+			c.tunnelName,
+			func() (net.Conn, error) {
+				return net.DialTCP("tcp", nil, c.tunnelTCPAddr)
+			})
+
+		go c.tunnelPool.ClientManager()
+
+		switch c.dataFlow {
+		case "-":
+			go c.commonOnce()
+			go c.commonQueue()
+		case "+":
+			// 初始化目标监听器
+			if err := c.initTargetListener(); err != nil {
+				return err
+			}
+			go c.commonLoop()
+		}
+		return c.healthCheck()
 	}
-	return c.healthCheck()
 }
 
 // tunnelHandshake 与隧道服务端进行握手
 func (c *Client) tunnelHandshake() error {
 	// 建立隧道TCP连接
-	tunnelTCPConn, err := net.DialTimeout("tcp", c.tunnelAddr.String(), tcpDialTimeout)
+	tunnelTCPConn, err := net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
 		return err
 	}

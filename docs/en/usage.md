@@ -1,6 +1,17 @@
 # Usage Instructions
 
-NodePass creates tunnels with an unencrypted TCP control channel and configurable TLS encryption options for data exchange. This guide covers the three operating modes and explains how to use each effectively.
+NodePass creates tunnels with an unencrypted TCP control channel and configurable TLS #### Examples
+
+```bash
+# Client single-end forwarding mode - Local proxy listening on port 1080, forwarding to target server
+nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
+
+# Connect to NodePass server and automatically adopt its TLS security policy - Client sends mode
+nodepass client://server.example.com:10101/127.0.0.1:8080
+
+# Connect with debug logging - Client receives mode
+nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
+```n options for data exchange. This guide covers the three operating modes and explains how to use each effectively.
 
 ## Command Line Syntax
 
@@ -87,14 +98,21 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 
 #### How Client Mode Works
 
-In client mode, NodePass supports two data flow directions:
+In client mode, NodePass supports three operating modes:
 
-**Mode 1: Client Receives Traffic** (when server sends traffic)
+**Mode 1: Client Single-End Forwarding** (when tunnel address is local)
+1. Listens for TCP and UDP connections on the local tunnel address
+2. Uses connection pooling technology to pre-establish TCP connections to target address, eliminating connection latency
+3. Directly forwards received traffic to the target address with high performance
+4. No handshake with server required, enables point-to-point direct forwarding
+5. Suitable for local proxy and simple forwarding scenarios
+
+**Mode 2: Client Receives Traffic** (when server sends traffic)
 1. Connects to the server's TCP tunnel endpoint (control channel)
 2. Listens locally and waits for connections through the tunnel
 3. Establishes connections to local `target_addr` and forwards data
 
-**Mode 2: Client Sends Traffic** (when server receives traffic)
+**Mode 3: Client Sends Traffic** (when server receives traffic)
 1. Connects to the server's TCP tunnel endpoint (control channel)
 2. Listens for signals from the server through this control channel
 3. When a signal is received, establishes a data connection with the TLS security level specified by the server
@@ -196,6 +214,12 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 
 NodePass supports flexible bidirectional data flow configuration:
 
+### Client Single-End Forwarding Mode
+- **Client**: Listens on local tunnel address, uses connection pooling technology to directly forward to target address
+- **Connection Pool Optimization**: Pre-establishes TCP connections, eliminates connection latency, provides high-performance forwarding
+- **No Server Required**: Operates independently without server handshake
+- **Use Case**: Local proxy, simple port forwarding, testing environments, high-performance forwarding
+
 ### Server Receives Mode (dataFlow: "-")
 - **Server**: Listens for incoming connections on target_addr, forwards through tunnel to client
 - **Client**: Connects to local target_addr to provide services
@@ -206,7 +230,10 @@ NodePass supports flexible bidirectional data flow configuration:
 - **Client**: Listens locally to receive connections from server
 - **Use Case**: Access remote services through tunnel proxy
 
-The system automatically selects the appropriate data flow direction based on whether target_addr is a local address.
+The system automatically selects the appropriate operation mode based on tunnel and target addresses:
+- If the client's tunnel address is a local address, enables single-end forwarding mode
+- If target address is a local address, uses Server Receives Mode
+- If target address is a remote address, uses Server Sends Mode
 
 ## Next Steps
 
