@@ -684,6 +684,12 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 
 // handleDeleteInstance 处理删除实例请求
 func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance *Instance) {
+	// API Key实例不允许删除
+	if id == apiKeyID {
+		httpError(w, "Forbidden: API Key", http.StatusForbidden)
+		return
+	}
+
 	if instance.Status == "running" {
 		m.stopInstance(instance)
 	}
@@ -1092,6 +1098,7 @@ func generateOpenAPISpec() string {
         "responses": {
           "204": {"description": "Deleted"},
           "401": {"description": "Unauthorized"},
+          "403": {"description": "Forbidden"},
           "404": {"description": "Not found"}
         }
       }
