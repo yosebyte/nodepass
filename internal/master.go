@@ -198,7 +198,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		statePath:     filepath.Join(stateDir, stateFileName),
 		notifyChannel: make(chan *InstanceEvent, 1024),
 	}
-	master.tunnelAddr = host
+	master.tunnelTCPAddr = host
 
 	// 加载持久化的实例状态
 	master.loadState()
@@ -302,7 +302,7 @@ func (m *Master) Run() {
 
 	// 创建HTTP服务器
 	m.server = &http.Server{
-		Addr:      m.tunnelAddr.String(),
+		Addr:      m.tunnelTCPAddr.String(),
 		ErrorLog:  m.logger.StdLogger(),
 		Handler:   mux,
 		TLSConfig: m.tlsConfig,
