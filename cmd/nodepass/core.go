@@ -24,7 +24,7 @@ func coreDispatch(parsedURL *url.URL) {
 	case "client":
 		core = internal.NewClient(parsedURL, logger)
 	default:
-		logger.Fatal("Unknown core: %v", scheme)
+		logger.Error("Unknown core: %v", scheme)
 		getExitInfo()
 	}
 
