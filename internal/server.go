@@ -135,12 +135,20 @@ func (s *Server) tunnelHandshake() error {
 		Host:     s.dataFlow,
 		Fragment: s.tlsCode,
 	}
+
+	start := time.Now()
 	_, err = s.tunnelTCPConn.Write(append(xor([]byte(tunnelURL.String())), '\n'))
 	if err != nil {
 		return err
 	}
-
 	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
-	s.logger.Debug("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
+
+	// 等待客户端确认
+	_, err = s.tunnelTCPConn.Read(make([]byte, 1))
+	if err != nil {
+		return err
+	}
+	s.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
+		s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
 	return nil
 }
