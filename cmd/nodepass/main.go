@@ -30,7 +30,7 @@ func getParsedURL(args []string) *url.URL {
 
 	parsedURL, err := url.Parse(args[1])
 	if err != nil {
-		logger.Fatal("URL parse: %v", err)
+		logger.Error("URL parse: %v", err)
 		getExitInfo()
 	}
 
@@ -49,9 +49,6 @@ func initLogLevel(level string) {
 	case "error":
 		logger.SetLogLevel(logs.Error)
 		logger.Error("Init log level: ERROR")
-	case "fatal":
-		logger.SetLogLevel(logs.Fatal)
-		logger.Fatal("Init log level: FATAL")
 	default:
 		logger.SetLogLevel(logs.Info)
 		logger.Info("Init log level: INFO")
@@ -79,7 +76,7 @@ func getExitInfo() {
 │ <core>   │ server | client | master  │ Operating mode       │
 │ <tunnel> │ host:port (IP | domain)   │ Tunnel address       │
 │ <target> │ host:port | API prefix    │ Target addr | prefix │
-│ <log>    │ debug | info | warn | ... │ Default level info   │
+│ <log>    │ debug | warn | error      │ Default level info   │
 │ * <tls>  │ 0 off | 1 on | 2 verify   │ Default TLS code-0   │
 │ * <crt>  │ <path/to/crt.pem>         │ Custom certificate   │
 │ * <key>  │ <path/to/key.pem>         │ Custom private key   │

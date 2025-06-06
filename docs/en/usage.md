@@ -25,7 +25,7 @@ Where:
 - `<core>`: Specifies the operating mode (`server`, `client`, or `master`)
 - `<tunnel_addr>`: The tunnel endpoint address for control channel communications 
 - `<target_addr>`: The destination address for business data with bidirectional flow support (or API prefix in master mode)
-- `<level>`: Log verbosity level (`debug`, `info`, `warn`, `error`, or `fatal`)
+- `<level>`: Log verbosity level (`debug`, `info`, `warn`, `error`, or `event`)
 - `<mode>`: TLS security level for data channels (`0`, `1`, or `2`) - server/master modes only
 - `<cert_file>`: Path to certificate file (when `tls=2`) - server/master modes only
 - `<key_file>`: Path to private key file (when `tls=2`) - server/master modes only
@@ -46,7 +46,7 @@ nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 
 - `tunnel_addr`: Address for the TCP tunnel endpoint (control channel) that clients will connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
-- `log`: Log level (debug, info, warn, error, fatal)
+- `log`: Log level (debug, info, warn, error, event)
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
   - `1`: Self-signed certificate (automatically generated)
@@ -94,7 +94,7 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
-- `log`: Log level (debug, info, warn, error, fatal)
+- `log`: Log level (debug, info, warn, error, event)
 
 #### How Client Mode Works
 
@@ -140,7 +140,7 @@ nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&ke
 
 - `api_addr`: Address where the API service will listen (e.g., 0.0.0.0:9090)
 - `prefix`: Optional API prefix path (e.g., /management). Default is `/api`
-- `log`: Log level (debug, info, warn, error, fatal)
+- `log`: Log level (debug, info, warn, error, event)
 - `tls`: TLS encryption mode for the API service (0, 1, 2)
   - `0`: No TLS encryption (HTTP)
   - `1`: Self-signed certificate (HTTPS with auto-generated cert)
