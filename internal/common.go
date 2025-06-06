@@ -20,29 +20,30 @@ import (
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
-	mu             sync.Mutex         // 互斥锁
-	tlsCode        string             // TLS模式代码
-	dataFlow       string             // 数据流向
-	logger         *logs.Logger       // 日志记录器
-	tunnelAddr     string             // 隧道地址字符串
-	tunnelTCPAddr  *net.TCPAddr       // 隧道TCP地址
-	tunnelUDPAddr  *net.UDPAddr       // 隧道UDP地址
-	targetAddr     string             // 目标地址字符串
-	targetTCPAddr  *net.TCPAddr       // 目标TCP地址
-	targetUDPAddr  *net.UDPAddr       // 目标UDP地址
-	targetListener *net.TCPListener   // 目标监听器
-	tunnelListener net.Listener       // 隧道监听器
-	tunnelTCPConn  *net.TCPConn       // 隧道TCP连接
-	tunnelUDPConn  *net.UDPConn       // 隧道UDP连接
-	targetTCPConn  *net.TCPConn       // 目标TCP连接
-	targetUDPConn  *net.UDPConn       // 目标UDP连接
-	tunnelPool     *pool.Pool         // 隧道连接池
-	semaphore      chan struct{}      // 信号量通道
-	bufReader      *bufio.Reader      // 缓冲读取器
-	signalChan     chan string        // 信号通道
-	errChan        chan error         // 错误通道
-	ctx            context.Context    // 上下文
-	cancel         context.CancelFunc // 取消函数
+	mu               sync.Mutex         // 互斥锁
+	tlsCode          string             // TLS模式代码
+	dataFlow         string             // 数据流向
+	logger           *logs.Logger       // 日志记录器
+	tunnelAddr       string             // 隧道地址字符串
+	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
+	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
+	targetAddr       string             // 目标地址字符串
+	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
+	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
+	targetListener   *net.TCPListener   // 目标监听器
+	tunnelListener   net.Listener       // 隧道监听器
+	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
+	tunnelUDPConn    *net.UDPConn       // 隧道UDP连接
+	targetTCPConn    *net.TCPConn       // 目标TCP连接
+	targetUDPConn    *net.UDPConn       // 目标UDP连接
+	targetUDPSession sync.Map           // 目标UDP会话
+	tunnelPool       *pool.Pool         // 隧道连接池
+	semaphore        chan struct{}      // 信号量通道
+	bufReader        *bufio.Reader      // 缓冲读取器
+	signalChan       chan string        // 信号通道
+	errChan          chan error         // 错误通道
+	ctx              context.Context    // 上下文
+	cancel           context.CancelFunc // 取消函数
 }
 
 // 配置变量，可通过环境变量调整
@@ -238,6 +239,15 @@ func (c *Common) stop() {
 		c.tunnelPool.Close()
 		c.logger.Debug("Tunnel connection closed: active %v", active)
 	}
+
+	// 清理目标UDP会话
+	c.targetUDPSession.Range(func(key, value any) bool {
+		if conn, ok := value.(*net.UDPConn); ok {
+			conn.Close()
+		}
+		c.targetUDPSession.Delete(key)
+		return true
+	})
 
 	// 关闭目标UDP连接
 	if c.targetUDPConn != nil {
@@ -449,7 +459,7 @@ func (c *Common) commonTCPLoop() {
 				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
 			}(targetConn)
 		}
 	}
@@ -512,8 +522,8 @@ func (c *Common) commonUDPLoop() {
 				c.logger.Debug("UDP launch signal: %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 				c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 
-				// 处理UDP/TCP数据交换
-				udpToTcp, tcpToUdp, _ := conn.DataTransfer(
+				// 处理UDP/TCP数据传输
+				rx, tx, _ := conn.DataTransfer(
 					c.targetUDPConn,
 					remoteConn,
 					clientAddr,
@@ -523,7 +533,7 @@ func (c *Common) commonUDPLoop() {
 				)
 
 				// 传输完成，广播统计信息
-				c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
+				c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", rx, tx)
 			}(buffer, n, clientAddr, remoteConn)
 		}
 	}
@@ -611,7 +621,7 @@ func (c *Common) commonTCPOnce(id string) {
 	bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
 
 	// 交换完成，广播统计信息
-	c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -653,8 +663,8 @@ func (c *Common) commonUDPOnce(id string) {
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
-	// 处理UDP/TCP数据交换
-	udpToTcp, tcpToUdp, _ := conn.DataTransfer(
+	// 处理UDP/TCP数据传输
+	rx, tx, _ := conn.DataTransfer(
 		c.targetUDPConn,
 		remoteConn,
 		nil,
@@ -663,8 +673,8 @@ func (c *Common) commonUDPOnce(id string) {
 		udpReadTimeout,
 	)
 
-	// 交换完成，广播统计信息
-	c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpToTcp, tcpToUdp)
+	// 传输完成，广播统计信息
+	c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", rx, tx)
 }
 
 // singleLoop 单端转发处理循环
@@ -716,7 +726,7 @@ func (c *Common) singleTCPLoop() error {
 				// 从连接池中获取连接
 				targetConn := c.tunnelPool.ClientGet("")
 				if targetConn == nil {
-					c.logger.Error("Get failed")
+					c.logger.Error("Get failed: no target connection available")
 					return
 				}
 
@@ -736,7 +746,7 @@ func (c *Common) singleTCPLoop() error {
 				bytesReceived, bytesSent, _ := conn.DataExchange(tunnelConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Debug("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
 			}(tunnelConn)
 		}
 	}
@@ -749,71 +759,98 @@ func (c *Common) singleUDPLoop() error {
 		case <-c.ctx.Done():
 			return context.Canceled
 		default:
-			// 读取来自隧道的UDP数据
 			buffer := make([]byte, udpDataBufSize)
-			n, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
+
+			// 读取来自隧道的UDP数据
+			rx, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
 			if err != nil {
 				continue
 			}
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelUDPConn.LocalAddr(), clientAddr)
 
-			// 使用信号量限制并发数
-			c.semaphore <- struct{}{}
+			var targetConn *net.UDPConn
+			sessionKey := clientAddr.String()
 
-			go func(buffer []byte, n int, clientAddr *net.UDPAddr) {
-				defer func() { <-c.semaphore }()
-
-				// 连接到目标UDP地址
-				targetConn, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+			// 获取或创建目标UDP会话
+			if session, ok := c.targetUDPSession.Load(sessionKey); ok {
+				// 复用现有会话
+				targetConn = session.(*net.UDPConn)
+				c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+			} else {
+				// 创建新的会话
+				session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 				if err != nil {
 					c.logger.Error("Dial failed: %v", err)
-					return
+					continue
 				}
+				c.targetUDPSession.Store(sessionKey, session)
 
-				defer func() {
-					if targetConn != nil {
-						targetConn.Close()
-					}
-				}()
-
-				c.targetUDPConn = targetConn.(*net.UDPConn)
+				targetConn = session.(*net.UDPConn)
 				c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-				c.logger.Debug("Starting transfer: %v <-> %v", c.tunnelUDPConn.LocalAddr(), targetConn.LocalAddr())
 
-				udpRx, udpTx := uint64(0), uint64(0)
-				// 将数据发送到UDP
-				_, err = targetConn.Write(buffer[:n])
-				if err != nil {
-					c.logger.Error("Write failed: %v", err)
-					return
-				}
-				udpTx = uint64(n)
+				// 使用信号量限制并发数
+				c.semaphore <- struct{}{}
 
-				// 设置UDP读取超时
-				if err := targetConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
-					c.logger.Error("SetReadDeadline failed: %v", err)
-					return
-				}
+				go func(targetConn *net.UDPConn, clientAddr *net.UDPAddr, sessionKey string) {
+					defer func() { <-c.semaphore }()
 
-				// 从UDP读取响应
-				n, err = targetConn.(*net.UDPConn).Read(buffer)
-				if err != nil {
-					c.logger.Error("Read failed: %v", err)
-					return
-				}
+					buffer := make([]byte, udpDataBufSize)
 
-				// 将响应写回UDP
-				n, err = c.tunnelUDPConn.WriteToUDP(buffer[:n], clientAddr)
-				if err != nil {
-					c.logger.Error("WriteToUDP failed: %v", err)
-					return
-				}
-				udpRx = uint64(n)
+					for {
+						select {
+						case <-c.ctx.Done():
+							return
+						default:
+							// 设置UDP读取超时
+							if err := targetConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
+								c.logger.Error("SetReadDeadline failed: %v", err)
+								c.targetUDPSession.Delete(sessionKey)
+								targetConn.Close()
+								return
+							}
 
-				// 传输完成，广播统计信息
-				c.logger.Debug("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=%v", udpRx, udpTx)
-			}(buffer, n, clientAddr)
+							// 从UDP读取响应
+							n, err := targetConn.Read(buffer)
+							if err != nil {
+								// 检查是否为超时错误
+								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+									c.logger.Debug("UDP session abort: %v", err)
+								} else {
+									c.logger.Error("Read failed: %v", err)
+								}
+								c.targetUDPSession.Delete(sessionKey)
+								targetConn.Close()
+								return
+							}
+
+							// 将响应写回隧道UDP连接
+							tx, err := c.tunnelUDPConn.WriteToUDP(buffer[:n], clientAddr)
+							if err != nil {
+								c.logger.Error("WriteToUDP failed: %v", err)
+								c.targetUDPSession.Delete(sessionKey)
+								targetConn.Close()
+								return
+							}
+							// 传输完成，广播统计信息
+							c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
+						}
+					}
+				}(targetConn, clientAddr, sessionKey)
+			}
+
+			// 将初始数据发送到目标UDP连接
+			c.logger.Debug("Starting transfer: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
+			_, err = targetConn.Write(buffer[:rx])
+			if err != nil {
+				c.logger.Error("Write failed: %v", err)
+				c.targetUDPSession.Delete(sessionKey)
+				targetConn.Close()
+				return err
+			}
+
+			// 传输完成，广播统计信息
+			c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
 		}
 	}
 }
