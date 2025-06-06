@@ -10,7 +10,7 @@ NodePass provides five log verbosity levels that control the amount of informati
 - `info`: General operational information (default) - shows startup, shutdown, and key events
 - `warn`: Warning conditions - only shows potential issues that don't affect core functionality
 - `error`: Error conditions - shows only problems that affect functionality
-- `fatal`: Critical conditions - shows only severe errors that cause termination
+- `event`: Event recording - shows important operational events and traffic statistics
 
 You can set the log level in the command URL:
 

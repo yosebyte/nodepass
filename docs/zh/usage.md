@@ -14,7 +14,7 @@ nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 - `<core>`：指定操作模式（`server`、`client`或`master`）
 - `<tunnel_addr>`：控制通道通信的隧道端点地址
 - `<target_addr>`：业务数据的目标地址，支持双向模式（或在master模式下的API前缀）
-- `<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`fatal`）
+- `<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`event`）
 - `<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）- 仅适用于server/master模式
 - `<cert_file>`：证书文件路径（当`tls=2`时）- 仅适用于server/master模式
 - `<key_file>`：私钥文件路径（当`tls=2`时）- 仅适用于server/master模式
@@ -35,7 +35,7 @@ nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_f
 
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
-- `log`：日志级别(debug, info, warn, error, fatal)
+- `log`：日志级别(debug, info, warn, error, event)
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
   - `1`：自签名证书（自动生成）
@@ -83,7 +83,7 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
-- `log`：日志级别(debug, info, warn, error, fatal)
+- `log`：日志级别(debug, info, warn, error, event)
 
 #### 客户端模式工作原理
 
@@ -132,7 +132,7 @@ nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&ke
 
 - `api_addr`：API服务监听的地址（例如，0.0.0.0:9090）
 - `prefix`：可选的API前缀路径（例如，/management）。默认为`/api`
-- `log`：日志级别(debug, info, warn, error, fatal)
+- `log`：日志级别(debug, info, warn, error, event)
 - `tls`：API服务的TLS加密模式(0, 1, 2)
   - `0`：无TLS加密（HTTP）
   - `1`：自签名证书（带自动生成证书的HTTPS）
