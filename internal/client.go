@@ -149,16 +149,8 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 
-	start := time.Now()
 	tunnelSignal := string(xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
 	c.logger.Debug("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
-
-	// 反馈给服务端
-	if _, err := c.tunnelTCPConn.Write([]byte{'\n'}); err != nil {
-		return err
-	}
-	c.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
-		c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
 
 	// 解析隧道URL
 	tunnelURL, err := url.Parse(tunnelSignal)
@@ -167,5 +159,19 @@ func (c *Client) tunnelHandshake() error {
 	}
 	c.dataFlow = tunnelURL.Host
 	c.tlsCode = tunnelURL.Fragment
+
+	// 反馈给服务端
+	start := time.Now()
+	if _, err := c.tunnelTCPConn.Write([]byte{'\n'}); err != nil {
+		return err
+	}
+
+	// 等待服务端确认握手完成
+	_, err = c.tunnelTCPConn.Read(make([]byte, 1))
+	if err != nil {
+		return err
+	}
+	c.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
+		c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
 	return nil
 }

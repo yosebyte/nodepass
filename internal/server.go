@@ -150,5 +150,10 @@ func (s *Server) tunnelHandshake() error {
 	}
 	s.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
 		s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
+
+	// 发送客户端确认握手完成
+	if _, err := s.tunnelTCPConn.Write([]byte{'\n'}); err != nil {
+		return err
+	}
 	return nil
 }
