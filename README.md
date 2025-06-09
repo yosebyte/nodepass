@@ -46,9 +46,7 @@ English | [简体中文](README_zh.md)
 ### 📥 Installation
 
 - **Pre-built Binaries**: Download from [releases page](https://github.com/yosebyte/nodepass/releases).
-- **Go Install**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
 - **Container Image**: `docker pull ghcr.io/yosebyte/nodepass:latest`
-- **Deployment Script**: `bash <(curl -sSL https://run.nodepass.eu/np.sh)`
 
 ### 🚀 Basic Usage
 
@@ -67,15 +65,6 @@ nodepass client://server.example.com:10101/127.0.0.1:8080
 nodepass "master://:10101/api?log=debug&tls=1"
 ```
 
-## 🔧 Common Use Cases
-
-- **Remote Access**: Securely access internal services from external locations
-- **Firewall Bypass**: Navigate through restrictive network environments
-- **Secure Microservices**: Establish encrypted channels between distributed components
-- **Database Protection**: Enable secure database access while keeping servers isolated
-- **IoT Communication**: Connect devices across different network segments
-- **Penetration Testing**: Create secure tunnels for security assessments
-
 ## 📚 Documentation
 
 Explore the complete documentation to learn more about NodePass:
@@ -88,15 +77,19 @@ Explore the complete documentation to learn more about NodePass:
 - [How It Works](/docs/en/how-it-works.md)
 - [Troubleshooting](/docs/en/troubleshooting.md)
 
-## 👥 Contributing
+## 🌐 Ecosystem
 
-Contributions are welcome! Please feel free to submit issues, feature requests, or pull requests.
+The [NodePassProject](https://github.com/NodePassProject) organization develops various frontend applications and auxiliary tools to enhance the NodePass experience:
+
+- **[NodePassDash](https://github.com/NodePassProject/NodePassDash)**: A modern NodePass management interface that provides master management, instance management, traffic statistics, history records, and more.
+
+- **[npsh](https://github.com/NodePassProject/npsh)**: A convenient script that provides simple and easy-to-use installation, configuration, and management functionality for NodePass master API mode.
 
 ## 💬 Discussion
 
-Join our [discussions](https://github.com/yosebyte/nodepass/discussions) to share your experiences and ideas.
+- Follow our [Telegram Channel](https://t.me/NodePassChannel) for updates and community support.
 
-Join our [Telegram channel](https://t.me/NodePassChannel) for updates and community support.
+- Join our [Discussions](https://github.com/yosebyte/nodepass/discussions) and [Telegram Group](https://t.me/NodePassGroup) to share experiences and ideas.
 
 ## 📄 License
 
@@ -107,13 +100,12 @@ Project `NodePass` is licensed under the [BSD 3-Clause License](LICENSE).
 <table>
   <tr>
     <td width="220" align="center">
-      <a href="https://as211392.com">
-        <img src="https://cdn.yobc.de/assets/dreamcloud.png" width="200" alt="DreamCloud">
-      </a>
+      <a><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
+      <a href="https://as211392.com">https://as211392.com</a>
     </td>
-    <td>
-      <div><b>DreamCloud</b></div>
-      <div><a href="https://as211392.com">https://as211392.com</a></div>
+    <td width="220" align="center">
+      <a><img src="https://cdn.yobc.de/assets/zmto.png"></a>
+      <a href="https://zmto.com">https://zmto.com</a>
     </td>
   </tr>
 </table>
