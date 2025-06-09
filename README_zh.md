@@ -46,9 +46,7 @@
 ### 📥 安装方法
 
 - **预编译二进制文件**: 从[发布页面](https://github.com/yosebyte/nodepass/releases)下载。
-- **Go安装**: `go install github.com/yosebyte/nodepass/cmd/nodepass@latest`
 - **容器镜像**: `docker pull ghcr.io/yosebyte/nodepass:latest`
-- **部署脚本**: `bash <(curl -sSL https://run.nodepass.eu/np.sh)`
 
 ### 🚀 基本用法
 
@@ -67,15 +65,6 @@ nodepass client://server.example.com:10101/127.0.0.1:8080
 nodepass "master://:10101/api?log=debug&tls=1"
 ```
 
-## 🔧 常见使用场景
-
-- **远程访问**: 从外部位置安全访问内部服务
-- **防火墙绕过**: 在限制性网络环境中导航
-- **安全微服务**: 在分布式组件之间建立加密通道
-- **数据库保护**: 在保持服务器隔离的同时实现安全数据库访问
-- **物联网通信**: 连接不同网络段上的设备
-- **渗透测试**: 为红队行动和安全评估创建安全隧道
-
 ## 📚 文档
 
 探索完整文档以了解更多关于NodePass的信息：
@@ -88,15 +77,19 @@ nodepass "master://:10101/api?log=debug&tls=1"
 - [工作原理](/docs/zh/how-it-works.md)
 - [故障排除](/docs/zh/troubleshooting.md)
 
-## 👥 贡献
+## 🌐 生态系统
 
-欢迎贡献！请随时提交问题、功能请求或拉取请求。
+[NodePassProject](https://github.com/NodePassProject) 组织开发了各种前端应用和辅助工具来增强 NodePass 体验：
+
+- **[NodePassDash](https://github.com/NodePassProject/NodePassDash)**: 一个现代化的 NodePass 管理界面，提供主控管理、实例管理、流量统计、历史记录等功能。
+
+- **[npsh](https://github.com/NodePassProject/npsh)**: 一个便捷的脚本，为 NodePass master API 模式提供简单易用的安装、配置和管理功能。
 
 ## 💬 讨论
 
-加入我们的[讨论区](https://github.com/yosebyte/nodepass/discussions)分享您的经验和想法。
+- 关注我们的 [Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。
 
-加入我们的[Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。
+- 加入我们的[讨论区](https://github.com/yosebyte/nodepass/discussions)和 [Telegram 群组](https://t.me/NodePassGroup) 分享经验和想法。
 
 ## 📄 许可协议
 
@@ -107,13 +100,12 @@ nodepass "master://:10101/api?log=debug&tls=1"
 <table>
   <tr>
     <td width="220" align="center">
-      <a href="https://as211392.com">
-        <img src="https://cdn.yobc.de/assets/dreamcloud.png" width="200" alt="DreamCloud">
-      </a>
+      <a><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
+      <a href="https://as211392.com">https://as211392.com</a>
     </td>
-    <td>
-      <div><b>DreamCloud</b></div>
-      <div><a href="https://as211392.com">https://as211392.com</a></div>
+    <td width="220" align="center">
+      <a><img src="https://cdn.yobc.de/assets/zmto.png"></a>
+      <a href="https://zmto.com">https://zmto.com</a>
     </td>
   </tr>
 </table>
