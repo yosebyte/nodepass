@@ -99,13 +99,11 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 <table>
   <tr>
-    <td width="220" align="center">
-      <a><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
-      <a href="https://as211392.com">https://as211392.com</a>
+    <td width="200" align="center">
+      <a href="https://whmcs.as211392.com"><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
     </td>
-    <td width="220" align="center">
-      <a><img src="https://cdn.yobc.de/assets/zmto.png"></a>
-      <a href="https://zmto.com">https://zmto.com</a>
+    <td width="200" align="center">
+      <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
     </td>
   </tr>
 </table>
