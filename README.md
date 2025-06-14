@@ -89,7 +89,7 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 
 - Follow our [Telegram Channel](https://t.me/NodePassChannel) for updates and community support.
 
-- Join our [Discussions](https://github.com/yosebyte/nodepass/discussions) and [Telegram Group](https://t.me/NodePassGroup) to share experiences and ideas.
+- Join our [Discord](https://discord.gg/5TdhkQnJ) and [Telegram Group](https://t.me/NodePassGroup) to share experiences and ideas.
 
 ## 📄 License
 
