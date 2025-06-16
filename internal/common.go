@@ -38,6 +38,8 @@ type Common struct {
 	targetUDPConn    *net.UDPConn       // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
 	tunnelPool       *pool.Pool         // 隧道连接池
+	minPoolCapacity  int                // 最小池容量
+	maxPoolCapacity  int                // 最大池容量
 	semaphore        chan struct{}      // 信号量通道
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
@@ -49,17 +51,15 @@ type Common struct {
 // 配置变量，可通过环境变量调整
 var (
 	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
-	minPoolCapacity = getEnvAsInt("NP_MIN_POOL_CAPACITY", 16)                 // 最小池容量
-	maxPoolCapacity = getEnvAsInt("NP_MAX_POOL_CAPACITY", 1024)               // 最大池容量
-	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP数据缓冲区大小
-	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 15*time.Second) // UDP读取超时
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 15*time.Second) // UDP拨号超时
-	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 15*time.Second) // TCP读取超时
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 15*time.Second) // TCP拨号超时
+	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP缓冲区大小
+	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 10*time.Second) // UDP读取超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second) // UDP拨号超时
+	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 10*time.Second) // TCP读取超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 10*time.Second) // TCP拨号超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
 	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
-	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 5*time.Second)  // 服务冷却时间
+	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)  // 服务冷却时间
 	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
 	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
 )
@@ -90,6 +90,25 @@ func xor(data []byte) []byte {
 		data[i] ^= byte(128)
 	}
 	return data
+}
+
+// getPoolCapacity 获取连接池容量设置
+func (c *Common) getPoolCapacity(parsedURL *url.URL) {
+	if min := parsedURL.Query().Get("min"); min != "" {
+		if value, err := strconv.Atoi(min); err == nil && value > 0 {
+			c.minPoolCapacity = value
+		}
+	} else {
+		c.minPoolCapacity = 64
+	}
+
+	if max := parsedURL.Query().Get("max"); max != "" {
+		if value, err := strconv.Atoi(max); err == nil && value > 0 {
+			c.maxPoolCapacity = value
+		}
+	} else {
+		c.maxPoolCapacity = 8192
+	}
 }
 
 // getAddress 解析和设置地址信息
@@ -456,10 +475,10 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
+				rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(targetConn)
 		}
 	}
@@ -618,10 +637,10 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
+	rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
 
 	// 交换完成，广播统计信息
-	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -743,10 +762,10 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				bytesReceived, bytesSent, _ := conn.DataExchange(tunnelConn, targetConn)
+				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(tunnelConn)
 		}
 	}

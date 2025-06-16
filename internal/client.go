@@ -33,6 +33,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
+	client.getPoolCapacity(parsedURL)
 	client.getAddress(parsedURL)
 	return client
 }
@@ -80,8 +81,8 @@ func (c *Client) start() error {
 
 		// 初始化连接池
 		c.tunnelPool = pool.NewClientPool(
-			minPoolCapacity,
-			maxPoolCapacity,
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
 			minPoolInterval,
 			maxPoolInterval,
 			reportInterval,
@@ -102,8 +103,8 @@ func (c *Client) start() error {
 
 		// 初始化连接池
 		c.tunnelPool = pool.NewClientPool(
-			minPoolCapacity,
-			maxPoolCapacity,
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
 			minPoolInterval,
 			maxPoolInterval,
 			reportInterval,

@@ -57,7 +57,7 @@ nodepass "server://:10101/127.0.0.1:8080?log=debug&tls=1"
 
 **客户端模式**
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080
+nodepass "client://server:10101/127.0.0.1:8080?min=128"
 ```
 
 **主控模式 (API)**
@@ -81,9 +81,11 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 [NodePassProject](https://github.com/NodePassProject) 组织开发了各种前端应用和辅助工具来增强 NodePass 体验：
 
-- **[NodePassDash](https://github.com/NodePassProject/NodePassDash)**: 一个现代化的 NodePass 管理界面，提供主控管理、实例管理、流量统计、历史记录等功能。
+- **[NodePassDash](https://github.com/NodePassProject/NodePassDash)**: 现代化的 NodePass 管理界面，提供主控管理、实例管理、流量统计、历史记录等功能。
 
-- **[npsh](https://github.com/NodePassProject/npsh)**: 一个便捷的脚本，为 NodePass master API 模式提供简单易用的安装、配置和管理功能。
+- **[NodePanel](https://github.com/NodePassProject/NodePanel)**: 轻量化的前端面板，提供可视化的隧道管理功能，在 Vercel 或 Cloudflare Pages 轻松部署。
+
+- **[npsh](https://github.com/NodePassProject/npsh)**: 便捷的一键脚本，为 NodePass master API 模式提供简单易用的安装、配置和管理功能。
 
 ## 💬 讨论
 

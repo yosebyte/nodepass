@@ -57,7 +57,7 @@ nodepass "server://:10101/127.0.0.1:8080?log=debug&tls=1"
 
 **Client Mode**
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080
+nodepass "client://server:10101/127.0.0.1:8080?min=128"
 ```
 
 **Master Mode (API)**
@@ -82,6 +82,8 @@ Explore the complete documentation to learn more about NodePass:
 The [NodePassProject](https://github.com/NodePassProject) organization develops various frontend applications and auxiliary tools to enhance the NodePass experience:
 
 - **[NodePassDash](https://github.com/NodePassProject/NodePassDash)**: A modern NodePass management interface that provides master management, instance management, traffic statistics, history records, and more.
+
+- **[NodePanel](https://github.com/NodePassProject/NodePanel)**: A lightweight frontend panel that provides visual tunnel management, deployable on Vercel or Cloudflare Pages.
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: A convenient script that provides simple and easy-to-use installation, configuration, and management functionality for NodePass master API mode.
 
