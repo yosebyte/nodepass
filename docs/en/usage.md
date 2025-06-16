@@ -1,34 +1,31 @@
 # Usage Instructions
 
-NodePass creates tunnels with an unencrypted TCP control channel and configurable TLS #### Examples
-
-```bash
-# Client single-end forwarding mode - Local proxy listening on port 1080, forwarding to target server
-nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
-
-# Connect to NodePass server and automatically adopt its TLS security policy - Client sends mode
-nodepass client://server.example.com:10101/127.0.0.1:8080
-
-# Connect with debug logging - Client receives mode
-nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
-```n options for data exchange. This guide covers the three operating modes and explains how to use each effectively.
+NodePass creates tunnels with an unencrypted TCP control channel and configurable TLS encryption options for data exchange. This guide covers the three operating modes and explains how to use each effectively.
 
 ## Command Line Syntax
 
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>
 ```
 
 Where:
 - `<core>`: Specifies the operating mode (`server`, `client`, or `master`)
 - `<tunnel_addr>`: The tunnel endpoint address for control channel communications 
 - `<target_addr>`: The destination address for business data with bidirectional flow support (or API prefix in master mode)
-- `<level>`: Log verbosity level (`debug`, `info`, `warn`, `error`, or `event`)
-- `<mode>`: TLS security level for data channels (`0`, `1`, or `2`) - server/master modes only
-- `<cert_file>`: Path to certificate file (when `tls=2`) - server/master modes only
-- `<key_file>`: Path to private key file (when `tls=2`) - server/master modes only
+
+### Query Parameters
+
+Common query parameters:
+- `log=<level>`: Log verbosity level (`debug`, `info`, `warn`, `error`, or `event`)
+- `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
+- `max=<max_pool>`: Maximum connection pool capacity (default: 8192, client mode only)
+
+TLS-related parameters (server/master modes only):
+- `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
+- `crt=<cert_file>`: Path to certificate file (when `tls=2`)
+- `key=<key_file>`: Path to private key file (when `tls=2`)
 
 ## Operating Modes
 
@@ -87,7 +84,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass client://<tunnel_addr>/<target_addr>?log=<level>
+nodepass client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>
 ```
 
 #### Parameters
@@ -95,6 +92,8 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `min`: Minimum connection pool capacity (default: 64)
+- `max`: Maximum connection pool capacity (default: 8192)
 
 #### How Client Mode Works
 
@@ -121,11 +120,20 @@ In client mode, NodePass supports three operating modes:
 #### Examples
 
 ```bash
-# Connect to a NodePass server and automatically adopt its TLS security policy - Client sends mode
+# Client single-end forwarding mode - Local proxy listening on port 1080, forwarding to target server
+nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
+
+# Connect to a NodePass server and adopt its TLS security policy - Client sends mode
 nodepass client://server.example.com:10101/127.0.0.1:8080
 
 # Connect with debug logging - Client receives mode
 nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
+
+# Custom connection pool capacity - High performance configuration
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096
+
+# Resource-constrained configuration - Small connection pool
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info
 ```
 
 ### Master Mode (API)

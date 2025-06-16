@@ -7,17 +7,25 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>
 ```
 
 其中：
 - `<core>`：指定操作模式（`server`、`client`或`master`）
 - `<tunnel_addr>`：控制通道通信的隧道端点地址
 - `<target_addr>`：业务数据的目标地址，支持双向模式（或在master模式下的API前缀）
-- `<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`event`）
-- `<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）- 仅适用于server/master模式
-- `<cert_file>`：证书文件路径（当`tls=2`时）- 仅适用于server/master模式
-- `<key_file>`：私钥文件路径（当`tls=2`时）- 仅适用于server/master模式
+
+### 查询参数说明
+
+通用查询参数：
+- `log=<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`event`）
+- `min=<min_pool>`：最小连接池容量（默认：64，仅适用于client模式）
+- `max=<max_pool>`：最大连接池容量（默认：8192，仅适用于client模式）
+
+TLS相关参数（仅适用于server/master模式）：
+- `tls=<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）
+- `crt=<cert_file>`：证书文件路径（当`tls=2`时）
+- `key=<key_file>`：私钥文件路径（当`tls=2`时）
 
 ## 运行模式
 
@@ -76,7 +84,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass client://<tunnel_addr>/<target_addr>?log=<level>
+nodepass client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>
 ```
 
 #### 参数
@@ -84,6 +92,8 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `min`：最小连接池容量（默认：64）
+- `max`：最大连接池容量（默认：8192）
 
 #### 客户端模式工作原理
 
@@ -113,11 +123,17 @@ nodepass client://<tunnel_addr>/<target_addr>?log=<level>
 # 客户端单端转发模式 - 本地代理监听1080端口，转发到目标服务器
 nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
 
-# 连接到NodePass服务端并自动采用其TLS安全策略 - 客户端发送模式
+# 连接到NodePass服务端并采用其TLS安全策略 - 客户端发送模式
 nodepass client://server.example.com:10101/127.0.0.1:8080
 
 # 使用调试日志连接 - 客户端接收模式  
 nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
+
+# 自定义连接池容量 - 高性能配置
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096
+
+# 资源受限配置 - 小型连接池
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info
 ```
 
 ### 主控模式 (API)

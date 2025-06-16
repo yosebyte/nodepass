@@ -46,6 +46,19 @@ TLS模式2示例（自定义证书）：
 nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
 ```
 
+## 连接池容量参数
+
+连接池容量可以通过URL查询参数进行配置：
+
+- `min`: 最小连接池容量（默认: 64）
+- `max`: 最大连接池容量（默认: 8192）
+
+示例：
+```bash
+# 设置最小连接池为32，最大为4096
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096
+```
+
 ## 环境变量
 
 可以使用环境变量微调NodePass行为。以下是所有可用变量的完整列表，包括其描述、默认值以及不同场景的推荐设置。
@@ -53,32 +66,30 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_MIN_POOL_CAPACITY` | 最小连接池大小 | 16 | `export NP_MIN_POOL_CAPACITY=32` |
-| `NP_MAX_POOL_CAPACITY` | 最大连接池大小 | 1024 | `export NP_MAX_POOL_CAPACITY=4096` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 15s | `export NP_UDP_READ_TIMEOUT=30s` |
-| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 15s | `export NP_TCP_READ_TIMEOUT=30s` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP拨号超时 | 15s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP拨号超时 | 15s | `export NP_TCP_DIAL_TIMEOUT=30s` |
+| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 10s | `export NP_UDP_READ_TIMEOUT=30s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 10s | `export NP_TCP_READ_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 10s | `export NP_TCP_DIAL_TIMEOUT=30s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
-| `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 5s | `export NP_SERVICE_COOLDOWN=3s` |
+| `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
 | `NP_RELOAD_INTERVAL` | 证书/连接池重载间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### 连接池调优
 
-连接池参数是性能调优中最重要的设置之一：
+连接池参数是性能调优中的重要设置：
 
 #### 池容量设置
 
-- `NP_MIN_POOL_CAPACITY`：确保最小可用连接数
-  - 太低：流量高峰期延迟增加，因为必须建立新连接
+- `min` (URL参数)：确保最小可用连接数
+  - 太低：流量高峰期延迟增加，因为必须建立新连接  
   - 太高：维护空闲连接浪费资源
   - 推荐起点：平均并发连接的25-50%
 
-- `NP_MAX_POOL_CAPACITY`：防止过度资源消耗，同时处理峰值负载
+- `max` (URL参数)：防止过度资源消耗，同时处理峰值负载
   - 太低：流量高峰期连接失败
   - 太高：潜在资源耗尽影响系统稳定性
   - 推荐起点：峰值并发连接的150-200%
@@ -157,9 +168,13 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 
 对于需要最大吞吐量的应用（如媒体流、文件传输）：
 
+URL参数：
 ```bash
-export NP_MIN_POOL_CAPACITY=64
-export NP_MAX_POOL_CAPACITY=4096
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192
+```
+
+环境变量：
+```bash
 export NP_MIN_POOL_INTERVAL=500ms
 export NP_MAX_POOL_INTERVAL=3s
 export NP_SEMAPHORE_LIMIT=8192
@@ -171,13 +186,17 @@ export NP_REPORT_INTERVAL=10s
 
 对于需要最小延迟的应用（如游戏、金融交易）：
 
+URL参数：
 ```bash
-export NP_MIN_POOL_CAPACITY=128
-export NP_MAX_POOL_CAPACITY=2048
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096
+```
+
+环境变量：
+```bash
 export NP_MIN_POOL_INTERVAL=100ms
 export NP_MAX_POOL_INTERVAL=1s
 export NP_SEMAPHORE_LIMIT=4096
-export NP_UDP_READ_TIMEOUT=10s
+export NP_UDP_READ_TIMEOUT=5s
 export NP_REPORT_INTERVAL=1s
 ```
 
@@ -185,9 +204,13 @@ export NP_REPORT_INTERVAL=1s
 
 对于在资源有限系统上的部署（如IoT设备、小型VPS）：
 
+URL参数：
 ```bash
-export NP_MIN_POOL_CAPACITY=8
-export NP_MAX_POOL_CAPACITY=256
+nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512
+```
+
+环境变量：
+```bash
 export NP_MIN_POOL_INTERVAL=2s
 export NP_MAX_POOL_INTERVAL=10s
 export NP_SEMAPHORE_LIMIT=512
