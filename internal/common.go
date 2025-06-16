@@ -456,10 +456,10 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
+				rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(targetConn)
 		}
 	}
@@ -618,10 +618,10 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	bytesReceived, bytesSent, _ := conn.DataExchange(remoteConn, targetConn)
+	rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
 
 	// 交换完成，广播统计信息
-	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -743,10 +743,10 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				bytesReceived, bytesSent, _ := conn.DataExchange(tunnelConn, targetConn)
+				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", bytesReceived, bytesSent)
+				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(tunnelConn)
 		}
 	}
