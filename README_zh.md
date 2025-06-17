@@ -91,7 +91,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 - 关注我们的 [Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。
 
-- 加入我们的 [Discord](https://discord.gg/5TdhkQnJ) 和 [Telegram 群组](https://t.me/NodePassGroup) 分享经验和想法。
+- 加入我们的 [Discord](https://discord.gg/2cnXcnDMGc) 和 [Telegram 群组](https://t.me/NodePassGroup) 分享经验和想法。
 
 ## 📄 许可协议
 
