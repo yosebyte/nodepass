@@ -85,7 +85,7 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 
 - **[NodePanel](https://github.com/NodePassProject/NodePanel)**: A lightweight frontend panel that provides visual tunnel management, deployable on Vercel or Cloudflare Pages.
 
-- **[npsh](https://github.com/NodePassProject/npsh)**: A convenient script that provides simple and easy-to-use installation, configuration, and management functionality for NodePass master API mode.
+- **[npsh](https://github.com/NodePassProject/npsh)**: A collection of one-click scripts that provide simple deployment for API or Dashboard with flexible configuration and management.
 
 ## 💬 Discussion
 

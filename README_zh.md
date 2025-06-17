@@ -85,7 +85,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 - **[NodePanel](https://github.com/NodePassProject/NodePanel)**: 轻量化的前端面板，提供可视化的隧道管理功能，在 Vercel 或 Cloudflare Pages 轻松部署。
 
-- **[npsh](https://github.com/NodePassProject/npsh)**: 便捷的一键脚本，为 NodePass master API 模式提供简单易用的安装、配置和管理功能。
+- **[npsh](https://github.com/NodePassProject/npsh)**: 简单易用的 NodePass 一键脚本合集，包括 API 主控、Dash 面板的安装部署、灵活配置和辅助管理。
 
 ## 💬 讨论
 
