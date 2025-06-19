@@ -171,7 +171,7 @@ All endpoints are relative to the configured prefix (default: `/api`):
 - `GET {prefix}/v1/instances` - List all instances
 - `POST {prefix}/v1/instances` - Create a new instance with JSON body: `{"url": "server://0.0.0.0:10101/0.0.0.0:8080"}`
 - `GET {prefix}/v1/instances/{id}` - Get instance details
-- `PUT {prefix}/v1/instances/{id}` - Update instance with JSON body: `{"action": "start|stop|restart"}`
+- `PATCH {prefix}/v1/instances/{id}` - Update instance with JSON body: `{"action": "start|stop|restart"}`
 - `DELETE {prefix}/v1/instances/{id}` - Delete instance
 - `GET {prefix}/v1/openapi.json` - OpenAPI specification
 - `GET {prefix}/v1/docs` - Swagger UI documentation
@@ -242,6 +242,38 @@ The system automatically selects the appropriate operation mode based on tunnel 
 - If the client's tunnel address is a local address, enables single-end forwarding mode
 - If target address is a local address, uses Server Receives Mode
 - If target address is a remote address, uses Server Sends Mode
+
+## Tunnel Key
+
+NodePass uses tunnel keys to authenticate connections between clients and servers. The key can be specified in two ways:
+
+### Key Derivation Rules
+
+1. **Explicit Key**: Specify the username part in the URL as the key
+   ```bash
+   # Use "mypassword" as the tunnel key
+   nodepass server://mypassword@10.1.0.1:10101/10.1.0.1:8080
+   nodepass client://mypassword@10.1.0.1:10101/127.0.0.1:8080
+   ```
+
+2. **Port-Derived Key**: If no username is specified, the system uses the hexadecimal value of the port number as the key
+   ```bash
+   # Port 10101's hexadecimal value "2775" will be used as the tunnel key
+   nodepass server://10.1.0.1:10101/10.1.0.1:8080
+   nodepass client://10.1.0.1:10101/127.0.0.1:8080
+   ```
+
+### Handshake Process
+
+The handshake process between client and server is as follows:
+
+1. **Client Connection**: Client connects to the server's tunnel address
+2. **Key Authentication**: Client sends XOR-encrypted tunnel key
+3. **Server Verification**: Server decrypts and verifies if the key matches
+4. **Configuration Sync**: Upon successful verification, server sends tunnel configuration (including TLS mode)
+5. **Connection Established**: Handshake complete, data transmission begins
+
+This design ensures that only clients with the correct key can establish tunnel connections.
 
 ## Next Steps
 

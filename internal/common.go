@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -21,9 +22,10 @@ import (
 // Common 包含所有模式共享的核心功能
 type Common struct {
 	mu               sync.Mutex         // 互斥锁
+	logger           *logs.Logger       // 日志记录器
 	tlsCode          string             // TLS模式代码
 	dataFlow         string             // 数据流向
-	logger           *logs.Logger       // 日志记录器
+	tunnelKey        string             // 隧道密钥
 	tunnelAddr       string             // 隧道地址字符串
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
@@ -59,7 +61,7 @@ var (
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
 	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
-	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)  // 服务冷却时间
+	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 1*time.Second)  // 服务冷却时间
 	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
 	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
 )
@@ -85,11 +87,25 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 }
 
 // xor 对数据进行异或处理
-func xor(data []byte) []byte {
+func (c *Common) xor(data []byte) []byte {
 	for i := range data {
-		data[i] ^= byte(128)
+		data[i] ^= byte(len(c.tunnelKey) % 256)
 	}
 	return data
+}
+
+// getTunnelKey 从URL中获取隧道密钥
+func (c *Common) getTunnelKey(parsedURL *url.URL) {
+	if key := parsedURL.User.Username(); key != "" {
+		c.tunnelKey = key
+	} else {
+		portStr := parsedURL.Port()
+		if portNum, err := strconv.Atoi(portStr); err == nil {
+			c.tunnelKey = fmt.Sprintf("%x", portNum)
+		} else {
+			c.tunnelKey = fmt.Sprintf("%x", portStr)
+		}
+	}
 }
 
 // getPoolCapacity 获取连接池容量设置
@@ -342,7 +358,7 @@ func (c *Common) commonQueue() error {
 			if err != nil {
 				return err
 			}
-			signal := string(xor(bytes.TrimSuffix(rawSignal, []byte{'\n'})))
+			signal := string(c.xor(bytes.TrimSuffix(rawSignal, []byte{'\n'})))
 
 			// 将信号发送到通道
 			select {
@@ -369,7 +385,7 @@ func (c *Common) healthCheck() error {
 			// 连接池健康度检查
 			if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 				// 发送刷新信号到对端
-				_, err := c.tunnelTCPConn.Write(append(xor([]byte(flushURL.String())), '\n'))
+				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(flushURL.String())), '\n'))
 				if err != nil {
 					c.mu.Unlock()
 					return err
@@ -463,7 +479,7 @@ func (c *Common) commonTCPLoop() {
 				}
 
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(append(xor([]byte(launchURL.String())), '\n'))
+				_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
 				c.mu.Unlock()
 
 				if err != nil {
@@ -530,7 +546,7 @@ func (c *Common) commonUDPLoop() {
 				}
 
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(append(xor([]byte(launchURL.String())), '\n'))
+				_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
 				c.mu.Unlock()
 
 				if err != nil {

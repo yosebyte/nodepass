@@ -33,6 +33,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
+	client.getTunnelKey(parsedURL)
 	client.getPoolCapacity(parsedURL)
 	client.getAddress(parsedURL)
 	return client
@@ -40,7 +41,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 
 // Run 管理客户端生命周期
 func (c *Client) Run() {
-	c.logger.Info("Client started: %v/%v", c.tunnelAddr, c.targetTCPAddr)
+	c.logger.Info("Client started: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
 
 	// 启动客户端服务并处理重启
 	go func() {
@@ -49,7 +50,7 @@ func (c *Client) Run() {
 				c.logger.Error("Client error: %v", err)
 				time.Sleep(serviceCooldown)
 				c.stop()
-				c.logger.Info("Client restarted")
+				c.logger.Info("Client restarted: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
 			}
 		}
 	}()
@@ -139,10 +140,19 @@ func (c *Client) tunnelHandshake() error {
 	if err != nil {
 		return err
 	}
+
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
 	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+
+	start := time.Now()
+
+	// 发送隧道密钥
+	_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(c.tunnelKey)), '\n'))
+	if err != nil {
+		return err
+	}
 
 	// 读取隧道URL
 	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
@@ -150,8 +160,7 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 
-	tunnelSignal := string(xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
-	c.logger.Debug("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
+	tunnelSignal := string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
 
 	// 解析隧道URL
 	tunnelURL, err := url.Parse(tunnelSignal)
@@ -161,18 +170,8 @@ func (c *Client) tunnelHandshake() error {
 	c.dataFlow = tunnelURL.Host
 	c.tlsCode = tunnelURL.Fragment
 
-	// 反馈给服务端
-	start := time.Now()
-	if _, err := c.tunnelTCPConn.Write([]byte{'\n'}); err != nil {
-		return err
-	}
-
-	// 等待服务端确认握手完成
-	_, err = c.tunnelTCPConn.Read(make([]byte, 1))
-	if err != nil {
-		return err
-	}
-	c.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
+	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Info("Tunnel handshaked: %v <-> %v in %vms",
 		c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
 	return nil
 }

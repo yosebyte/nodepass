@@ -41,14 +41,15 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/v1/instances` | GET | List all NodePass instances |
-| `/v1/instances` | POST | Create a new NodePass instance |
-| `/v1/instances/{id}` | GET | Get details about a specific instance |
-| `/v1/instances/{id}` | PATCH | Update or control a specific instance |
-| `/v1/instances/{id}` | DELETE | Remove a specific instance |
-| `/v1/events` | GET | Subscribe to instance events using SSE |
-| `/v1/openapi.json` | GET | OpenAPI specification |
-| `/v1/docs` | GET | Swagger UI documentation |
+| `/instances` | GET | List all NodePass instances |
+| `/instances` | POST | Create a new NodePass instance |
+| `/instances/{id}` | GET | Get details about a specific instance |
+| `/instances/{id}` | PATCH | Update or control a specific instance |
+| `/instances/{id}` | DELETE | Remove a specific instance |
+| `/events` | GET | Subscribe to instance events using SSE |
+| `/info` | GET | Get master service information |
+| `/openapi.json` | GET | OpenAPI specification |
+| `/docs` | GET | Swagger UI documentation |
 
 ### API Authentication
 
@@ -64,13 +65,14 @@ The Master API now supports API Key authentication to prevent unauthorized acces
 #### Protected Endpoints
 
 The following endpoints require API Key authentication:
-- `/v1/instances` (all methods)
-- `/v1/instances/{id}` (all methods)
-- `/v1/events`
+- `/instances` (all methods)
+- `/instances/{id}` (all methods)
+- `/events`
+- `/info`
 
 The following endpoints are publicly accessible (no API Key required):
-- `/v1/openapi.json`
-- `/v1/docs`
+- `/openapi.json`
+- `/docs`
 
 #### How to Use the API Key
 
@@ -79,7 +81,7 @@ Include the API Key in your API requests:
 ```javascript
 // Using an API Key for instance management requests
 async function getInstances() {
-  const response = await fetch(`${API_URL}/v1/instances`, {
+  const response = await fetch(`${API_URL}/instances`, {
     method: 'GET',
     headers: {
       'X-API-Key': 'your-api-key-here'
@@ -97,7 +99,7 @@ The API Key can be found in the system startup logs, and can be regenerated usin
 ```javascript
 // Regenerate the API Key (requires knowing the current API Key)
 async function regenerateApiKey() {
-  const response = await fetch(`${API_URL}/v1/instances/${apiKeyID}`, {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -146,7 +148,7 @@ For proper lifecycle management:
 1. **Creation**: Store instance configurations and URLs
    ```javascript
    async function createNodePassInstance(config) {
-     const response = await fetch(`${API_URL}/v1/instances`, {
+     const response = await fetch(`${API_URL}/instances`, {
        method: 'POST',
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({
@@ -174,7 +176,7 @@ For proper lifecycle management:
    A. **Using SSE (Recommended)**: Receive real-time events via persistent connection
    ```javascript
    function connectToEventSource() {
-     const eventSource = new EventSource(`${API_URL}/v1/events`, {
+     const eventSource = new EventSource(`${API_URL}/events`, {
        // If authentication is needed, native EventSource doesn't support custom headers
        // Need to use fetch API to implement a custom SSE client
      });
@@ -229,7 +231,7 @@ For proper lifecycle management:
    // Example of creating SSE connection with API Key
    function connectToEventSourceWithApiKey(apiKey) {
      // Native EventSource doesn't support custom headers, need to use fetch API
-     fetch(`${API_URL}/v1/events`, {
+     fetch(`${API_URL}/events`, {
        method: 'GET',
        headers: {
          'X-API-Key': apiKey,
@@ -292,7 +294,7 @@ For proper lifecycle management:
    function startInstanceMonitoring(instanceId, interval = 5000) {
      return setInterval(async () => {
        try {
-         const response = await fetch(`${API_URL}/v1/instances/${instanceId}`);
+         const response = await fetch(`${API_URL}/instances/${instanceId}`);
          const data = await response.json();
          
          if (data.success) {
@@ -316,7 +318,7 @@ For proper lifecycle management:
    ```javascript
    async function controlInstance(instanceId, action) {
      // action can be: start, stop, restart
-     const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',  // Note: API has been updated to use PATCH instead of PUT
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ action })
@@ -335,7 +337,7 @@ NodePass now supports Server-Sent Events (SSE) for real-time monitoring of insta
 
 The SSE endpoint is available at:
 ```
-GET /v1/events
+GET /events
 ```
 
 This endpoint establishes a persistent connection that delivers events in real-time using the SSE protocol format.
@@ -395,7 +397,7 @@ Here's an example of how to consume the SSE endpoint in a JavaScript frontend:
 
 ```javascript
 function connectToEventSource() {
-  const eventSource = new EventSource(`${API_URL}/v1/events`, {
+  const eventSource = new EventSource(`${API_URL}/events`, {
     // If authentication is needed, native EventSource doesn't support custom headers
     // Need to use fetch API to implement a custom SSE client
   });
@@ -450,7 +452,7 @@ function connectToEventSource() {
 // Example of creating SSE connection with API Key
 function connectToEventSourceWithApiKey(apiKey) {
   // Native EventSource doesn't support custom headers, need to use fetch API
-  fetch(`${API_URL}/v1/events`, {
+  fetch(`${API_URL}/events`, {
     method: 'GET',
     headers: {
       'X-API-Key': apiKey,
@@ -611,7 +613,7 @@ The Master API provides traffic statistics, but there are important requirements
 
 ## API Endpoint Documentation
 
-For detailed API documentation including request and response examples, please use the built-in Swagger UI documentation available at the `/v1/docs` endpoint. This interactive documentation provides comprehensive information about:
+For detailed API documentation including request and response examples, please use the built-in Swagger UI documentation available at the `/docs` endpoint. This interactive documentation provides comprehensive information about:
 
 - Available endpoints
 - Required parameters
@@ -624,12 +626,12 @@ For detailed API documentation including request and response examples, please u
 To access the Swagger UI documentation:
 
 ```
-http(s)://<api_addr>[<prefix>]/v1/docs
+http(s)://<api_addr>[<prefix>]/docs
 ```
 
 For example:
 ```
-http://localhost:9090/api/v1/docs
+http://localhost:9090/api/docs
 ```
 
 The Swagger UI provides a convenient way to explore and test the API directly in your browser. You can execute API calls against your running NodePass Master instance and see the actual responses.
@@ -671,7 +673,7 @@ For managing many NodePass instances:
        return cached.data;
      }
      
-     const response = await fetch(`${API_URL}/v1/instances/${id}`);
+     const response = await fetch(`${API_URL}/instances/${id}`);
      const data = await response.json();
      
      instanceCache.set(id, {
@@ -691,7 +693,7 @@ Implement comprehensive monitoring:
    ```javascript
    async function isApiHealthy() {
      try {
-       const response = await fetch(`${API_URL}/v1/instances`, {
+       const response = await fetch(`${API_URL}/instances`, {
          method: 'GET',
          timeout: 5000 // 5 second timeout
        });
@@ -707,7 +709,7 @@ Implement comprehensive monitoring:
    ```javascript
    async function checkInstanceHealth(id) {
      try {
-       const response = await fetch(`${API_URL}/v1/instances/${id}`);
+       const response = await fetch(`${API_URL}/instances/${id}`);
        const data = await response.json();
        
        if (!data.success) return false;

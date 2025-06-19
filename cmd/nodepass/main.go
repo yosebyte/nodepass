@@ -60,29 +60,32 @@ func getExitInfo() {
 	logger.SetLogLevel(logs.Info)
 	logger.Info(`Version: %v %v/%v
 
-╭─────────────────────────────────────────────────────────────╮
-│             ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░             │
-│             ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░             │
-│             ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░             │
-├─────────────────────────────────────────────────────────────┤
-│            >Universal TCP/UDP Tunneling Solution            │
-│            >https://github.com/yosebyte/nodepass            │
-├─────────────────────────────────────────────────────────────┤
-│ Usage:                                                      │
-│ nodepass <core>://<tunnel>/<target>?<log>&<tls>&<crt>&<key> │
-├──────────┬───────────────────────────┬──────────────────────┤
-│ Keys     │ Values                    │ Description          │
-├──────────┼───────────────────────────┼──────────────────────┤
-│ <core>   │ server | client | master  │ Operating mode       │
-│ <tunnel> │ host:port (IP | domain)   │ Tunnel address       │
-│ <target> │ host:port | API prefix    │ Target addr | prefix │
-│ <log>    │ debug | warn | error      │ Default level info   │
-│ * <tls>  │ 0 off | 1 on | 2 verify   │ Default TLS code-0   │
-│ * <crt>  │ <path/to/crt.pem>         │ Custom certificate   │
-│ * <key>  │ <path/to/key.pem>         │ Custom private key   │
-├──────────┴───────────────────────────┴──────────────────────┤
-│ * Vaild for server and master mode only                     │
-╰─────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────╮
+│           ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░           │
+│           ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░           │
+│           ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░           │
+├─────────────────────────────────────────────────────────┤
+│          >Universal TCP/UDP Tunneling Solution          │
+│          >https://github.com/yosebyte/nodepass          │
+├─────────────────────────────────────────────────────────┤
+│ Usage: nodepass "<your-unique-URL-syntax-command>"      │
+├─────────────────────────────────────────────────────────┤
+│ server://password@tunnel/target?log=X&tls=X&crt=X&key=X │
+│ client://password@tunnel/target?log=X&min=X&max=X       │
+│ master://host:port/prefix?log=X&tls=X&crt=X&key=X       │
+├──────────┬─────────────────────────┬────────────────────┤
+│ Keys     │ Values                  │ Description        │
+├──────────┼─────────────────────────┼────────────────────┤
+│  tunnel  │ host:port (IP | domain) │ Tunnel address     │
+│  target  │ host:port (IP | domain) │ Target address     │
+│  log     │ debug | warn | error    │ Default level info │
+│  tls     │ 0 off | 1 on | 2 verify │ Default TLS code-0 │
+│  crt     │ <path/to/crt.pem>       │ Custom certificate │
+│  key     │ <path/to/key.pem>       │ Custom private key │
+│  min     │ <min>                   │ Min pool capacity  │
+│  max     │ <max>                   │ Max pool capacity  │
+│  prefix  │ <path/to/your/api>      │ Master API prefix  │
+╰──────────┴─────────────────────────┴────────────────────╯
 `, version, runtime.GOOS, runtime.GOARCH)
 	os.Exit(1)
 }

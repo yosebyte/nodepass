@@ -74,7 +74,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |
-| `NP_SERVICE_COOLDOWN` | Cooldown period before restart attempts | 3s | `export NP_SERVICE_COOLDOWN=5s` |
+| `NP_SERVICE_COOLDOWN` | Cooldown period before restart attempts | 1s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
 | `NP_RELOAD_INTERVAL` | Interval for cert/pool reload | 1h | `export NP_RELOAD_INTERVAL=30m` |
 

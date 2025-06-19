@@ -3,6 +3,7 @@ package internal
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"net"
@@ -35,13 +36,14 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		},
 		tlsConfig: tlsConfig,
 	}
+	server.getTunnelKey(parsedURL)
 	server.getAddress(parsedURL)
 	return server
 }
 
 // Run 管理服务端生命周期
 func (s *Server) Run() {
-	s.logger.Info("Server started: %v/%v", s.tunnelAddr, s.targetTCPAddr)
+	s.logger.Info("Server started: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
 
 	// 启动服务端并处理重启
 	go func() {
@@ -50,7 +52,7 @@ func (s *Server) Run() {
 				s.logger.Error("Server error: %v", err)
 				time.Sleep(serviceCooldown)
 				s.stop()
-				s.logger.Info("Server restarted")
+				s.logger.Info("Server restarted: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
 			}
 		}
 	}()
@@ -118,17 +120,44 @@ func (s *Server) start() error {
 // tunnelHandshake 与客户端进行握手
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
-	tunnelTCPConn, err := s.tunnelListener.Accept()
-	if err != nil {
-		return err
-	}
-	s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	s.bufReader = bufio.NewReader(s.tunnelTCPConn)
-	s.tunnelTCPConn.SetKeepAlive(true)
-	s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+	for {
+		tunnelTCPConn, err := s.tunnelListener.Accept()
+		if err != nil {
+			s.logger.Error("Accept error: %v", err)
+			time.Sleep(serviceCooldown)
+			continue
+		}
 
-	// 记录客户端IP
-	s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
+		tunnelTCPConn.SetReadDeadline(time.Now().Add(tcpReadTimeout))
+
+		bufReader := bufio.NewReader(tunnelTCPConn)
+		rawTunnelKey, err := bufReader.ReadString('\n')
+		if err != nil {
+			s.logger.Warn("Handshake timeout: %v", tunnelTCPConn.RemoteAddr())
+			tunnelTCPConn.Close()
+			time.Sleep(serviceCooldown)
+			continue
+		}
+
+		tunnelTCPConn.SetReadDeadline(time.Time{})
+		tunnelKey := string(s.xor(bytes.TrimSuffix([]byte(rawTunnelKey), []byte{'\n'})))
+
+		if tunnelKey != s.tunnelKey {
+			s.logger.Warn("Access denied: %v", tunnelTCPConn.RemoteAddr())
+			tunnelTCPConn.Close()
+			time.Sleep(serviceCooldown)
+			continue
+		} else {
+			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
+			s.bufReader = bufio.NewReader(s.tunnelTCPConn)
+			s.tunnelTCPConn.SetKeepAlive(true)
+			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+
+			// 记录客户端IP
+			s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
+			break
+		}
+	}
 
 	// 构建并发送隧道URL到客户端
 	tunnelURL := &url.URL{
@@ -136,24 +165,12 @@ func (s *Server) tunnelHandshake() error {
 		Fragment: s.tlsCode,
 	}
 
-	start := time.Now()
-	_, err = s.tunnelTCPConn.Write(append(xor([]byte(tunnelURL.String())), '\n'))
+	_, err := s.tunnelTCPConn.Write(append(s.xor([]byte(tunnelURL.String())), '\n'))
 	if err != nil {
 		return err
 	}
-	s.logger.Debug("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
 
-	// 等待客户端确认
-	_, err = s.tunnelTCPConn.Read(make([]byte, 1))
-	if err != nil {
-		return err
-	}
-	s.logger.Event("Tunnel handshaked: %v <-> %v in %vms",
-		s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
-
-	// 发送客户端确认握手完成
-	if _, err := s.tunnelTCPConn.Write([]byte{'\n'}); err != nil {
-		return err
-	}
+	s.logger.Info("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
+	s.logger.Info("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
 	return nil
 }
