@@ -62,9 +62,12 @@ const swaggerUIHTML = `<!DOCTYPE html>
 type Master struct {
 	Common                            // 继承通用功能
 	prefix        string              // API前缀
+	version       string              // NP版本
+	logLevel      string              // 日志级别
+	crtPath       string              // 证书路径
+	keyPath       string              // 密钥路径
 	instances     sync.Map            // 实例映射表
 	server        *http.Server        // HTTP服务器
-	logLevel      string              // 日志级别
 	tlsConfig     *tls.Config         // TLS配置
 	masterURL     *url.URL            // 主控URL
 	statePath     string              // 实例状态持久化文件路径
@@ -166,7 +169,7 @@ func setCorsHeaders(w http.ResponseWriter) {
 }
 
 // NewMaster 创建新的主控实例
-func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Master {
+func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger, version string) *Master {
 	// 解析主机地址
 	host, err := net.ResolveTCPAddr("tcp", parsedURL.Host)
 	if err != nil {
@@ -192,7 +195,10 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			logger:  logger,
 		},
 		prefix:        fmt.Sprintf("%s/%s", prefix, openAPIVersion),
+		version:       version,
 		logLevel:      parsedURL.Query().Get("log"),
+		crtPath:       parsedURL.Query().Get("crt"),
+		keyPath:       parsedURL.Query().Get("key"),
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(stateDir, stateFileName),
@@ -236,6 +242,7 @@ func (m *Master) Run() {
 		fmt.Sprintf("%s/instances", m.prefix):  m.handleInstances,
 		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
 		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
+		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -520,6 +527,26 @@ func (m *Master) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	setCorsHeaders(w)
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, swaggerUIHTML, generateOpenAPISpec())
+}
+
+// handleInfo 处理系统信息请求
+func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	info := map[string]string{
+		"os":   runtime.GOOS,
+		"arch": runtime.GOARCH,
+		"ver":  m.version,
+		"log":  m.logLevel,
+		"tls":  m.tlsCode,
+		"crt":  m.crtPath,
+		"key":  m.keyPath,
+	}
+
+	writeJSON(w, http.StatusOK, info)
 }
 
 // handleInstances 处理实例集合请求
@@ -995,11 +1022,11 @@ func (m *Master) enhanceURL(instanceURL string, instanceType string) string {
 
 		// 为TLS code-2设置证书和密钥
 		if m.tlsCode == "2" {
-			masterQuery := m.masterURL.Query()
-			for _, param := range []string{"crt", "key"} {
-				if val := masterQuery.Get(param); val != "" && query.Get(param) == "" {
-					query.Set(param, val)
-				}
+			if m.crtPath != "" && query.Get("crt") == "" {
+				query.Set("crt", m.crtPath)
+			}
+			if m.keyPath != "" && query.Get("key") == "" {
+				query.Set("key", m.keyPath)
 			}
 		}
 	}
@@ -1114,6 +1141,17 @@ func generateOpenAPISpec() string {
         }
       }
     },
+    "/info": {
+      "get": {
+        "summary": "Get master information",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MasterInfo"}}}},
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"}
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "summary": "Get OpenAPI specification",
@@ -1163,6 +1201,18 @@ func generateOpenAPISpec() string {
         "type": "object",
         "properties": {
           "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"}
+        }
+      },
+      "MasterInfo": {
+        "type": "object",
+        "properties": {
+          "os": {"type": "string", "description": "Operating system"},
+          "arch": {"type": "string", "description": "System architecture"},
+          "ver": {"type": "string", "description": "NodePass version"},
+          "log": {"type": "string", "description": "Log level"},
+          "tls": {"type": "string", "description": "TLS code"},
+          "crt": {"type": "string", "description": "Certificate path"},
+          "key": {"type": "string", "description": "Private key path"}
         }
       }
     }

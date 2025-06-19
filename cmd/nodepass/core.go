@@ -19,7 +19,7 @@ func coreDispatch(parsedURL *url.URL) {
 		if scheme == "server" {
 			core = internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
 		} else {
-			core = internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger)
+			core = internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger, version)
 		}
 	case "client":
 		core = internal.NewClient(parsedURL, logger)
