@@ -171,7 +171,7 @@ nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&ke
 - `GET {prefix}/v1/instances` - 列出所有实例
 - `POST {prefix}/v1/instances` - 创建新实例，JSON请求体: `{"url": "server://0.0.0.0:10101/0.0.0.0:8080"}`
 - `GET {prefix}/v1/instances/{id}` - 获取实例详情
-- `PUT {prefix}/v1/instances/{id}` - 更新实例，JSON请求体: `{"action": "start|stop|restart"}`
+- `PATCH {prefix}/v1/instances/{id}` - 更新实例，JSON请求体: `{"action": "start|stop|restart"}`
 - `DELETE {prefix}/v1/instances/{id}` - 删除实例
 - `GET {prefix}/v1/openapi.json` - OpenAPI规范
 - `GET {prefix}/v1/docs` - Swagger UI文档
@@ -242,6 +242,38 @@ NodePass支持灵活的双向数据流配置：
 - 如果客户端的隧道地址为本地地址，启用单端转发模式
 - 如果目标地址是本地地址，使用服务端接收模式
 - 如果目标地址是远程地址，使用服务端发送模式
+
+## 隧道密钥（Tunnel Key）
+
+NodePass使用隧道密钥来验证客户端和服务端之间的连接。密钥可以通过两种方式指定：
+
+### 密钥获取规则
+
+1. **显式密钥**：在URL中指定用户名部分作为密钥
+   ```bash
+   # 使用"mypassword"作为隧道密钥
+   nodepass server://mypassword@10.1.0.1:10101/10.1.0.1:8080
+   nodepass client://mypassword@10.1.0.1:10101/127.0.0.1:8080
+   ```
+
+2. **端口派生密钥**：如果未指定用户名，系统将使用端口号的十六进制值作为密钥
+   ```bash
+   # 端口10101的十六进制值为"2775"，将作为隧道密钥
+   nodepass server://10.1.0.1:10101/10.1.0.1:8080
+   nodepass client://10.1.0.1:10101/127.0.0.1:8080
+   ```
+
+### 握手流程
+
+客户端与服务端的握手过程如下：
+
+1. **客户端连接**：客户端连接到服务端的隧道地址
+2. **密钥验证**：客户端发送XOR加密的隧道密钥
+3. **服务端验证**：服务端解密并验证密钥是否匹配
+4. **配置同步**：验证成功后，服务端发送隧道配置信息（包括TLS模式）
+5. **连接确立**：握手完成，开始数据传输
+
+这种设计确保了只有拥有正确密钥的客户端才能建立隧道连接。
 
 ## 下一步
 

@@ -41,14 +41,15 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 | 端点 | 方法 | 描述 |
 |----------|--------|-------------|
-| `/v1/instances` | GET | 列出所有NodePass实例 |
-| `/v1/instances` | POST | 创建新的NodePass实例 |
-| `/v1/instances/{id}` | GET | 获取特定实例的详细信息 |
-| `/v1/instances/{id}` | PATCH | 更新或控制特定实例 |
-| `/v1/instances/{id}` | DELETE | 删除特定实例 |
-| `/v1/events` | GET | 使用SSE订阅实例事件通知 |
-| `/v1/openapi.json` | GET | OpenAPI规范 |
-| `/v1/docs` | GET | Swagger UI文档 |
+| `/instances` | GET | 列出所有NodePass实例 |
+| `/instances` | POST | 创建新的NodePass实例 |
+| `/instances/{id}` | GET | 获取特定实例的详细信息 |
+| `/instances/{id}` | PATCH | 更新或控制特定实例 |
+| `/instances/{id}` | DELETE | 删除特定实例 |
+| `/events` | GET | 使用SSE订阅实例事件通知 |
+| `/info` | GET | 获取主控服务信息 |
+| `/openapi.json` | GET | OpenAPI规范 |
+| `/docs` | GET | Swagger UI文档界面 |
 
 ### API认证
 
@@ -64,13 +65,14 @@ NodePass主控API现在支持API Key认证，可以防止未经授权的访问�
 #### 受保护的端点
 
 以下端点需要API Key认证：
-- `/v1/instances`（所有方法）
-- `/v1/instances/{id}`（所有方法）
-- `/v1/events`
+- `/instances`（所有方法）
+- `/instances/{id}`（所有方法）
+- `/events`
+- `/info`
 
 以下端点可公开访问（无需API Key）：
-- `/v1/openapi.json`
-- `/v1/docs`
+- `/openapi.json`
+- `/docs`
 
 #### 如何使用API Key
 
@@ -79,7 +81,7 @@ NodePass主控API现在支持API Key认证，可以防止未经授权的访问�
 ```javascript
 // 使用API Key进行实例管理请求
 async function getInstances() {
-  const response = await fetch(`${API_URL}/v1/instances`, {
+  const response = await fetch(`${API_URL}/instances`, {
     method: 'GET',
     headers: {
       'X-API-Key': 'your-api-key-here'
@@ -97,7 +99,7 @@ API Key可以在系统启动日志中找到，也可以通过以下方式重新�
 ```javascript
 // 重新生成API Key（需要知道当前的API Key）
 async function regenerateApiKey() {
-  const response = await fetch(`${API_URL}/v1/instances/${apiKeyID}`, {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
@@ -121,7 +123,7 @@ NodePass现在支持服务器发送事件(SSE)功能，用于实时监控实例�
 
 SSE端点位于：
 ```
-GET /v1/events
+GET /events
 ```
 
 此端点建立持久连接，使用SSE协议格式实时传递事件。如果启用了API Key认证，需要在请求头中包含有效的API Key。
@@ -143,7 +145,7 @@ GET /v1/events
 
 ```javascript
 function connectToEventSource() {
-  const eventSource = new EventSource(`${API_URL}/v1/events`, {
+  const eventSource = new EventSource(`${API_URL}/events`, {
     // 如果需要认证，原生EventSource不支持自定义请求头
     // 需要使用fetch API实现自定义SSE客户端
   });
@@ -198,7 +200,7 @@ function connectToEventSource() {
 // 使用API Key创建SSE连接的示例
 function connectToEventSourceWithApiKey(apiKey) {
   // 原生EventSource不支持自定义请求头，需要使用fetch API
-  fetch(`${API_URL}/v1/events`, {
+  fetch(`${API_URL}/events`, {
     method: 'GET',
     headers: {
       'X-API-Key': apiKey,
@@ -329,7 +331,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 1. **创建**：存储实例配置和URL
    ```javascript
    async function createNodePassInstance(config) {
-     const response = await fetch(`${API_URL}/v1/instances`, {
+     const response = await fetch(`${API_URL}/instances`, {
        method: 'POST',
        headers: { 
          'Content-Type': 'application/json',
@@ -360,7 +362,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    A. **使用SSE（推荐）**：通过持久连接接收实时事件
    ```javascript
    function connectToEventSource() {
-     const eventSource = new EventSource(`${API_URL}/v1/events`, {
+     const eventSource = new EventSource(`${API_URL}/events`, {
        // 如果需要认证，需要使用自定义实现
      });
      
@@ -385,7 +387,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    function startInstanceMonitoring(instanceId, interval = 5000) {
      return setInterval(async () => {
        try {
-         const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
+         const response = await fetch(`${API_URL}/instances/${instanceId}`, {
            headers: {
              'X-API-Key': apiKey // 如果启用了API Key
            }
@@ -413,7 +415,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
    ```javascript
    async function controlInstance(instanceId, action) {
      // action可以是: start, stop, restart
-     const response = await fetch(`${API_URL}/v1/instances/${instanceId}`, {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',  // 注意：API已更新为使用PATCH方法而非PUT
        headers: { 
          'Content-Type': 'application/json',
@@ -521,7 +523,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 
 ## API端点文档
 
-有关详细的API文档（包括请求和响应示例），请使用`/v1/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
+有关详细的API文档（包括请求和响应示例），请使用`/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
 
 - 可用的端点
 - 必需的参数
@@ -534,12 +536,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 要访问Swagger UI文档：
 
 ```
-http(s)://<api_addr>[<prefix>]/v1/docs
+http(s)://<api_addr>[<prefix>]/docs
 ```
 
 例如：
 ```
-http://localhost:9090/api/v1/docs
+http://localhost:9090/api/docs
 ```
 
 Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试API。您可以针对运行中的NodePass主控实例执行API调用，并查看实际响应。
@@ -581,7 +583,7 @@ Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试A
        return cached.data;
      }
      
-     const response = await fetch(`${API_URL}/v1/instances/${id}`);
+     const response = await fetch(`${API_URL}/instances/${id}`);
      const data = await response.json();
      
      instanceCache.set(id, {
@@ -601,7 +603,7 @@ Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试A
    ```javascript
    async function isApiHealthy() {
      try {
-       const response = await fetch(`${API_URL}/v1/instances`, {
+       const response = await fetch(`${API_URL}/instances`, {
          method: 'GET',
          timeout: 5000 // 5秒超时
        });
@@ -617,7 +619,7 @@ Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试A
    ```javascript
    async function checkInstanceHealth(id) {
      try {
-       const response = await fetch(`${API_URL}/v1/instances/${id}`);
+       const response = await fetch(`${API_URL}/instances/${id}`);
        const data = await response.json();
        
        if (!data.success) return false;
