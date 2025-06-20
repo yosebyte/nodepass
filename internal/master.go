@@ -667,19 +667,18 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			// API Key实例只允许restart操作
 			if reqData.Action == "restart" {
 				m.regenerateAPIKey(instance)
+				// 只有API Key需要在这里发送事件
+				m.notifyChannel <- &InstanceEvent{
+					Type:     "update",
+					Time:     time.Now(),
+					Instance: instance,
+				}
 			}
 		} else if reqData.Action != "" {
 			m.processInstanceAction(instance, reqData.Action)
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
-
-	// 发送更新事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
 }
 
 // regenerateAPIKey 重新生成API Key
@@ -705,7 +704,11 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 		if instance.Status == "running" {
 			m.stopInstance(instance)
 		}
-		go m.startInstance(instance)
+		// 等待停止完成后再启动
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			m.startInstance(instance)
+		}()
 	}
 }
 
@@ -922,8 +925,8 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 		if value, exists := m.instances.Load(instance.ID); exists {
 			instance = value.(*Instance)
 
-			// 仅在未被用户手动停止时更新状态
-			if instance.Status != "stopped" {
+			// 仅在实例状态为running时才发送事件
+			if instance.Status == "running" {
 				if err != nil {
 					m.logger.Error("Instance error: %v [%v]", err, instance.ID)
 					instance.Status = "error"
@@ -950,10 +953,20 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 
 // stopInstance 停止实例
 func (m *Master) stopInstance(instance *Instance) {
+	// 如果已经是停止状态，不重复操作
+	if instance.Status == "stopped" {
+		return
+	}
+
 	// 如果没有命令或进程，直接设为已停止
 	if instance.cmd == nil || instance.cmd.Process == nil {
 		instance.Status = "stopped"
 		m.instances.Store(instance.ID, instance)
+		m.notifyChannel <- &InstanceEvent{
+			Type:     "update",
+			Time:     time.Now(),
+			Instance: instance,
+		}
 		return
 	}
 
