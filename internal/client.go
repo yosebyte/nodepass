@@ -33,6 +33,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
+	// 初始化公共字段
 	client.getTunnelKey(parsedURL)
 	client.getPoolCapacity(parsedURL)
 	client.getAddress(parsedURL)
@@ -74,12 +75,8 @@ func (c *Client) Run() {
 func (c *Client) start() error {
 	c.initContext()
 
-	// 通过隧道地址判断是否单端转发或双端握手
-	if c.isLocalAddress(c.tunnelTCPAddr.IP) {
-		if err := c.initTunnelListener(); err != nil {
-			return err
-		}
-
+	// 通过是否监听成功判断单端转发或双端握手
+	if err := c.initTunnelListener(); err == nil {
 		// 初始化连接池
 		c.tunnelPool = pool.NewClientPool(
 			c.minPoolCapacity,
@@ -146,8 +143,6 @@ func (c *Client) tunnelHandshake() error {
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
-	start := time.Now()
-
 	// 发送隧道密钥
 	_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(c.tunnelKey)), '\n'))
 	if err != nil {
@@ -171,7 +166,6 @@ func (c *Client) tunnelHandshake() error {
 	c.tlsCode = tunnelURL.Fragment
 
 	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
-	c.logger.Info("Tunnel handshaked: %v <-> %v in %vms",
-		c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr(), time.Since(start).Milliseconds())
+	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 	return nil
 }

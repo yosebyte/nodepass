@@ -223,44 +223,6 @@ func (c *Common) initTunnelListener() error {
 	return nil
 }
 
-// isLocalAddress 检查IP地址是否为本机接口地址之一
-func (c *Common) isLocalAddress(ip net.IP) bool {
-	// 处理未指定的IP地址
-	if ip.IsUnspecified() || ip == nil {
-		return true
-	}
-
-	// 获取本机所有网络接口
-	interfaces, err := net.Interfaces()
-	if err != nil {
-		c.logger.Error("Get interfaces failed: %v", err)
-		return false
-	}
-
-	// 遍历所有网络接口
-	for _, iface := range interfaces {
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-
-		// 遍历接口的所有地址
-		for _, addr := range addrs {
-			switch v := addr.(type) {
-			case *net.IPNet:
-				if v.IP.Equal(ip) {
-					return true
-				}
-			case *net.IPAddr:
-				if v.IP.Equal(ip) {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
 // stop 共用停止服务
 func (c *Common) stop() {
 	// 取消上下文
