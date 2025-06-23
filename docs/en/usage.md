@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>"
 ```
 
 Where:
@@ -36,7 +36,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>"
 ```
 
 #### Parameters
@@ -84,7 +84,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>"
 ```
 
 #### Parameters
@@ -130,10 +130,10 @@ nodepass client://server.example.com:10101/127.0.0.1:8080
 nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
 
 # Custom connection pool capacity - High performance configuration
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096"
 
 # Resource-constrained configuration - Small connection pool
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"
 ```
 
 ### Master Mode (API)
@@ -141,7 +141,7 @@ nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=inf
 Master mode runs a RESTful API server for centralized management of NodePass instances.
 
 ```bash
-nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass "master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>"
 ```
 
 #### Parameters
