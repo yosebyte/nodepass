@@ -43,7 +43,7 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=1
 
 Example with TLS Mode 2 (custom certificate):
 ```bash
-nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ## Connection Pool Capacity Parameters
@@ -56,7 +56,7 @@ Connection pool capacity can be configured via URL query parameters:
 Example:
 ```bash
 # Set minimum pool to 32 and maximum to 4096
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 ```
 
 ## Environment Variables
@@ -170,7 +170,7 @@ For applications requiring maximum throughput (e.g., media streaming, file trans
 
 URL parameters:
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192"
 ```
 
 Environment variables:
@@ -188,7 +188,7 @@ For applications requiring minimal latency (e.g., gaming, financial trading):
 
 URL parameters:
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
 ```
 
 Environment variables:
@@ -206,7 +206,7 @@ For deployment on systems with limited resources (e.g., IoT devices, small VPS):
 
 URL parameters:
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512"
 ```
 
 Environment variables:

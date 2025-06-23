@@ -7,7 +7,7 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass <core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>"
 ```
 
 其中：
@@ -36,7 +36,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>"
 ```
 
 #### 参数
@@ -84,7 +84,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>"
 ```
 
 #### 参数
@@ -130,10 +130,10 @@ nodepass client://server.example.com:10101/127.0.0.1:8080
 nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
 
 # 自定义连接池容量 - 高性能配置
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096"
 
 # 资源受限配置 - 小型连接池
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"
 ```
 
 ### 主控模式 (API)
@@ -141,7 +141,7 @@ nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=inf
 主控模式运行RESTful API服务器，用于集中管理NodePass实例。
 
 ```bash
-nodepass master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>
+nodepass "master://<api_addr>[<prefix>]?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>"
 ```
 
 #### 参数

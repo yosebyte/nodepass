@@ -43,7 +43,7 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=1
 
 TLS模式2示例（自定义证书）：
 ```bash
-nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ## 连接池容量参数
@@ -56,7 +56,7 @@ nodepass server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/pa
 示例：
 ```bash
 # 设置最小连接池为32，最大为4096
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 ```
 
 ## 环境变量
@@ -170,7 +170,7 @@ nodepass client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096
 
 URL参数：
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192"
 ```
 
 环境变量：
@@ -188,7 +188,7 @@ export NP_REPORT_INTERVAL=10s
 
 URL参数：
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
 ```
 
 环境变量：
@@ -206,7 +206,7 @@ export NP_REPORT_INTERVAL=1s
 
 URL参数：
 ```bash
-nodepass client://server.example.com:10101/127.0.0.1:8080?min=16&max=512
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512"
 ```
 
 环境变量：
