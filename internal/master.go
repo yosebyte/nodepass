@@ -63,6 +63,7 @@ type Master struct {
 	Common                            // 继承通用功能
 	prefix        string              // API前缀
 	version       string              // NP版本
+	hostname      string              // 隧道名称
 	logLevel      string              // 日志级别
 	crtPath       string              // 证书路径
 	keyPath       string              // 密钥路径
@@ -177,6 +178,14 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		return nil
 	}
 
+	// 获取隧道名称
+	var hostname string
+	if tlsConfig != nil && tlsConfig.ServerName != "" {
+		hostname = tlsConfig.ServerName
+	} else {
+		hostname = parsedURL.Hostname()
+	}
+
 	// 设置API前缀
 	prefix := parsedURL.Path
 	if prefix == "" || prefix == "/" {
@@ -199,6 +208,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		logLevel:      parsedURL.Query().Get("log"),
 		crtPath:       parsedURL.Query().Get("crt"),
 		keyPath:       parsedURL.Query().Get("key"),
+		hostname:      hostname,
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(stateDir, stateFileName),
@@ -540,6 +550,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"os":   runtime.GOOS,
 		"arch": runtime.GOARCH,
 		"ver":  m.version,
+		"name": m.hostname,
 		"log":  m.logLevel,
 		"tls":  m.tlsCode,
 		"crt":  m.crtPath,
@@ -1222,6 +1233,7 @@ func generateOpenAPISpec() string {
           "os": {"type": "string", "description": "Operating system"},
           "arch": {"type": "string", "description": "System architecture"},
           "ver": {"type": "string", "description": "NodePass version"},
+		  "name": {"type": "string", "description": "Hostname"},
           "log": {"type": "string", "description": "Log level"},
           "tls": {"type": "string", "description": "TLS code"},
           "crt": {"type": "string", "description": "Certificate path"},
