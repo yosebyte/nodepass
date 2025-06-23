@@ -36,6 +36,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		},
 		tlsConfig: tlsConfig,
 	}
+	// 初始化公共字段
 	server.getTunnelKey(parsedURL)
 	server.getAddress(parsedURL)
 	return server
@@ -81,11 +82,9 @@ func (s *Server) start() error {
 		return err
 	}
 
-	// 通过目标地址判断数据流向
-	if s.isLocalAddress(s.targetTCPAddr.IP) {
-		if err := s.initTargetListener(); err == nil {
-			s.dataFlow = "-"
-		}
+	// 通过是否监听成功判断数据流向
+	if err := s.initTargetListener(); err == nil {
+		s.dataFlow = "-"
 	}
 
 	// 与客户端进行握手

@@ -63,6 +63,7 @@ type Master struct {
 	Common                            // 继承通用功能
 	prefix        string              // API前缀
 	version       string              // NP版本
+	hostname      string              // 隧道名称
 	logLevel      string              // 日志级别
 	crtPath       string              // 证书路径
 	keyPath       string              // 密钥路径
@@ -177,6 +178,14 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		return nil
 	}
 
+	// 获取隧道名称
+	var hostname string
+	if tlsConfig != nil && tlsConfig.ServerName != "" {
+		hostname = tlsConfig.ServerName
+	} else {
+		hostname = parsedURL.Hostname()
+	}
+
 	// 设置API前缀
 	prefix := parsedURL.Path
 	if prefix == "" || prefix == "/" {
@@ -199,6 +208,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		logLevel:      parsedURL.Query().Get("log"),
 		crtPath:       parsedURL.Query().Get("crt"),
 		keyPath:       parsedURL.Query().Get("key"),
+		hostname:      hostname,
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(stateDir, stateFileName),
@@ -540,6 +550,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"os":   runtime.GOOS,
 		"arch": runtime.GOARCH,
 		"ver":  m.version,
+		"name": m.hostname,
 		"log":  m.logLevel,
 		"tls":  m.tlsCode,
 		"crt":  m.crtPath,
@@ -667,19 +678,18 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			// API Key实例只允许restart操作
 			if reqData.Action == "restart" {
 				m.regenerateAPIKey(instance)
+				// 只有API Key需要在这里发送事件
+				m.notifyChannel <- &InstanceEvent{
+					Type:     "update",
+					Time:     time.Now(),
+					Instance: instance,
+				}
 			}
 		} else if reqData.Action != "" {
 			m.processInstanceAction(instance, reqData.Action)
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
-
-	// 发送更新事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
 }
 
 // regenerateAPIKey 重新生成API Key
@@ -705,7 +715,11 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 		if instance.Status == "running" {
 			m.stopInstance(instance)
 		}
-		go m.startInstance(instance)
+		// 等待停止完成后再启动
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			m.startInstance(instance)
+		}()
 	}
 }
 
@@ -922,8 +936,8 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 		if value, exists := m.instances.Load(instance.ID); exists {
 			instance = value.(*Instance)
 
-			// 仅在未被用户手动停止时更新状态
-			if instance.Status != "stopped" {
+			// 仅在实例状态为running时才发送事件
+			if instance.Status == "running" {
 				if err != nil {
 					m.logger.Error("Instance error: %v [%v]", err, instance.ID)
 					instance.Status = "error"
@@ -950,10 +964,20 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 
 // stopInstance 停止实例
 func (m *Master) stopInstance(instance *Instance) {
+	// 如果已经是停止状态，不重复操作
+	if instance.Status == "stopped" {
+		return
+	}
+
 	// 如果没有命令或进程，直接设为已停止
 	if instance.cmd == nil || instance.cmd.Process == nil {
 		instance.Status = "stopped"
 		m.instances.Store(instance.ID, instance)
+		m.notifyChannel <- &InstanceEvent{
+			Type:     "update",
+			Time:     time.Now(),
+			Instance: instance,
+		}
 		return
 	}
 
@@ -1209,6 +1233,7 @@ func generateOpenAPISpec() string {
           "os": {"type": "string", "description": "Operating system"},
           "arch": {"type": "string", "description": "System architecture"},
           "ver": {"type": "string", "description": "NodePass version"},
+		  "name": {"type": "string", "description": "Hostname"},
           "log": {"type": "string", "description": "Log level"},
           "tls": {"type": "string", "description": "TLS code"},
           "crt": {"type": "string", "description": "Certificate path"},
