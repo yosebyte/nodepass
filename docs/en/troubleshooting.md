@@ -277,6 +277,13 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Ensure the NodePass master has sufficient permissions to create processes
    - Check file system permissions for any referenced certificates or keys
 
+5. **Configuration File Issues (nodepass.json)**
+   - If manually edited the configuration file, validate JSON syntax correctness
+   - Check that instance IDs match the key names
+   - Verify field types and value validity
+   - If configuration file is corrupted, delete it to let the system recreate it
+   - Check configuration file permissions to ensure read/write access
+
 ## Next Steps
 
 If you encounter issues not covered in this guide:
