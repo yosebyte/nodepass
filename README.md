@@ -108,9 +108,6 @@ Project `NodePass` is licensed under the [BSD 3-Clause License](LICENSE).
     <td width="200" align="center">
       <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
     </td>
-    <td width="200" align="center">
-      <a href="https://netjett.com"><img src="https://cdn.yobc.de/assets/netjett.png"></a>
-    </td>
   </tr>
 </table>
 

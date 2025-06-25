@@ -74,7 +74,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
-| `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 1s | `export NP_SERVICE_COOLDOWN=5s` |
+| `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
 | `NP_RELOAD_INTERVAL` | 证书/连接池重载间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
@@ -160,7 +160,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
   - 较低值确保更快关闭但可能中断活动连接
   - 较高值允许连接有更多时间完成但延迟关闭
 
-## 配置配置文件
+## 推荐配置
 
 以下是常见场景的推荐环境变量配置：
 
