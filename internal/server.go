@@ -49,9 +49,9 @@ func (s *Server) Run() {
 	// 启动服务端并处理重启
 	go func() {
 		for {
+			time.Sleep(serviceCooldown)
 			if err := s.start(); err != nil {
 				s.logger.Error("Server error: %v", err)
-				time.Sleep(serviceCooldown)
 				s.stop()
 				s.logger.Info("Server restarted: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
 			}

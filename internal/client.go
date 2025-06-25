@@ -47,9 +47,9 @@ func (c *Client) Run() {
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
+			time.Sleep(serviceCooldown)
 			if err := c.start(); err != nil {
 				c.logger.Error("Client error: %v", err)
-				time.Sleep(serviceCooldown)
 				c.stop()
 				c.logger.Info("Client restarted: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
 			}
