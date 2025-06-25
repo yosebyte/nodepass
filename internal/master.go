@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
-	"encoding/gob"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -31,10 +30,10 @@ import (
 
 // 常量定义
 const (
-	openAPIVersion = "v1"           // OpenAPI版本
-	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
-	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
-	apiKeyID       = "********"     // API Key的特殊ID
+	openAPIVersion = "v1"            // OpenAPI版本
+	stateFileName  = "nodepass.json" // 实例状态持久化文件名
+	sseRetryTime   = 3000            // 重试间隔时间（毫秒）
+	apiKeyID       = "********"      // API Key的特殊ID
 )
 
 // Swagger UI HTML模板
@@ -419,7 +418,7 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		// 保存实例状态
 		if err := m.saveState(); err != nil {
-			m.logger.Error("Save gob failed: %v", err)
+			m.logger.Error("Save json failed: %v", err)
 		} else {
 			m.logger.Info("Instances saved: %v", m.statePath)
 		}
@@ -468,7 +467,8 @@ func (m *Master) saveState() error {
 	}
 
 	// 编码数据
-	encoder := gob.NewEncoder(tempFile)
+	encoder := json.NewEncoder(tempFile)
+	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(persistentData); err != nil {
 		m.logger.Error("Encode instances failed: %v", err)
 		tempFile.Close()
@@ -510,7 +510,7 @@ func (m *Master) loadState() {
 
 	// 解码数据
 	var persistentData map[string]*Instance
-	decoder := gob.NewDecoder(file)
+	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&persistentData); err != nil {
 		m.logger.Error("Decode file failed: %v", err)
 		return
