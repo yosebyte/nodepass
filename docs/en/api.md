@@ -58,7 +58,7 @@ The Master API now supports API Key authentication to prevent unauthorized acces
 #### API Key Features
 
 1. **Automatic Generation**: Created automatically when master mode is first started
-2. **Persistent Storage**: The API Key is saved along with other instance configurations in the `nodepass.json` file
+2. **Persistent Storage**: The API Key is saved along with other instance configurations in the `nodepass.gob` file
 3. **Retention After Restart**: The API Key remains the same after restarting the master
 4. **Selective Protection**: Only critical API endpoints are protected, public documentation remains accessible
 
@@ -121,7 +121,7 @@ When integrating NodePass with frontend applications, consider the following imp
 
 ### Instance Persistence
 
-NodePass Master Mode now supports instance persistence using the JSON format. Instances and their states are saved to a `nodepass.json` file in the same directory as the executable, and automatically restored when the master restarts.
+NodePass Master Mode now supports instance persistence using the gob serialization format. Instances and their states are saved to a `nodepass.gob` file in the same directory as the executable, and automatically restored when the master restarts.
 
 Key persistence features:
 - Instance configurations are automatically saved to disk
@@ -129,51 +129,11 @@ Key persistence features:
 - Traffic statistics are retained between restarts
 - No need for manual re-registration after restart
 
-#### Manual Configuration File Editing
-
-While manual modification of the `nodepass.json` file is not recommended, it may be necessary in special circumstances. Please follow these best practices:
-
-**Pre-editing Preparation:**
-1. **Stop Master Service**: Must stop the NodePass master process before editing
-2. **Backup Original File**: Make a backup copy of `nodepass.json` before editing
-3. **Validate JSON Format**: Use JSON validation tools to ensure format correctness
-4. **Understand Field Meanings**: Ensure you understand the purpose and valid values of each field
-
-**JSON File Structure:**
-```json
-{
-  "instance_id": {
-    "id": "Unique instance identifier",
-    "type": "Instance type (client/server or special value ********)",
-    "status": "Instance status (running/stopped/error)",
-    "url": "Instance URL or API Key",
-    "tcprx": 0,    // TCP received bytes
-    "tcptx": 0,    // TCP transmitted bytes
-    "udprx": 0,    // UDP received bytes
-    "udptx": 0     // UDP transmitted bytes
-  }
-}
-```
-
-**Editing Guidelines:**
-- The `id` field must match the key name
-- The `type` field can only be "client", "server", or the special API Key identifier "********"
-- The `status` field should be set to "stopped" to avoid startup state inconsistencies
-- URL format must comply with scheme://host:port/target:port specification
-- Traffic statistics fields must be non-negative integers
-- The API Key instance (id "********") has the actual API key in the `url` field
-- Maintain JSON format integrity, pay attention to correct comma and quote usage
-
-**Security Recommendations:**
-- Validate JSON syntax after editing
-- Check logs to confirm successful configuration loading before restart
-- If problems occur, immediately restore the backup file
-
 **Note:** While instance configurations are now persisted, frontend applications should still maintain their own record of instance configurations as a backup strategy.
 
 ### Instance ID Persistence
 
-With NodePass now using JSON format for persistent storage of instance state, instance IDs **no longer change** after a master restart. This means:
+With NodePass now using gob format for persistent storage of instance state, instance IDs **no longer change** after a master restart. This means:
 
 1. Frontend applications can safely use instance IDs as unique identifiers
 2. Instance configurations, states, and statistics are automatically restored after restart
