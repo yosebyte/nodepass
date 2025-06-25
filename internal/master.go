@@ -1107,7 +1107,8 @@ func generateOpenAPISpec() string {
         "security": [{"ApiKeyAuth": []}],
         "responses": {
           "200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Instance"}}}}},
-          "401": {"description": "Unauthorized"}
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"}
         }
       },
       "post": {
@@ -1117,8 +1118,9 @@ func generateOpenAPISpec() string {
         "responses": {
           "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
           "400": {"description": "Invalid input"},
-		  "401": {"description": "Unauthorized"},
-          "404": {"description": "Not found"}
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"},
+          "409": {"description": "Instance ID already exists"}
         }
       }
     },
@@ -1129,8 +1131,10 @@ func generateOpenAPISpec() string {
         "security": [{"ApiKeyAuth": []}],
         "responses": {
           "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+          "400": {"description": "Instance ID required"},
           "401": {"description": "Unauthorized"},
-          "404": {"description": "Not found"}
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
         }
       },
       "patch": {
@@ -1139,8 +1143,10 @@ func generateOpenAPISpec() string {
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateInstanceRequest"}}}},
         "responses": {
           "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+          "400": {"description": "Instance ID required or invalid input"},
           "401": {"description": "Unauthorized"},
-          "404": {"description": "Not found"}
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
         }
       },
       "delete": {
@@ -1148,9 +1154,11 @@ func generateOpenAPISpec() string {
         "security": [{"ApiKeyAuth": []}],
         "responses": {
           "204": {"description": "Deleted"},
+          "400": {"description": "Instance ID required"},
           "401": {"description": "Unauthorized"},
           "403": {"description": "Forbidden"},
-          "404": {"description": "Not found"}
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
         }
       }
     },
