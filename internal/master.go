@@ -32,6 +32,7 @@ import (
 // 常量定义
 const (
 	openAPIVersion = "v1"           // OpenAPI版本
+	stateFilePath  = "gob"          // 实例状态持久化文件路径
 	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
 	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
 	apiKeyID       = "********"     // API Key的特殊ID
@@ -196,7 +197,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 	// 获取应用程序目录作为状态文件存储位置
 	execPath, _ := os.Executable()
-	stateDir := filepath.Dir(execPath)
+	baseDir := filepath.Dir(execPath)
 
 	master := &Master{
 		Common: Common{
@@ -211,7 +212,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		hostname:      hostname,
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
-		statePath:     filepath.Join(stateDir, stateFileName),
+		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
 		notifyChannel: make(chan *InstanceEvent, 1024),
 	}
 	master.tunnelTCPAddr = host
@@ -450,6 +451,12 @@ func (m *Master) saveState() error {
 			return os.Remove(m.statePath)
 		}
 		return nil
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(m.statePath), 0755); err != nil {
+		m.logger.Error("Create state dir failed: %v", err)
+		return err
 	}
 
 	// 创建临时文件
