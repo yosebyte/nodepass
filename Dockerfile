@@ -7,5 +7,5 @@ WORKDIR /root/cmd/nodepass
 RUN env CGO_ENABLED=0 go build -v -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 FROM scratch
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
-COPY --from=builder /root/cmd/nodepass/nodepass /app/nodepass
-ENTRYPOINT ["/app/nodepass"]
+COPY --from=builder /root/cmd/nodepass/nodepass /nodepass
+ENTRYPOINT ["/nodepass"]
