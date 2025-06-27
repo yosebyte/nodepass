@@ -372,7 +372,32 @@ For proper lifecycle management:
 
    **Recommendation:** Prefer the SSE approach as it provides more efficient real-time monitoring and reduces server load. Only use the polling approach for client environments with specific compatibility needs or where SSE is not supported.
 
-3. **Control Operations**: Start, stop, restart instances
+3. **Instance Alias Management**: Set readable names for instances
+   ```javascript
+   // Batch set instance aliases
+   async function setInstanceAliases(instances) {
+     for (const instance of instances) {
+       // Generate meaningful aliases based on instance type and purpose
+       const alias = `${instance.type}-${instance.region || 'default'}-${instance.port || 'auto'}`;
+       await updateInstanceAlias(instance.id, alias);
+     }
+   }
+   
+   // Find instance by alias
+   async function findInstanceByAlias(targetAlias) {
+     const response = await fetch(`${API_URL}/instances`, {
+       headers: { 'X-API-Key': apiKey }
+     });
+     const data = await response.json();
+     
+     if (data.success) {
+       return data.data.find(instance => instance.alias === targetAlias);
+     }
+     return null;
+   }
+   ```
+
+4. **Control Operations**: Start, stop, restart instances
    ```javascript
    async function controlInstance(instanceId, action) {
      // action can be: start, stop, restart
@@ -385,9 +410,21 @@ For proper lifecycle management:
      const data = await response.json();
      return data.success;
    }
+   
+   // Update instance alias
+   async function updateInstanceAlias(instanceId, alias) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ alias })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
-4. **Auto-start Policy Management**: Configure automatic startup behavior
+5. **Auto-start Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -406,6 +443,22 @@ For proper lifecycle management:
        method: 'PATCH',
        headers: { 'Content-Type': 'application/json' },
        body: JSON.stringify({ 
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Combined operation: update alias, control instance and auto-start policy
+   async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ 
+         alias: alias,
          action: action,
          restart: enableAutoStart 
        })
@@ -437,6 +490,10 @@ async function setupServerCluster(serverConfigs) {
       });
       
       if (instance.success) {
+        // Set meaningful instance alias
+        const alias = `${config.role}-server-${config.port}`;
+        await updateInstanceAlias(instance.data.id, alias);
+        
         // Configure auto-start policy based on server role
         const autoStartPolicy = config.isPrimary || config.role === 'essential';
         await setAutoStartPolicy(instance.data.id, autoStartPolicy);
@@ -446,11 +503,12 @@ async function setupServerCluster(serverConfigs) {
         
         clusterInstances.push({
           id: instance.data.id,
+          alias: alias,
           role: config.role,
           autoStartEnabled: autoStartPolicy
         });
         
-        console.log(`Server ${config.role} created with auto-start policy: ${autoStartPolicy}`);
+        console.log(`Server ${alias} created with auto-start policy: ${autoStartPolicy}`);
       }
     } catch (error) {
       console.error(`Failed to create server ${config.role}:`, error);
@@ -771,6 +829,30 @@ The Master API provides traffic statistics, but there are important requirements
      }
    }
    ```
+
+## Instance Data Structure
+
+Instance objects in API responses contain the following fields:
+
+```json
+{
+  "id": "a1b2c3d4",           // Unique instance identifier
+  "alias": "web-server-01",   // Instance alias (optional, for friendly display names)
+  "type": "server",           // Instance type: server or client
+  "status": "running",        // Instance status: running, stopped, or error
+  "url": "server://...",      // Instance configuration URL
+  "restart": true,            // Auto-start policy
+  "tcprx": 1024,             // TCP bytes received
+  "tcptx": 2048,             // TCP bytes transmitted
+  "udprx": 512,              // UDP bytes received
+  "udptx": 256               // UDP bytes transmitted
+}
+```
+
+**Notes:** 
+- `alias` field is optional and will be an empty string if not set
+- Traffic statistics fields (tcprx, tcptx, udprx, udptx) are only valid when debug mode is enabled
+- `restart` field controls the instance's auto-start behavior
 
 ## API Endpoint Documentation
 

@@ -420,7 +420,32 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 
    **选择建议：** 优先使用SSE方式，它提供更高效的实时监控，减轻服务器负担。仅在客户端不支持SSE或需要特定环境兼容性时使用轮询方式。
 
-3. **控制操作**：启动、停止、重启实例
+3. **实例别名管理**：为实例设置易读的名称
+   ```javascript
+   // 批量设置实例别名
+   async function setInstanceAliases(instances) {
+     for (const instance of instances) {
+       // 根据实例类型和用途生成有意义的别名
+       const alias = `${instance.type}-${instance.region || 'default'}-${instance.port || 'auto'}`;
+       await updateInstanceAlias(instance.id, alias);
+     }
+   }
+   
+   // 根据别名查找实例
+   async function findInstanceByAlias(targetAlias) {
+     const response = await fetch(`${API_URL}/instances`, {
+       headers: { 'X-API-Key': apiKey }
+     });
+     const data = await response.json();
+     
+     if (data.success) {
+       return data.data.find(instance => instance.alias === targetAlias);
+     }
+     return null;
+   }
+   ```
+
+4. **控制操作**：启动、停止、重启实例
    ```javascript
    async function controlInstance(instanceId, action) {
      // action可以是: start, stop, restart
@@ -436,9 +461,24 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      const data = await response.json();
      return data.success;
    }
+   
+   // 更新实例别名
+   async function updateInstanceAlias(instanceId, alias) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ alias })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
-4. **自启动策略管理**：配置自动启动行为
+5. **自启动策略管理**：配置自动启动行为
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -471,6 +511,25 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      const data = await response.json();
      return data.success;
    }
+   
+   // 组合操作：同时更新别名、控制实例和自启动策略
+   async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key
+       },
+       body: JSON.stringify({ 
+         alias: alias,
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
 #### 自启动策略完整使用示例
@@ -494,6 +553,10 @@ async function setupServerCluster(serverConfigs) {
       });
       
       if (instance.success) {
+        // 设置有意义的实例别名
+        const alias = `${config.role}-server-${config.port}`;
+        await updateInstanceAlias(instance.data.id, alias);
+        
         // 根据服务器角色配置自启动策略
         const autoStartPolicy = config.isPrimary || config.role === 'essential';
         await setAutoStartPolicy(instance.data.id, autoStartPolicy);
@@ -503,11 +566,12 @@ async function setupServerCluster(serverConfigs) {
         
         clusterInstances.push({
           id: instance.data.id,
+          alias: alias,
           role: config.role,
           autoStartEnabled: autoStartPolicy
         });
         
-        console.log(`服务器 ${config.role} 已创建，自启动策略: ${autoStartPolicy}`);
+        console.log(`服务器 ${alias} 已创建，自启动策略: ${autoStartPolicy}`);
       }
     } catch (error) {
       console.error(`创建服务器 ${config.role} 失败:`, error);
@@ -676,6 +740,30 @@ async function configureAutoStartPolicies(instances) {
   }
 }
 ```
+
+## 实例数据结构
+
+API响应中的实例对象包含以下字段：
+
+```json
+{
+  "id": "a1b2c3d4",           // 实例唯一标识符
+  "alias": "web-server-01",   // 实例别名（可选，用于显示友好名称）
+  "type": "server",           // 实例类型：server 或 client
+  "status": "running",        // 实例状态：running、stopped 或 error
+  "url": "server://...",      // 实例配置URL
+  "restart": true,            // 自启动策略
+  "tcprx": 1024,             // TCP接收字节数
+  "tcptx": 2048,             // TCP发送字节数
+  "udprx": 512,              // UDP接收字节数
+  "udptx": 256               // UDP发送字节数
+}
+```
+
+**注意：** 
+- `alias` 字段为可选，如果未设置则为空字符串
+- 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
+- `restart` 字段控制实例的自启动行为
 
 ## API端点文档
 
