@@ -2,7 +2,11 @@
 
 ## Overview
 
-NodePass offers a RESTful API in Master Mode that enables programmatic control and integration with frontend applications. This section provides comprehensive documentation of the API endpoints, integration patterns, and best practices.
+NodePass offers a RESTful API in Master Mode that enables programmatic control and integration with frontend applications. This section provides comprehensive d     // Configure auto-start policy for new instance based on type
+     if (data.success) {
+       const shouldAutoStart = config.type === 'server' || config.critical === true;
+       await setAutoStartPolicy(data.data.id, shouldAutoStart);
+     }ntation of the API endpoints, integration patterns, and best practices.
 
 ## Master Mode API
 
@@ -11,7 +15,8 @@ When running NodePass in Master Mode (`master://`), it exposes a REST API that a
 1. Create and manage NodePass server and client instances
 2. Monitor connection status and statistics
 3. Control running instances (start, stop, restart)
-4. Configure behavior through parameters
+4. Configure auto-start policies for automatic instance management
+5. Configure behavior through parameters
 
 ### Base URL
 
@@ -126,7 +131,9 @@ NodePass Master Mode now supports instance persistence using the gob serializati
 Key persistence features:
 - Instance configurations are automatically saved to disk
 - Instance state (running/stopped) is preserved
+- Auto-start policies are preserved across master restarts
 - Traffic statistics are retained between restarts
+- Instances with auto-start policy enabled will automatically start when master restarts
 - No need for manual re-registration after restart
 
 **Note:** While instance configurations are now persisted, frontend applications should still maintain their own record of instance configurations as a backup strategy.
@@ -140,6 +147,42 @@ With NodePass now using gob format for persistent storage of instance state, ins
 3. No need to implement logic for handling instance ID changes
 
 This greatly simplifies frontend integration by eliminating the previous complexity of handling instance recreation and ID mapping.
+
+### Auto-start Policy Management
+
+NodePass now supports configurable auto-start policies for instances, allowing for automatic instance management and improved reliability. The auto-start policy feature enables:
+
+1. **Automatic Instance Recovery**: Instances with auto-start policy enabled will automatically start when the master service restarts
+2. **Selective Auto-start**: Configure which instances should auto-start based on their importance or role
+3. **Persistent Policy Storage**: Auto-start policies are saved and restored across master restarts
+4. **Fine-grained Control**: Each instance can have its own auto-start policy setting
+
+#### How Auto-start Policy Works
+
+- **Policy Assignment**: Each instance has a `restart` boolean field that determines its auto-start behavior
+- **Master Startup**: When the master starts, it automatically launches all instances with `restart: true`
+- **Policy Persistence**: Auto-start policies are saved in the same `nodepass.gob` file as other instance data
+- **Runtime Management**: Auto-start policies can be modified while instances are running
+
+#### Best Practices for Auto-start Policy
+
+1. **Enable for Server Instances**: Server instances typically should have auto-start policy enabled for high availability
+2. **Selective Client Auto-start**: Enable auto-start policy for critical client connections only
+3. **Testing Scenarios**: Disable auto-start policy for temporary or testing instances
+4. **Load Balancing**: Use auto-start policies to maintain minimum instance counts for load distribution
+
+```javascript
+// Example: Configure auto-start policies based on instance role
+async function configureAutoStartPolicies(instances) {
+  for (const instance of instances) {
+    // Enable auto-start for servers and critical clients
+    const shouldAutoStart = instance.type === 'server' || 
+                            instance.tags?.includes('critical');
+    
+    await setAutoStartPolicy(instance.id, shouldAutoStart);
+  }
+}
+```
 
 ### Instance Lifecycle Management
 
@@ -158,7 +201,22 @@ For proper lifecycle management:
      
      const data = await response.json();
      
+     // Configure restart policy for new instance based on type
+     if (data.success) {
+       const shouldAutoRestart = config.type === 'server' || config.critical === true;
+       await setRestartPolicy(data.data.id, shouldAutoRestart);
+     }
+     
      // Store in frontend persistence
+     saveInstanceConfig({
+       id: data.data.id,
+       originalConfig: config,
+       url: data.data.url
+     });
+     
+     return data;
+   }
+   ```
      saveInstanceConfig({
        id: data.data.id,
        originalConfig: config,
@@ -328,6 +386,109 @@ For proper lifecycle management:
      return data.success;
    }
    ```
+
+4. **Auto-start Policy Management**: Configure automatic startup behavior
+   ```javascript
+   async function setAutoStartPolicy(instanceId, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ restart: enableAutoStart })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Combined operation: control instance and update auto-start policy
+   async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify({ 
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+#### Complete Auto-start Policy Usage Example
+
+Here's a comprehensive example showing how to implement auto-start policy management in a real-world scenario:
+
+```javascript
+// Scenario: Setting up a load-balanced server cluster with auto-start policies
+async function setupServerCluster(serverConfigs) {
+  const clusterInstances = [];
+  
+  for (const config of serverConfigs) {
+    try {
+      // Create server instance
+      const instance = await createNodePassInstance({
+        type: 'server',
+        port: config.port,
+        target: config.target,
+        critical: config.isPrimary, // Primary servers are critical
+        tls: config.enableTLS
+      });
+      
+      if (instance.success) {
+        // Configure auto-start policy based on server role
+        const autoStartPolicy = config.isPrimary || config.role === 'essential';
+        await setAutoStartPolicy(instance.data.id, autoStartPolicy);
+        
+        // Start the instance
+        await controlInstance(instance.data.id, 'start');
+        
+        clusterInstances.push({
+          id: instance.data.id,
+          role: config.role,
+          autoStartEnabled: autoStartPolicy
+        });
+        
+        console.log(`Server ${config.role} created with auto-start policy: ${autoStartPolicy}`);
+      }
+    } catch (error) {
+      console.error(`Failed to create server ${config.role}:`, error);
+    }
+  }
+  
+  return clusterInstances;
+}
+
+// Monitor cluster health and adjust auto-start policies dynamically
+async function monitorClusterHealth(clusterInstances) {
+  const healthyInstances = [];
+  
+  for (const cluster of clusterInstances) {
+    const instance = await fetch(`${API_URL}/instances/${cluster.id}`);
+    const data = await instance.json();
+    
+    if (data.success && data.data.status === 'running') {
+      healthyInstances.push(cluster);
+    } else {
+      // If a critical instance is down, enable auto-start for backup instances
+      if (cluster.role === 'primary') {
+        await enableBackupInstanceAutoStart(clusterInstances);
+      }
+    }
+  }
+  
+  return healthyInstances;
+}
+
+async function enableBackupInstanceAutoStart(clusterInstances) {
+  const backupInstances = clusterInstances.filter(c => c.role === 'backup');
+  for (const backup of backupInstances) {
+    await setAutoStartPolicy(backup.id, true);
+    console.log(`Enabled auto-start policy for backup instance: ${backup.id}`);
+  }
+}
+```
 
 ### Real-time Event Monitoring with SSE
 
@@ -685,6 +846,34 @@ For managing many NodePass instances:
    }
    ```
 
+4. **Auto-start Policy Management**: Implement smart auto-start policies
+   ```javascript
+   // Enable auto-start for critical instances
+   async function enableCriticalInstanceAutoStart(instanceIds) {
+     const promises = instanceIds.map(id => 
+       setAutoStartPolicy(id, true)
+     );
+     return Promise.allSettled(promises);
+   }
+   
+   // Group instances by auto-start policy for better management
+   function groupInstancesByAutoStartPolicy(instances) {
+     return instances.reduce((groups, instance) => {
+       const key = instance.restart ? 'autoStart' : 'manual';
+       if (!groups[key]) groups[key] = [];
+       groups[key].push(instance);
+       return groups;
+     }, {});
+   }
+   
+   // Smart auto-start policy based on instance type and importance
+   async function applySmartAutoStartPolicy(instanceId, instanceType, priority) {
+     // Enable auto-start for server instances and high-priority clients
+     const shouldAutoStart = instanceType === 'server' || priority === 'high';
+     return setAutoStartPolicy(instanceId, shouldAutoStart);
+   }
+   ```
+
 ### Monitoring and Health Checks
 
 Implement comprehensive monitoring:
@@ -727,8 +916,9 @@ The NodePass Master Mode API provides a powerful interface for programmatic mana
 
 1. **Instance persistence** - Store configurations and handle restarts
 2. **Instance ID persistence** - Use instance IDs as stable identifiers
-3. **Proper error handling** - Gracefully recover from API errors
-4. **Traffic statistics** - Collect and visualize connection metrics (requires debug mode)
+3. **Auto-start policy management** - Configure automatic startup behavior for critical instances
+4. **Proper error handling** - Gracefully recover from API errors
+5. **Traffic statistics** - Collect and visualize connection metrics (requires debug mode)
 
 These guidelines will help you build robust integrations between your frontend applications and NodePass.
 
