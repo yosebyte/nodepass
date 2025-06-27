@@ -80,6 +80,7 @@ type Master struct {
 // Instance 实例信息
 type Instance struct {
 	ID         string             `json:"id"`        // 实例ID
+	Alias      string             `json:"alias"`     // 实例别名
 	Type       string             `json:"type"`      // 实例类型
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
@@ -673,6 +674,7 @@ func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
 // handlePatchInstance 处理更新实例状态请求
 func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
 	var reqData struct {
+		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
 	}
@@ -693,6 +695,17 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
 
 				// 发送restart策略变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
+			// 更新实例别名
+			if reqData.Alias != "" && instance.Alias != reqData.Alias {
+				instance.Alias = reqData.Alias
+				m.instances.Store(id, instance)
+				m.saveState()
+				m.logger.Info("Alias updated: %v [%v]", reqData.Alias, instance.ID)
+
+				// 发送别名变更事件
 				m.sendSSEEvent("update", instance)
 			}
 
@@ -1222,6 +1235,7 @@ func generateOpenAPISpec() string {
         "type": "object",
         "properties": {
           "id": {"type": "string", "description": "Unique identifier"},
+          "alias": {"type": "string", "description": "Instance alias"},
           "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
           "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
           "url": {"type": "string", "description": "Command string or API Key"},
@@ -1240,6 +1254,7 @@ func generateOpenAPISpec() string {
       "UpdateInstanceRequest": {
         "type": "object",
         "properties": {
+          "alias": {"type": "string", "description": "Instance alias"},
           "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
           "restart": {"type": "boolean", "description": "Instance restart policy"}
         }
