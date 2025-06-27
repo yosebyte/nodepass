@@ -83,6 +83,7 @@ type Instance struct {
 	Type       string             `json:"type"`      // 实例类型
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
+	Restart    bool               `json:"restart"`   // 是否自启动
 	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
 	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
 	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
@@ -527,6 +528,12 @@ func (m *Master) loadState() {
 	for id, instance := range persistentData {
 		instance.stopped = make(chan struct{})
 		m.instances.Store(id, instance)
+
+		// 处理自启动
+		if instance.Restart {
+			go m.startInstance(instance)
+			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
+		}
 	}
 
 	m.logger.Info("Loaded %v instances from %v", len(persistentData), m.statePath)
@@ -616,6 +623,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
+			Restart: false,
 			stopped: make(chan struct{}),
 		}
 		m.instances.Store(id, instance)
@@ -678,7 +686,8 @@ func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
 // handlePatchInstance 处理更新实例状态请求
 func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
 	var reqData struct {
-		Action string `json:"action"`
+		Action  string `json:"action,omitempty"`
+		Restart *bool  `json:"restart,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -692,8 +701,26 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 					Instance: instance,
 				}
 			}
-		} else if reqData.Action != "" {
-			m.processInstanceAction(instance, reqData.Action)
+		} else {
+			// 更新自启动设置
+			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
+				instance.Restart = *reqData.Restart
+				m.instances.Store(id, instance)
+				m.saveState()
+				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
+
+				// 发送restart策略变更事件
+				m.notifyChannel <- &InstanceEvent{
+					Type:     "update",
+					Time:     time.Now(),
+					Instance: instance,
+				}
+			}
+
+			// 处理当前实例操作
+			if reqData.Action != "" {
+				m.processInstanceAction(instance, reqData.Action)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
@@ -1225,6 +1252,7 @@ func generateOpenAPISpec() string {
           "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
           "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
           "url": {"type": "string", "description": "Command string or API Key"},
+          "restart": {"type": "boolean", "description": "Restart policy"},
           "tcprx": {"type": "integer", "description": "TCP received bytes"},
           "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
           "udprx": {"type": "integer", "description": "UDP received bytes"},
@@ -1239,7 +1267,8 @@ func generateOpenAPISpec() string {
       "UpdateInstanceRequest": {
         "type": "object",
         "properties": {
-          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"}
+          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
+          "restart": {"type": "boolean", "description": "Instance restart policy"}
         }
       },
       "MasterInfo": {
