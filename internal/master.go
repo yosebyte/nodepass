@@ -140,22 +140,13 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			w.master.instances.Store(w.instanceID, w.instance)
 
 			// 发送流量更新事件
-			w.master.notifyChannel <- &InstanceEvent{
-				Type:     "update",
-				Time:     time.Now(),
-				Instance: w.instance,
-			}
+			w.master.sendSSEEvent("update", w.instance)
 		}
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 
 		// 发送日志事件
-		w.master.notifyChannel <- &InstanceEvent{
-			Type:     "log",
-			Time:     time.Now(),
-			Instance: w.instance,
-			Logs:     line,
-		}
+		w.master.sendSSEEvent("log", w.instance, line)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -222,7 +213,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	master.loadState()
 
 	// 启动事件分发器
-	master.startEventDispatcher()
+	go master.startEventDispatcher()
 
 	return master
 }
@@ -639,11 +630,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, instance)
 
 		// 发送创建事件
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "create",
-			Time:     time.Now(),
-			Instance: instance,
-		}
+		m.sendSSEEvent("create", instance)
 
 	default:
 		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -695,11 +682,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Action == "restart" {
 				m.regenerateAPIKey(instance)
 				// 只有API Key需要在这里发送事件
-				m.notifyChannel <- &InstanceEvent{
-					Type:     "update",
-					Time:     time.Now(),
-					Instance: instance,
-				}
+				m.sendSSEEvent("update", instance)
 			}
 		} else {
 			// 更新自启动设置
@@ -710,11 +693,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
 
 				// 发送restart策略变更事件
-				m.notifyChannel <- &InstanceEvent{
-					Type:     "update",
-					Time:     time.Now(),
-					Instance: instance,
-				}
+				m.sendSSEEvent("update", instance)
 			}
 
 			// 处理当前实例操作
@@ -774,11 +753,7 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 	w.WriteHeader(http.StatusNoContent)
 
 	// 发送删除事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "delete",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("delete", instance)
 }
 
 // handleSSE 处理SSE连接请求
@@ -864,23 +839,42 @@ func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// sendSSEEvent 发送SSE事件的通用函数
+func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...string) {
+	event := &InstanceEvent{
+		Type:     eventType,
+		Time:     time.Now(),
+		Instance: instance,
+	}
+
+	// 如果有日志内容，添加到事件中
+	if len(logs) > 0 {
+		event.Logs = logs[0]
+	}
+
+	// 非阻塞方式发送事件
+	select {
+	case m.notifyChannel <- event:
+	default:
+		// 通道已满或关闭，忽略
+	}
+}
+
 // startEventDispatcher 启动事件分发器
 func (m *Master) startEventDispatcher() {
-	go func() {
-		for event := range m.notifyChannel {
-			// 向所有订阅者分发事件
-			m.subscribers.Range(func(_, value any) bool {
-				eventChan := value.(chan *InstanceEvent)
-				// 非阻塞方式发送事件
-				select {
-				case eventChan <- event:
-				default:
-					// 不可用，忽略
-				}
-				return true
-			})
-		}
-	}()
+	for event := range m.notifyChannel {
+		// 向所有订阅者分发事件
+		m.subscribers.Range(func(_, value any) bool {
+			eventChan := value.(chan *InstanceEvent)
+			// 非阻塞方式发送事件
+			select {
+			case eventChan <- event:
+			default:
+				// 不可用，忽略
+			}
+			return true
+		})
+	}
 }
 
 // findInstance 查找实例
@@ -949,11 +943,7 @@ func (m *Master) startInstance(instance *Instance) {
 	m.instances.Store(instance.ID, instance)
 
 	// 发送启动事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("update", instance)
 }
 
 // monitorInstance 监控实例状态
@@ -981,16 +971,7 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 				m.instances.Store(instance.ID, instance)
 
 				// 安全地发送停止事件，避免向已关闭的通道发送
-				select {
-				case m.notifyChannel <- &InstanceEvent{
-					Type:     "update",
-					Time:     time.Now(),
-					Instance: instance,
-				}:
-					// 成功发送事件
-				default:
-					// 不可用，忽略
-				}
+				m.sendSSEEvent("update", instance)
 			}
 		}
 	}
@@ -1007,11 +988,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	if instance.cmd == nil || instance.cmd.Process == nil {
 		instance.Status = "stopped"
 		m.instances.Store(instance.ID, instance)
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "update",
-			Time:     time.Now(),
-			Instance: instance,
-		}
+		m.sendSSEEvent("update", instance)
 		return
 	}
 
@@ -1050,11 +1027,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	m.saveState()
 
 	// 发送停止事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("update", instance)
 }
 
 // enhanceURL 增强URL，添加日志级别和TLS配置
