@@ -32,6 +32,7 @@ import (
 // 常量定义
 const (
 	openAPIVersion = "v1"           // OpenAPI版本
+	stateFilePath  = "gob"          // 实例状态持久化文件路径
 	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
 	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
 	apiKeyID       = "********"     // API Key的特殊ID
@@ -79,9 +80,11 @@ type Master struct {
 // Instance 实例信息
 type Instance struct {
 	ID         string             `json:"id"`        // 实例ID
+	Alias      string             `json:"alias"`     // 实例别名
 	Type       string             `json:"type"`      // 实例类型
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
+	Restart    bool               `json:"restart"`   // 是否自启动
 	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
 	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
 	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
@@ -138,22 +141,13 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			w.master.instances.Store(w.instanceID, w.instance)
 
 			// 发送流量更新事件
-			w.master.notifyChannel <- &InstanceEvent{
-				Type:     "update",
-				Time:     time.Now(),
-				Instance: w.instance,
-			}
+			w.master.sendSSEEvent("update", w.instance)
 		}
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 
 		// 发送日志事件
-		w.master.notifyChannel <- &InstanceEvent{
-			Type:     "log",
-			Time:     time.Now(),
-			Instance: w.instance,
-			Logs:     line,
-		}
+		w.master.sendSSEEvent("log", w.instance, line)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -196,7 +190,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 	// 获取应用程序目录作为状态文件存储位置
 	execPath, _ := os.Executable()
-	stateDir := filepath.Dir(execPath)
+	baseDir := filepath.Dir(execPath)
 
 	master := &Master{
 		Common: Common{
@@ -211,7 +205,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		hostname:      hostname,
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
-		statePath:     filepath.Join(stateDir, stateFileName),
+		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
 		notifyChannel: make(chan *InstanceEvent, 1024),
 	}
 	master.tunnelTCPAddr = host
@@ -220,7 +214,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	master.loadState()
 
 	// 启动事件分发器
-	master.startEventDispatcher()
+	go master.startEventDispatcher()
 
 	return master
 }
@@ -452,6 +446,12 @@ func (m *Master) saveState() error {
 		return nil
 	}
 
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(m.statePath), 0755); err != nil {
+		m.logger.Error("Create state dir failed: %v", err)
+		return err
+	}
+
 	// 创建临时文件
 	tempFile, err := os.CreateTemp(filepath.Dir(m.statePath), "np-*.tmp")
 	if err != nil {
@@ -520,6 +520,12 @@ func (m *Master) loadState() {
 	for id, instance := range persistentData {
 		instance.stopped = make(chan struct{})
 		m.instances.Store(id, instance)
+
+		// 处理自启动
+		if instance.Restart {
+			go m.startInstance(instance)
+			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
+		}
 	}
 
 	m.logger.Info("Loaded %v instances from %v", len(persistentData), m.statePath)
@@ -609,6 +615,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
+			Restart: false,
 			stopped: make(chan struct{}),
 		}
 		m.instances.Store(id, instance)
@@ -624,11 +631,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, instance)
 
 		// 发送创建事件
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "create",
-			Time:     time.Now(),
-			Instance: instance,
-		}
+		m.sendSSEEvent("create", instance)
 
 	default:
 		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -671,7 +674,9 @@ func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
 // handlePatchInstance 处理更新实例状态请求
 func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
 	var reqData struct {
-		Action string `json:"action"`
+		Alias   string `json:"alias,omitempty"`
+		Action  string `json:"action,omitempty"`
+		Restart *bool  `json:"restart,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -679,14 +684,35 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Action == "restart" {
 				m.regenerateAPIKey(instance)
 				// 只有API Key需要在这里发送事件
-				m.notifyChannel <- &InstanceEvent{
-					Type:     "update",
-					Time:     time.Now(),
-					Instance: instance,
-				}
+				m.sendSSEEvent("update", instance)
 			}
-		} else if reqData.Action != "" {
-			m.processInstanceAction(instance, reqData.Action)
+		} else {
+			// 更新自启动设置
+			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
+				instance.Restart = *reqData.Restart
+				m.instances.Store(id, instance)
+				m.saveState()
+				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
+
+				// 发送restart策略变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
+			// 更新实例别名
+			if reqData.Alias != "" && instance.Alias != reqData.Alias {
+				instance.Alias = reqData.Alias
+				m.instances.Store(id, instance)
+				m.saveState()
+				m.logger.Info("Alias updated: %v [%v]", reqData.Alias, instance.ID)
+
+				// 发送别名变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
+			// 处理当前实例操作
+			if reqData.Action != "" {
+				m.processInstanceAction(instance, reqData.Action)
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
@@ -740,11 +766,7 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 	w.WriteHeader(http.StatusNoContent)
 
 	// 发送删除事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "delete",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("delete", instance)
 }
 
 // handleSSE 处理SSE连接请求
@@ -830,23 +852,42 @@ func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// sendSSEEvent 发送SSE事件的通用函数
+func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...string) {
+	event := &InstanceEvent{
+		Type:     eventType,
+		Time:     time.Now(),
+		Instance: instance,
+	}
+
+	// 如果有日志内容，添加到事件中
+	if len(logs) > 0 {
+		event.Logs = logs[0]
+	}
+
+	// 非阻塞方式发送事件
+	select {
+	case m.notifyChannel <- event:
+	default:
+		// 通道已满或关闭，忽略
+	}
+}
+
 // startEventDispatcher 启动事件分发器
 func (m *Master) startEventDispatcher() {
-	go func() {
-		for event := range m.notifyChannel {
-			// 向所有订阅者分发事件
-			m.subscribers.Range(func(_, value any) bool {
-				eventChan := value.(chan *InstanceEvent)
-				// 非阻塞方式发送事件
-				select {
-				case eventChan <- event:
-				default:
-					// 不可用，忽略
-				}
-				return true
-			})
-		}
-	}()
+	for event := range m.notifyChannel {
+		// 向所有订阅者分发事件
+		m.subscribers.Range(func(_, value any) bool {
+			eventChan := value.(chan *InstanceEvent)
+			// 非阻塞方式发送事件
+			select {
+			case eventChan <- event:
+			default:
+				// 不可用，忽略
+			}
+			return true
+		})
+	}
 }
 
 // findInstance 查找实例
@@ -915,11 +956,7 @@ func (m *Master) startInstance(instance *Instance) {
 	m.instances.Store(instance.ID, instance)
 
 	// 发送启动事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("update", instance)
 }
 
 // monitorInstance 监控实例状态
@@ -947,16 +984,7 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 				m.instances.Store(instance.ID, instance)
 
 				// 安全地发送停止事件，避免向已关闭的通道发送
-				select {
-				case m.notifyChannel <- &InstanceEvent{
-					Type:     "update",
-					Time:     time.Now(),
-					Instance: instance,
-				}:
-					// 成功发送事件
-				default:
-					// 不可用，忽略
-				}
+				m.sendSSEEvent("update", instance)
 			}
 		}
 	}
@@ -973,11 +1001,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	if instance.cmd == nil || instance.cmd.Process == nil {
 		instance.Status = "stopped"
 		m.instances.Store(instance.ID, instance)
-		m.notifyChannel <- &InstanceEvent{
-			Type:     "update",
-			Time:     time.Now(),
-			Instance: instance,
-		}
+		m.sendSSEEvent("update", instance)
 		return
 	}
 
@@ -1016,11 +1040,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	m.saveState()
 
 	// 发送停止事件
-	m.notifyChannel <- &InstanceEvent{
-		Type:     "update",
-		Time:     time.Now(),
-		Instance: instance,
-	}
+	m.sendSSEEvent("update", instance)
 }
 
 // enhanceURL 增强URL，添加日志级别和TLS配置
@@ -1215,9 +1235,11 @@ func generateOpenAPISpec() string {
         "type": "object",
         "properties": {
           "id": {"type": "string", "description": "Unique identifier"},
+          "alias": {"type": "string", "description": "Instance alias"},
           "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
           "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
           "url": {"type": "string", "description": "Command string or API Key"},
+          "restart": {"type": "boolean", "description": "Restart policy"},
           "tcprx": {"type": "integer", "description": "TCP received bytes"},
           "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
           "udprx": {"type": "integer", "description": "UDP received bytes"},
@@ -1232,7 +1254,9 @@ func generateOpenAPISpec() string {
       "UpdateInstanceRequest": {
         "type": "object",
         "properties": {
-          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"}
+          "alias": {"type": "string", "description": "Instance alias"},
+          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
+          "restart": {"type": "boolean", "description": "Instance restart policy"}
         }
       },
       "MasterInfo": {

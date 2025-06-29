@@ -11,7 +11,8 @@ NodePass在主控模式（Master Mode）下提供了RESTful API，使前端应�
 1. 创建和管理NodePass服务器和客户端实例
 2. 监控连接状态和统计信息
 3. 控制运行中的实例（启动、停止、重启）
-4. 通过参数配置行为
+4. 配置实例自启动策略以实现自动化管理
+5. 通过参数配置行为
 
 ### 基本URL
 
@@ -319,7 +320,9 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 主要持久化特性：
 - 实例配置自动保存到磁盘
 - 实例状态（运行/停止）得到保留
+- 自启动策略在主控重启间保持不变
 - 流量统计数据在重启之间保持
+- 启用自启动策略的实例在主控重启时自动启动
 - 重启后无需手动重新注册
 
 **注意：** 虽然实例配置现在已经持久化，前端应用仍应保留自己的实例配置记录作为备份策略。
@@ -343,6 +346,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      });
      
      const data = await response.json();
+     
+     // 根据类型为新实例配置自启动策略
+     if (data.success) {
+       const shouldAutoRestart = config.type === 'server' || config.critical === true;
+       await setAutoStartPolicy(data.data.id, shouldAutoRestart);
+     }
      
      // 存储在前端持久化存储中
      saveInstanceConfig({
@@ -411,7 +420,32 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 
    **选择建议：** 优先使用SSE方式，它提供更高效的实时监控，减轻服务器负担。仅在客户端不支持SSE或需要特定环境兼容性时使用轮询方式。
 
-3. **控制操作**：启动、停止、重启实例
+3. **实例别名管理**：为实例设置易读的名称
+   ```javascript
+   // 批量设置实例别名
+   async function setInstanceAliases(instances) {
+     for (const instance of instances) {
+       // 根据实例类型和用途生成有意义的别名
+       const alias = `${instance.type}-${instance.region || 'default'}-${instance.port || 'auto'}`;
+       await updateInstanceAlias(instance.id, alias);
+     }
+   }
+   
+   // 根据别名查找实例
+   async function findInstanceByAlias(targetAlias) {
+     const response = await fetch(`${API_URL}/instances`, {
+       headers: { 'X-API-Key': apiKey }
+     });
+     const data = await response.json();
+     
+     if (data.success) {
+       return data.data.find(instance => instance.alias === targetAlias);
+     }
+     return null;
+   }
+   ```
+
+4. **控制操作**：启动、停止、重启实例
    ```javascript
    async function controlInstance(instanceId, action) {
      // action可以是: start, stop, restart
@@ -427,7 +461,157 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      const data = await response.json();
      return data.success;
    }
+   
+   // 更新实例别名
+   async function updateInstanceAlias(instanceId, alias) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ alias })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
+
+5. **自启动策略管理**：配置自动启动行为
+   ```javascript
+   async function setAutoStartPolicy(instanceId, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key
+       },
+       body: JSON.stringify({ restart: enableAutoStart })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 组合操作：控制实例并更新自启动策略
+   async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key
+       },
+       body: JSON.stringify({ 
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 组合操作：同时更新别名、控制实例和自启动策略
+   async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key
+       },
+       body: JSON.stringify({ 
+         alias: alias,
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+#### 自启动策略完整使用示例
+
+以下是一个全面的示例，展示了如何在实际场景中实现自启动策略管理：
+
+```javascript
+// 场景：建立带有自启动策略的负载均衡服务器集群
+async function setupServerCluster(serverConfigs) {
+  const clusterInstances = [];
+  
+  for (const config of serverConfigs) {
+    try {
+      // 创建服务器实例
+      const instance = await createNodePassInstance({
+        type: 'server',
+        port: config.port,
+        target: config.target,
+        critical: config.isPrimary, // 主服务器为关键实例
+        tls: config.enableTLS
+      });
+      
+      if (instance.success) {
+        // 设置有意义的实例别名
+        const alias = `${config.role}-server-${config.port}`;
+        await updateInstanceAlias(instance.data.id, alias);
+        
+        // 根据服务器角色配置自启动策略
+        const autoStartPolicy = config.isPrimary || config.role === 'essential';
+        await setAutoStartPolicy(instance.data.id, autoStartPolicy);
+        
+        // 启动实例
+        await controlInstance(instance.data.id, 'start');
+        
+        clusterInstances.push({
+          id: instance.data.id,
+          alias: alias,
+          role: config.role,
+          autoStartEnabled: autoStartPolicy
+        });
+        
+        console.log(`服务器 ${alias} 已创建，自启动策略: ${autoStartPolicy}`);
+      }
+    } catch (error) {
+      console.error(`创建服务器 ${config.role} 失败:`, error);
+    }
+  }
+  
+  return clusterInstances;
+}
+
+// 监控集群健康状态并动态调整自启动策略
+async function monitorClusterHealth(clusterInstances) {
+  const healthyInstances = [];
+  
+  for (const cluster of clusterInstances) {
+    const instance = await fetch(`${API_URL}/instances/${cluster.id}`, {
+      headers: { 'X-API-Key': apiKey }
+    });
+    const data = await instance.json();
+    
+    if (data.success && data.data.status === 'running') {
+      healthyInstances.push(cluster);
+    } else {
+      // 如果关键实例宕机，为备份实例启用自启动策略
+      if (cluster.role === 'primary') {
+        await enableBackupInstanceAutoStart(clusterInstances);
+      }
+    }
+  }
+  
+  return healthyInstances;
+}
+
+async function enableBackupInstanceAutoStart(clusterInstances) {
+  const backupInstances = clusterInstances.filter(c => c.role === 'backup');
+  for (const backup of backupInstances) {
+    await setAutoStartPolicy(backup.id, true);
+    console.log(`已为备份实例启用自启动策略: ${backup.id}`);
+  }
+}
+```
 
 ### 流量统计
 
@@ -521,6 +705,66 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 
 这极大简化了前端集成，消除了以前处理实例重新创建和ID映射的复杂性。
 
+### 自启动策略管理
+
+NodePass现在支持为实例配置自启动策略，实现自动化实例管理并提高可靠性。自启动策略功能具备以下特性：
+
+1. **自动实例恢复**：启用自启动策略的实例在主控服务重启时会自动启动
+2. **选择性自启动**：根据实例的重要性或角色配置哪些实例应该自动启动
+3. **持久化策略存储**：自启动策略在主控重启间保存和恢复
+4. **细粒度控制**：每个实例都可以有自己的自启动策略设置
+
+#### 自启动策略工作原理
+
+- **策略分配**：每个实例都有一个`restart`布尔字段，决定其自启动行为
+- **主控启动**：主控启动时，自动启动所有`restart: true`的实例
+- **策略持久化**：自启动策略与其他实例数据一起保存在`nodepass.gob`文件中
+- **运行时管理**：自启动策略可以在实例运行时修改
+
+#### 自启动策略最佳实践
+
+1. **为服务器实例启用**：服务器实例通常应启用自启动策略以确保高可用性
+2. **选择性客户端自启动**：仅为关键客户端连接启用自启动策略
+3. **测试场景**：为临时或测试实例禁用自启动策略
+4. **负载均衡**：使用自启动策略维持最小实例数量以分配负载
+
+```javascript
+// 示例：根据实例角色配置自启动策略
+async function configureAutoStartPolicies(instances) {
+  for (const instance of instances) {
+    // 为服务器和关键客户端启用自启动
+    const shouldAutoStart = instance.type === 'server' || 
+                            instance.tags?.includes('critical');
+    
+    await setAutoStartPolicy(instance.id, shouldAutoStart);
+  }
+}
+```
+
+## 实例数据结构
+
+API响应中的实例对象包含以下字段：
+
+```json
+{
+  "id": "a1b2c3d4",           // 实例唯一标识符
+  "alias": "web-server-01",   // 实例别名（可选，用于显示友好名称）
+  "type": "server",           // 实例类型：server 或 client
+  "status": "running",        // 实例状态：running、stopped 或 error
+  "url": "server://...",      // 实例配置URL
+  "restart": true,            // 自启动策略
+  "tcprx": 1024,             // TCP接收字节数
+  "tcptx": 2048,             // TCP发送字节数
+  "udprx": 512,              // UDP接收字节数
+  "udptx": 256               // UDP发送字节数
+}
+```
+
+**注意：** 
+- `alias` 字段为可选，如果未设置则为空字符串
+- 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
+- `restart` 字段控制实例的自启动行为
+
 ## API端点文档
 
 有关详细的API文档（包括请求和响应示例），请使用`/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
@@ -595,6 +839,34 @@ Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试A
    }
    ```
 
+4. **自启动策略管理**：实现智能自启动策略
+   ```javascript
+   // 为关键实例启用自启动功能
+   async function enableCriticalInstanceAutoStart(instanceIds) {
+     const promises = instanceIds.map(id => 
+       setAutoStartPolicy(id, true)
+     );
+     return Promise.allSettled(promises);
+   }
+   
+   // 按自启动策略对实例进行分组管理
+   function groupInstancesByAutoStartPolicy(instances) {
+     return instances.reduce((groups, instance) => {
+       const key = instance.restart ? 'autoStart' : 'manual';
+       if (!groups[key]) groups[key] = [];
+       groups[key].push(instance);
+       return groups;
+     }, {});
+   }
+   
+   // 基于实例类型和重要性的智能自启动策略
+   async function applySmartAutoStartPolicy(instanceId, instanceType, priority) {
+     // 为服务器实例和高优先级客户端启用自启动
+     const shouldAutoStart = instanceType === 'server' || priority === 'high';
+     return setAutoStartPolicy(instanceId, shouldAutoStart);
+   }
+   ```
+
 ### 监控和健康检查
 
 实现全面监控：
@@ -637,8 +909,9 @@ NodePass主控模式API提供了强大的接口，用于以编程方式管理Nod
 
 1. **实例持久化** - 存储配置并处理重启
 2. **实例ID持久化** - 使用实例ID作为唯一标识符
-3. **适当的错误处理** - 从API错误中优雅恢复
-4. **流量统计** - 收集并可视化连接指标（需要启用调试模式）
+3. **自启动策略管理** - 为关键实例配置自动启动行为
+4. **适当的错误处理** - 从API错误中优雅恢复
+5. **流量统计** - 收集并可视化连接指标（需要启用调试模式）
 
 这些指南将帮助您构建前端应用与NodePass之间的健壮集成。
 
