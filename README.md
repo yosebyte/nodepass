@@ -98,6 +98,10 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 
 Project `NodePass` is licensed under the [BSD 3-Clause License](LICENSE).
 
+## ⚖️ Disclaimer
+
+This project is provided "as is" without any warranties. Users assume all risks and must comply with local laws for legal use only. Developers are not liable for any direct, indirect, incidental, or consequential damages. Secondary development requires commitment to legal use and self-responsibility for legal compliance. Developers reserve the right to modify software features and this disclaimer at any time. Final interpretation rights belong to developers.
+
 ## 🤝 Sponsors
 
 <table>
