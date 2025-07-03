@@ -854,6 +854,71 @@ Instance objects in API responses contain the following fields:
 - Traffic statistics fields (tcprx, tcptx, udprx, udptx) are only valid when debug mode is enabled
 - `restart` field controls the instance's auto-start behavior
 
+## System Information Endpoint
+
+The `/info` endpoint provides system information about the NodePass Master service. This endpoint is useful for monitoring, troubleshooting, and verifying system status.
+
+### Request
+
+```
+GET /info
+```
+
+API Key Authentication Required: Yes
+
+### Response
+
+The response contains the following system information fields:
+
+```json
+{
+  "os": "linux",          // Operating system type
+  "arch": "amd64",        // System architecture
+  "ver": "1.2.0",         // NodePass version
+  "name": "example.com",  // Tunnel hostname
+  "uptime": 11525,         // API uptime in seconds
+  "log": "info",          // Log level
+  "tls": "1",             // TLS status
+  "crt": "/path/to/cert", // Certificate path
+  "key": "/path/to/key"   // Key path
+}
+```
+
+### Usage Example
+
+```javascript
+// Get system information
+async function getSystemInfo() {
+  const response = await fetch(`${API_URL}/info`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey
+    }
+  });
+  
+  return await response.json();
+}
+
+// Display service uptime
+function displayServiceUptime() {
+  getSystemInfo().then(info => {
+    console.log(`Service uptime: ${info.uptime} seconds`);
+    // You can also format it for better readability
+    const hours = Math.floor(info.uptime / 3600);
+    const minutes = Math.floor((info.uptime % 3600) / 60);
+    const seconds = info.uptime % 60;
+    console.log(`Service uptime: ${hours}h ${minutes}m ${seconds}s`);
+  });
+}
+```
+
+### Monitoring Best Practices
+
+- **Regular Polling**: Periodically poll this endpoint to ensure service is running
+- **Version Verification**: Check version number after deploying updates
+- **Uptime Monitoring**: Monitor uptime to detect unexpected restarts
+- **Log Level Verification**: Confirm that the current log level matches expectations
+
 ## API Endpoint Documentation
 
 For detailed API documentation including request and response examples, please use the built-in Swagger UI documentation available at the `/docs` endpoint. This interactive documentation provides comprehensive information about:

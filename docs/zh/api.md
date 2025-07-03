@@ -765,6 +765,71 @@ API响应中的实例对象包含以下字段：
 - 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
 - `restart` 字段控制实例的自启动行为
 
+## 系统信息端点
+
+`/info` 端点提供了关于NodePass主控服务的系统信息。这个端点对于监控、故障排除和系统状态验证非常有用。
+
+### 请求
+
+```
+GET /info
+```
+
+需要 API Key 认证：是
+
+### 响应
+
+响应包含以下系统信息字段：
+
+```json
+{
+  "os": "linux",          // 操作系统类型
+  "arch": "amd64",        // 系统架构
+  "ver": "1.2.0",         // NodePass版本
+  "name": "example.com",  // 隧道主机名
+  "uptime": 11525,         // API运行时间（秒）
+  "log": "info",          // 日志级别
+  "tls": "1",             // TLS启用状态
+  "crt": "/path/to/cert", // 证书路径
+  "key": "/path/to/key"   // 密钥路径
+}
+```
+
+### 使用示例
+
+```javascript
+// 获取系统信息
+async function getSystemInfo() {
+  const response = await fetch(`${API_URL}/info`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey
+    }
+  });
+  
+  return await response.json();
+}
+
+// 显示服务运行时间
+function displayServiceUptime() {
+  getSystemInfo().then(info => {
+    console.log(`服务已运行: ${info.uptime} 秒`);
+    // 也可以格式化为更友好的显示
+    const hours = Math.floor(info.uptime / 3600);
+    const minutes = Math.floor((info.uptime % 3600) / 60);
+    const seconds = info.uptime % 60;
+    console.log(`服务已运行: ${hours}小时${minutes}分${seconds}秒`);
+  });
+}
+```
+
+### 监控最佳实践
+
+- **定期检查**：定期轮询此端点以确保服务正常运行
+- **版本验证**：在部署更新后检查版本号
+- **运行时间监控**：监控运行时间以检测意外重启
+- **日志级别验证**：确认当前日志级别符合预期
+
 ## API端点文档
 
 有关详细的API文档（包括请求和响应示例），请使用`/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
