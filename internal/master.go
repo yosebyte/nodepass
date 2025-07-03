@@ -160,7 +160,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 // setCorsHeaders 设置跨域响应头
 func setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key, Cache-Control")
 }
 
@@ -601,7 +601,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		// 验证实例类型
 		instanceType := parsedURL.Scheme
 		if instanceType != "client" && instanceType != "server" {
-			httpError(w, "URL scheme must be 'client' or 'server'", http.StatusBadRequest)
+			httpError(w, "Invalid URL scheme", http.StatusBadRequest)
 			return
 		}
 
@@ -662,6 +662,8 @@ func (m *Master) handleInstanceDetail(w http.ResponseWriter, r *http.Request) {
 		m.handleGetInstance(w, instance)
 	case http.MethodPatch:
 		m.handlePatchInstance(w, r, id, instance)
+	case http.MethodPut:
+		m.handlePutInstance(w, r, id, instance)
 	case http.MethodDelete:
 		m.handleDeleteInstance(w, id, instance)
 	default:
@@ -718,6 +720,82 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			}
 		}
 	}
+	writeJSON(w, http.StatusOK, instance)
+}
+
+// handlePutInstance 处理更新实例URL请求
+func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
+	// API Key实例不允许修改URL
+	if id == apiKeyID {
+		httpError(w, "Forbidden: API Key", http.StatusForbidden)
+		return
+	}
+
+	var reqData struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil || reqData.URL == "" {
+		httpError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// 解析URL
+	parsedURL, err := url.Parse(reqData.URL)
+	if err != nil {
+		httpError(w, "Invalid URL format", http.StatusBadRequest)
+		return
+	}
+
+	// 验证实例类型
+	instanceType := parsedURL.Scheme
+	if instanceType != "client" && instanceType != "server" {
+		httpError(w, "Invalid URL scheme", http.StatusBadRequest)
+		return
+	}
+
+	// 增强URL以便进行重复检测
+	enhancedURL := m.enhanceURL(reqData.URL, instanceType)
+
+	// 检查是否与当前实例的URL相同
+	if instance.URL == enhancedURL {
+		httpError(w, "Instance URL conflict", http.StatusConflict)
+		return
+	}
+
+	// 如果实例正在运行，先停止它
+	if instance.Status == "running" {
+		m.stopInstance(instance)
+	}
+
+	// 更新实例URL和类型
+	instance.URL = enhancedURL
+	instance.Type = instanceType
+
+	// 清空累计流量统计
+	instance.TCPRX = 0
+	instance.TCPTX = 0
+	instance.UDPRX = 0
+	instance.UDPTX = 0
+
+	// 更新实例状态
+	instance.Status = "stopped"
+	m.instances.Store(id, instance)
+
+	// 保存状态
+	m.saveState()
+
+	// 如果启用了自启动策略，启动实例
+	if instance.Restart {
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			m.startInstance(instance)
+		}()
+	}
+
+	// 发送更新事件
+	m.sendSSEEvent("update", instance)
+
+	m.logger.Info("Instance URL updated: %v [%v]", instance.URL, instance.ID)
 	writeJSON(w, http.StatusOK, instance)
 }
 
@@ -1173,6 +1251,20 @@ func generateOpenAPISpec() string {
           "405": {"description": "Method not allowed"}
         }
       },
+      "put": {
+        "summary": "Update instance URL",
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PutInstanceRequest"}}}},
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+          "400": {"description": "Instance ID required or invalid input"},
+          "401": {"description": "Unauthorized"},
+          "403": {"description": "Forbidden"},
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"},
+          "409": {"description": "Instance URL conflict"}
+        }
+      },
       "delete": {
         "summary": "Delete instance",
         "security": [{"ApiKeyAuth": []}],
@@ -1262,6 +1354,11 @@ func generateOpenAPISpec() string {
           "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
           "restart": {"type": "boolean", "description": "Instance restart policy"}
         }
+      },
+      "PutInstanceRequest": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {"url": {"type": "string", "description": "New command string(scheme://host:port/host:port)"}}
       },
       "MasterInfo": {
         "type": "object",
