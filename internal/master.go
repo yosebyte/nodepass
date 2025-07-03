@@ -738,17 +738,18 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 		}
 	case "stop":
 		if instance.Status == "running" {
-			m.stopInstance(instance)
+			go m.stopInstance(instance)
 		}
 	case "restart":
 		if instance.Status == "running" {
-			m.stopInstance(instance)
+			go func() {
+				m.stopInstance(instance)
+				time.Sleep(100 * time.Millisecond)
+				m.startInstance(instance)
+			}()
+		} else {
+			go m.startInstance(instance)
 		}
-		// 等待停止完成后再启动
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			m.startInstance(instance)
-		}()
 	}
 }
 
