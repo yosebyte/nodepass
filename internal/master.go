@@ -75,6 +75,7 @@ type Master struct {
 	statePath     string              // 实例状态持久化文件路径
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
+	startTime     time.Time           // 启动时间
 }
 
 // Instance 实例信息
@@ -207,6 +208,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
 		notifyChannel: make(chan *InstanceEvent, 1024),
+		startTime:     time.Now(),
 	}
 	master.tunnelTCPAddr = host
 
@@ -552,15 +554,16 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info := map[string]string{
-		"os":   runtime.GOOS,
-		"arch": runtime.GOARCH,
-		"ver":  m.version,
-		"name": m.hostname,
-		"log":  m.logLevel,
-		"tls":  m.tlsCode,
-		"crt":  m.crtPath,
-		"key":  m.keyPath,
+	info := map[string]any{
+		"os":     runtime.GOOS,
+		"arch":   runtime.GOARCH,
+		"ver":    m.version,
+		"name":   m.hostname,
+		"uptime": uint64(time.Since(m.startTime).Seconds()),
+		"log":    m.logLevel,
+		"tls":    m.tlsCode,
+		"crt":    m.crtPath,
+		"key":    m.keyPath,
 	}
 
 	writeJSON(w, http.StatusOK, info)
@@ -1266,6 +1269,7 @@ func generateOpenAPISpec() string {
           "arch": {"type": "string", "description": "System architecture"},
           "ver": {"type": "string", "description": "NodePass version"},
 		  "name": {"type": "string", "description": "Hostname"},
+          "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
           "log": {"type": "string", "description": "Log level"},
           "tls": {"type": "string", "description": "TLS code"},
           "crt": {"type": "string", "description": "Certificate path"},
