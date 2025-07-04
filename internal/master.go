@@ -625,9 +625,9 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 
 		// 启动实例
 		go m.startInstance(instance)
+
 		// 保存实例状态
 		go func() {
-			// 等待实例启动完成
 			time.Sleep(100 * time.Millisecond)
 			m.saveState()
 		}()
@@ -765,6 +765,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	// 如果实例正在运行，先停止它
 	if instance.Status == "running" {
 		m.stopInstance(instance)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// 更新实例URL和类型
@@ -781,22 +782,17 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	instance.Status = "stopped"
 	m.instances.Store(id, instance)
 
-	// 保存状态
-	m.saveState()
+	// 启动实例
+	go m.startInstance(instance)
 
-	// 如果启用了自启动策略，启动实例
-	if instance.Restart {
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			m.startInstance(instance)
-		}()
-	}
-
-	// 发送更新事件
-	m.sendSSEEvent("update", instance)
+	// 保存实例状态
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		m.saveState()
+	}()
+	writeJSON(w, http.StatusOK, instance)
 
 	m.logger.Info("Instance URL updated: %v [%v]", instance.URL, instance.ID)
-	writeJSON(w, http.StatusOK, instance)
 }
 
 // regenerateAPIKey 重新生成API Key
@@ -1015,7 +1011,7 @@ func (m *Master) startInstance(instance *Instance) {
 	writer := NewInstanceLogWriter(instance.ID, instance, os.Stdout, m)
 	cmd.Stdout, cmd.Stderr = writer, writer
 
-	m.logger.Info("Instance queued: %v [%v]", instance.URL, instance.ID)
+	m.logger.Info("Instance starting: %v [%v]", instance.URL, instance.ID)
 
 	// 启动实例
 	if err := cmd.Start(); err != nil {
