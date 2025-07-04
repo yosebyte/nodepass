@@ -13,7 +13,7 @@
 English | [简体中文](README_zh.md)
 </div>
 
-**NodePass** is an universal, lightweight TCP/UDP tunneling solution. Built on an innovative three-tier architecture (server-client-master), it elegantly separates control and data channels while offering intuitive zero-configuration syntax. The system excels with its proactive connection pool that eliminates latency by establishing connections before they're needed, alongside flexible security through tiered TLS options and optimized data transfer handling. One of its most distinctive features is seamless protocol translation between TCP and UDP, enabling applications to communicate across networks with protocol constraints. It adapts intelligently to network fluctuations, ensuring reliable performance even in challenging environments while maintaining efficient resource utilization. From navigating firewalls and NATs to bridging complex proxy configurations, it provides DevOps professionals and system administrators with a solution that balances sophisticated capabilities with remarkable ease of use.
+**NodePass** is an enterprise-grade TCP/UDP network tunneling tool featuring a modern three-tier architecture that separates control and data channels, with flexible, high-performance instance management capabilities. It offers zero-configuration deployment with intelligent connection pooling, tiered TLS encryption, and seamless protocol conversion capabilities. Designed for DevOps professionals and system administrators to effortlessly handle complex network scenarios including firewall traversal, NAT bypassing, and tunnel interconnection.
 
 ## 💎 Key Features
 
