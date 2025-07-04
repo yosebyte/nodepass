@@ -45,7 +45,8 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances` | GET | 列出所有NodePass实例 |
 | `/instances` | POST | 创建新的NodePass实例 |
 | `/instances/{id}` | GET | 获取特定实例的详细信息 |
-| `/instances/{id}` | PATCH | 更新或控制特定实例 |
+| `/instances/{id}` | PATCH | 更新实例状态或控制操作 |
+| `/instances/{id}` | PUT | 更新实例URL配置 |
 | `/instances/{id}` | DELETE | 删除特定实例 |
 | `/events` | GET | 使用SSE订阅实例事件通知 |
 | `/info` | GET | 获取主控服务信息 |
@@ -67,7 +68,7 @@ NodePass主控API现在支持API Key认证，可以防止未经授权的访问�
 
 以下端点需要API Key认证：
 - `/instances`（所有方法）
-- `/instances/{id}`（所有方法）
+- `/instances/{id}`（所有方法：GET、PATCH、PUT、DELETE）
 - `/events`
 - `/info`
 
@@ -476,6 +477,21 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      const data = await response.json();
      return data.success;
    }
+   
+   // 更新实例URL配置
+   async function updateInstanceURL(instanceId, newURL) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PUT',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ url: newURL })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
 5. **自启动策略管理**：配置自动启动行为
@@ -765,6 +781,71 @@ API响应中的实例对象包含以下字段：
 - 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
 - `restart` 字段控制实例的自启动行为
 
+## 系统信息端点
+
+`/info` 端点提供了关于NodePass主控服务的系统信息。这个端点对于监控、故障排除和系统状态验证非常有用。
+
+### 请求
+
+```
+GET /info
+```
+
+需要 API Key 认证：是
+
+### 响应
+
+响应包含以下系统信息字段：
+
+```json
+{
+  "os": "linux",          // 操作系统类型
+  "arch": "amd64",        // 系统架构
+  "ver": "1.2.0",         // NodePass版本
+  "name": "example.com",  // 隧道主机名
+  "uptime": 11525,         // API运行时间（秒）
+  "log": "info",          // 日志级别
+  "tls": "1",             // TLS启用状态
+  "crt": "/path/to/cert", // 证书路径
+  "key": "/path/to/key"   // 密钥路径
+}
+```
+
+### 使用示例
+
+```javascript
+// 获取系统信息
+async function getSystemInfo() {
+  const response = await fetch(`${API_URL}/info`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': apiKey
+    }
+  });
+  
+  return await response.json();
+}
+
+// 显示服务运行时间
+function displayServiceUptime() {
+  getSystemInfo().then(info => {
+    console.log(`服务已运行: ${info.uptime} 秒`);
+    // 也可以格式化为更友好的显示
+    const hours = Math.floor(info.uptime / 3600);
+    const minutes = Math.floor((info.uptime % 3600) / 60);
+    const seconds = info.uptime % 60;
+    console.log(`服务已运行: ${hours}小时${minutes}分${seconds}秒`);
+  });
+}
+```
+
+### 监控最佳实践
+
+- **定期检查**：定期轮询此端点以确保服务正常运行
+- **版本验证**：在部署更新后检查版本号
+- **运行时间监控**：监控运行时间以检测意外重启
+- **日志级别验证**：确认当前日志级别符合预期
+
 ## API端点文档
 
 有关详细的API文档（包括请求和响应示例），请使用`/docs`端点提供的内置Swagger UI文档。这个交互式文档提供了以下全面信息：
@@ -790,132 +871,164 @@ http://localhost:9090/api/docs
 
 Swagger UI提供了一种方便的方式，直接在浏览器中探索和测试API。您可以针对运行中的NodePass主控实例执行API调用，并查看实际响应。
 
-## 最佳实践
+## 完整的API参考
 
-### 可扩展管理
+### 实例管理端点详细说明
 
-对于管理多个NodePass实例：
+#### GET /instances
+- **描述**：获取所有实例列表
+- **认证**：需要API Key
+- **响应**：实例数组
+- **示例**：
+```javascript
+const instances = await fetch(`${API_URL}/instances`, {
+  headers: { 'X-API-Key': apiKey }
+});
+```
 
-1. **批量操作**：实现批量操作以管理多个实例
-   ```javascript
-   async function bulkControlInstances(instanceIds, action) {
-     const promises = instanceIds.map(id => controlInstance(id, action));
-     return Promise.all(promises);
-   }
-   ```
+#### POST /instances
+- **描述**：创建新实例
+- **认证**：需要API Key
+- **请求体**：`{ "url": "client://或server://格式的URL" }`
+- **响应**：新创建的实例对象
+- **示例**：
+```javascript
+const newInstance = await fetch(`${API_URL}/instances`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ url: 'server://0.0.0.0:8080/localhost:3000' })
+});
+```
 
-2. **连接池化**：对API请求使用连接池
-   ```javascript
-   const http = require('http');
-   const agent = new http.Agent({ keepAlive: true, maxSockets: 50 });
-   
-   async function optimizedFetch(url, options = {}) {
-     return fetch(url, { ...options, agent });
-   }
-   ```
+#### GET /instances/{id}
+- **描述**：获取特定实例详情
+- **认证**：需要API Key
+- **响应**：实例对象
+- **示例**：
+```javascript
+const instance = await fetch(`${API_URL}/instances/abc123`, {
+  headers: { 'X-API-Key': apiKey }
+});
+```
 
-3. **缓存**：缓存实例详情以减少API调用
-   ```javascript
-   const instanceCache = new Map();
-   const CACHE_TTL = 60000; // 1分钟
-   
-   async function getCachedInstance(id) {
-     const now = Date.now();
-     const cached = instanceCache.get(id);
-     
-     if (cached && now - cached.timestamp < CACHE_TTL) {
-       return cached.data;
-     }
-     
-     const response = await fetch(`${API_URL}/instances/${id}`);
-     const data = await response.json();
-     
-     instanceCache.set(id, {
-       data: data.data,
-       timestamp: now
-     });
-     
-     return data.data;
-   }
-   ```
+#### PATCH /instances/{id}
+- **描述**：更新实例状态、别名或执行控制操作
+- **认证**：需要API Key
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart", "restart": true|false }`
+- **特点**：不中断正在运行的实例，仅更新指定字段
+- **示例**：
+```javascript
+// 更新别名和自启动策略
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    alias: 'Web服务器',
+    restart: true 
+  })
+});
 
-4. **自启动策略管理**：实现智能自启动策略
-   ```javascript
-   // 为关键实例启用自启动功能
-   async function enableCriticalInstanceAutoStart(instanceIds) {
-     const promises = instanceIds.map(id => 
-       setAutoStartPolicy(id, true)
-     );
-     return Promise.allSettled(promises);
-   }
-   
-   // 按自启动策略对实例进行分组管理
-   function groupInstancesByAutoStartPolicy(instances) {
-     return instances.reduce((groups, instance) => {
-       const key = instance.restart ? 'autoStart' : 'manual';
-       if (!groups[key]) groups[key] = [];
-       groups[key].push(instance);
-       return groups;
-     }, {});
-   }
-   
-   // 基于实例类型和重要性的智能自启动策略
-   async function applySmartAutoStartPolicy(instanceId, instanceType, priority) {
-     // 为服务器实例和高优先级客户端启用自启动
-     const shouldAutoStart = instanceType === 'server' || priority === 'high';
-     return setAutoStartPolicy(instanceId, shouldAutoStart);
-   }
-   ```
+// 控制实例操作
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ action: 'restart' })
+});
+```
 
-### 监控和健康检查
+#### PUT /instances/{id}
+- **描述**：完全更新实例URL配置
+- **认证**：需要API Key
+- **请求体**：`{ "url": "新的client://或server://格式的URL" }`
+- **特点**：会重启实例并重置流量统计
+- **限制**：API Key实例（ID为`********`）不支持此操作
+- **示例**：
+```javascript
+// 更新实例URL
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PUT',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    url: 'server://0.0.0.0:9090/localhost:8080?tls=1' 
+  })
+});
+```
 
-实现全面监控：
+#### DELETE /instances/{id}
+- **描述**：删除实例
+- **认证**：需要API Key
+- **响应**：204 No Content
+- **限制**：API Key实例（ID为`********`）不可删除
+- **示例**：
+```javascript
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'DELETE',
+  headers: { 'X-API-Key': apiKey }
+});
+```
 
-1. **API健康检查**：验证主控API是否响应
-   ```javascript
-   async function isApiHealthy() {
-     try {
-       const response = await fetch(`${API_URL}/instances`, {
-         method: 'GET',
-         timeout: 5000 // 5秒超时
-       });
-       
-       return response.status === 200;
-     } catch (error) {
-       return false;
-     }
-   }
-   ```
+### 其他端点
 
-2. **实例健康检查**：监控单个实例健康状态
-   ```javascript
-   async function checkInstanceHealth(id) {
-     try {
-       const response = await fetch(`${API_URL}/instances/${id}`);
-       const data = await response.json();
-       
-       if (!data.success) return false;
-       
-       return data.data.status === 'running';
-     } catch (error) {
-       return false;
-     }
-   }
-   ```
+#### GET /events
+- **描述**：建立SSE连接以接收实时事件
+- **认证**：需要API Key
+- **响应**：Server-Sent Events流
+- **事件类型**：`initial`, `create`, `update`, `delete`, `shutdown`, `log`
 
-## 总结
+#### GET /info
+- **描述**：获取主控服务信息
+- **认证**：需要API Key
+- **响应**：包含系统信息、版本、运行时间等
 
-NodePass主控模式API提供了强大的接口，用于以编程方式管理NodePass实例。在与前端应用集成时，特别注意：
+#### GET /openapi.json
+- **描述**：获取OpenAPI 3.1.1规范
+- **认证**：无需认证
+- **响应**：JSON格式的API规范
 
-1. **实例持久化** - 存储配置并处理重启
-2. **实例ID持久化** - 使用实例ID作为唯一标识符
-3. **自启动策略管理** - 为关键实例配置自动启动行为
-4. **适当的错误处理** - 从API错误中优雅恢复
-5. **流量统计** - 收集并可视化连接指标（需要启用调试模式）
+#### GET /docs
+- **描述**：Swagger UI文档界面
+- **认证**：无需认证
+- **响应**：HTML格式的交互式文档
 
-这些指南将帮助您构建前端应用与NodePass之间的健壮集成。
+### 实例URL格式规范
 
-有关NodePass内部机制的信息，请参阅[工作原理](/docs/zh/how-it-works.md)部分，其中包括：
-- 连接池详细信息
-- 信号通信协议
-- 数据传输
+实例URL必须遵循以下格式：
+
+#### 服务器模式 (Server Mode)
+```
+server://<bind_address>:<bind_port>/<target_host>:<target_port>?<parameters>
+```
+
+示例：
+- `server://0.0.0.0:8080/localhost:3000` - 在8080端口监听，转发到本地3000端口
+- `server://0.0.0.0:9090/localhost:8080?tls=1` - 启用TLS的服务器
+
+#### 客户端模式 (Client Mode)
+```
+client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
+```
+
+示例：
+- `client://example.com:8080/localhost:3000` - 连接到远程服务器，本地监听3000端口
+- `client://vpn.example.com:443/localhost:22?tls=1` - 通过TLS连接到VPN服务器
+
+#### 支持的参数
+
+| 参数 | 描述 | 值 | 默认值 |
+|------|------|----|----|
+| `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` |
+| `log` | 日志级别 | `trace`, `debug`, `info`, `warn`, `error` | `info` |
+| `crt` | 证书路径 | 文件路径 | 无 |
+| `key` | 私钥路径 | 文件路径 | 无 |
