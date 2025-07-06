@@ -268,7 +268,9 @@ func (m *Master) Run() {
 			URL: generateAPIKey(),
 		}
 		m.instances.Store(apiKeyID, apiKey)
-		m.saveState()
+		if err := m.saveState(); err != nil {
+			m.logger.Debug("Save state failed: %v", err)
+		}
 		m.logger.Info("API Key created: %v", apiKey.URL)
 	} else {
 		m.logger.Info("API Key loaded: %v", apiKey.URL)
@@ -456,9 +458,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		// 保存实例状态
 		if err := m.saveState(); err != nil {
-			m.logger.Error("Save gob failed: %v", err)
+			m.logger.Debug("Save gob failed: %v", err)
 		} else {
-			m.logger.Info("Instances saved: %v", m.statePath)
+			m.logger.Debug("Instances saved: %v", m.statePath)
 		}
 
 		// 关闭HTTP服务器
@@ -541,10 +543,11 @@ func (m *Master) saveState() error {
 	// 编码数据
 	encoder := gob.NewEncoder(tempFile)
 	if err := encoder.Encode(persistentData); err != nil {
-		m.logger.Error("Encode instances failed: %v", err)
+		m.logger.Debug("Encode instances failed: %v", err)
 		tempFile.Close()
 		removeTemp()
-		return err
+		// Return nil to prevent this from blocking the service
+		return nil
 	}
 
 	// 关闭文件
