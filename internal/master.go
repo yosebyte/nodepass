@@ -76,6 +76,7 @@ type Master struct {
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	startTime     time.Time           // 启动时间
+	loadBalancer  *LoadBalancer       // 负载均衡器
 }
 
 // Instance 实例信息
@@ -110,6 +111,41 @@ type InstanceLogWriter struct {
 	target     io.Writer      // 目标写入器
 	master     *Master        // 主控对象
 	statRegex  *regexp.Regexp // 统计信息正则表达式
+}
+
+// LoadBalancer 四层负载均衡器
+type LoadBalancer struct {
+	ListenPort    int                `json:"listen_port"`    // 监听端口
+	Backends      []string           `json:"backends"`       // 后端地址列表
+	HealthyNodes  []string           `json:"healthy_nodes"`  // 健康节点列表
+	CurrentIndex  int                `json:"current_index"`  // 轮询索引
+	TCPListener   net.Listener       `json:"-"`              // TCP监听器
+	UDPConn       net.PacketConn     `json:"-"`              // UDP连接
+	HealthChecker *HealthChecker     `json:"-"`              // 健康检查器
+	Running       bool               `json:"running"`        // 运行状态
+	ctx           context.Context    `json:"-"`              // 上下文
+	cancel        context.CancelFunc `json:"-"`              // 取消函数
+	mu            sync.RWMutex       `json:"-"`              // 读写锁
+	logger        *logs.Logger       `json:"-"`              // 日志器
+	udpSessions   sync.Map           `json:"-"`              // UDP会话映射
+}
+
+// HealthChecker 健康检查器
+type HealthChecker struct {
+	interval  time.Duration
+	timeout   time.Duration
+	ctx       context.Context
+	cancel    context.CancelFunc
+	lb        *LoadBalancer
+	logger    *logs.Logger
+}
+
+// UDPSession UDP会话信息
+type UDPSession struct {
+	clientAddr *net.UDPAddr
+	backendAddr string
+	lastActivity time.Time
+	conn       net.Conn
 }
 
 // NewInstanceLogWriter 创建新的实例日志写入器
@@ -155,6 +191,379 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		fmt.Fprintf(w.target, "%s [%s]", s, w.instanceID)
 	}
 	return len(p), nil
+}
+
+// NewLoadBalancer 创建新的负载均衡器
+func NewLoadBalancer(listenPort int, backends []string, logger *logs.Logger) *LoadBalancer {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &LoadBalancer{
+		ListenPort:   listenPort,
+		Backends:     backends,
+		HealthyNodes: make([]string, 0),
+		CurrentIndex: 0,
+		Running:      false,
+		ctx:          ctx,
+		cancel:       cancel,
+		logger:       logger,
+		udpSessions:  sync.Map{},
+	}
+}
+
+// Start 启动负载均衡器
+func (lb *LoadBalancer) Start() error {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	if lb.Running {
+		return fmt.Errorf("load balancer is already running")
+	}
+
+	// 启动TCP监听器
+	tcpAddr := fmt.Sprintf(":%d", lb.ListenPort)
+	tcpListener, err := net.Listen("tcp", tcpAddr)
+	if err != nil {
+		return fmt.Errorf("failed to start TCP listener: %v", err)
+	}
+	lb.TCPListener = tcpListener
+
+	// 启动UDP监听器
+	udpAddr := fmt.Sprintf(":%d", lb.ListenPort)
+	udpConn, err := net.ListenPacket("udp", udpAddr)
+	if err != nil {
+		tcpListener.Close()
+		return fmt.Errorf("failed to start UDP listener: %v", err)
+	}
+	lb.UDPConn = udpConn
+
+	// 启动健康检查器
+	lb.HealthChecker = NewHealthChecker(lb, lb.logger)
+	go lb.HealthChecker.Start()
+
+	// 启动TCP处理协程
+	go lb.handleTCPConnections()
+
+	// 启动UDP处理协程
+	go lb.handleUDPPackets()
+
+	// 启动UDP会话清理协程
+	go lb.cleanupUDPSessions()
+
+	lb.Running = true
+	lb.logger.Info("Load balancer started on port %d with %d backends", lb.ListenPort, len(lb.Backends))
+
+	return nil
+}
+
+// Stop 停止负载均衡器
+func (lb *LoadBalancer) Stop() error {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	if !lb.Running {
+		return nil
+	}
+
+	// 停止上下文
+	lb.cancel()
+
+	// 停止健康检查器
+	if lb.HealthChecker != nil {
+		lb.HealthChecker.Stop()
+	}
+
+	// 关闭监听器
+	if lb.TCPListener != nil {
+		lb.TCPListener.Close()
+	}
+	if lb.UDPConn != nil {
+		lb.UDPConn.Close()
+	}
+
+	// 清理UDP会话
+	lb.udpSessions.Range(func(key, value interface{}) bool {
+		if session, ok := value.(*UDPSession); ok {
+			if session.conn != nil {
+				session.conn.Close()
+			}
+		}
+		lb.udpSessions.Delete(key)
+		return true
+	})
+
+	lb.Running = false
+	lb.logger.Info("Load balancer stopped")
+
+	return nil
+}
+
+// selectBackend 选择后端服务器（轮询算法）
+func (lb *LoadBalancer) selectBackend() string {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	if len(lb.HealthyNodes) == 0 {
+		return ""
+	}
+
+	backend := lb.HealthyNodes[lb.CurrentIndex]
+	lb.CurrentIndex = (lb.CurrentIndex + 1) % len(lb.HealthyNodes)
+	return backend
+}
+
+// handleTCPConnections 处理TCP连接
+func (lb *LoadBalancer) handleTCPConnections() {
+	for {
+		conn, err := lb.TCPListener.Accept()
+		if err != nil {
+			select {
+			case <-lb.ctx.Done():
+				return
+			default:
+				lb.logger.Error("TCP accept error: %v", err)
+				continue
+			}
+		}
+
+		go lb.handleTCPConnection(conn)
+	}
+}
+
+// handleTCPConnection 处理单个TCP连接
+func (lb *LoadBalancer) handleTCPConnection(clientConn net.Conn) {
+	defer clientConn.Close()
+
+	// 选择后端服务器
+	backend := lb.selectBackend()
+	if backend == "" {
+		lb.logger.Error("No healthy backend available for TCP connection")
+		return
+	}
+
+	// 连接到后端
+	backendConn, err := net.DialTimeout("tcp", backend, 5*time.Second)
+	if err != nil {
+		lb.logger.Error("Failed to connect to backend %s: %v", backend, err)
+		return
+	}
+	defer backendConn.Close()
+
+	lb.logger.Debug("TCP connection established: %s -> %s", clientConn.RemoteAddr(), backend)
+
+	// 双向数据转发
+	go func() {
+		io.Copy(backendConn, clientConn)
+		backendConn.Close()
+	}()
+	io.Copy(clientConn, backendConn)
+}
+
+// handleUDPPackets 处理UDP数据包
+func (lb *LoadBalancer) handleUDPPackets() {
+	buffer := make([]byte, 65535)
+	for {
+		n, clientAddr, err := lb.UDPConn.ReadFrom(buffer)
+		if err != nil {
+			select {
+			case <-lb.ctx.Done():
+				return
+			default:
+				lb.logger.Error("UDP read error: %v", err)
+				continue
+			}
+		}
+
+		go lb.handleUDPPacket(buffer[:n], clientAddr)
+	}
+}
+
+// handleUDPPacket 处理单个UDP数据包
+func (lb *LoadBalancer) handleUDPPacket(data []byte, clientAddr net.Addr) {
+	sessionKey := clientAddr.String()
+	
+	// 检查是否存在会话
+	if sessionInterface, ok := lb.udpSessions.Load(sessionKey); ok {
+		session := sessionInterface.(*UDPSession)
+		session.lastActivity = time.Now()
+		
+		// 发送数据到后端
+		if _, err := session.conn.Write(data); err != nil {
+			lb.logger.Error("Failed to write to backend: %v", err)
+			session.conn.Close()
+			lb.udpSessions.Delete(sessionKey)
+			return
+		}
+		return
+	}
+
+	// 创建新会话
+	backend := lb.selectBackend()
+	if backend == "" {
+		lb.logger.Error("No healthy backend available for UDP packet")
+		return
+	}
+
+	// 连接到后端
+	backendConn, err := net.DialTimeout("udp", backend, 5*time.Second)
+	if err != nil {
+		lb.logger.Error("Failed to connect to backend %s: %v", backend, err)
+		return
+	}
+
+	// 创建会话
+	session := &UDPSession{
+		clientAddr:   clientAddr.(*net.UDPAddr),
+		backendAddr:  backend,
+		lastActivity: time.Now(),
+		conn:         backendConn,
+	}
+	lb.udpSessions.Store(sessionKey, session)
+
+	lb.logger.Debug("UDP session created: %s -> %s", clientAddr, backend)
+
+	// 发送数据到后端
+	if _, err := session.conn.Write(data); err != nil {
+		lb.logger.Error("Failed to write to backend: %v", err)
+		session.conn.Close()
+		lb.udpSessions.Delete(sessionKey)
+		return
+	}
+
+	// 启动响应处理协程
+	go lb.handleUDPResponse(session, sessionKey)
+}
+
+// handleUDPResponse 处理UDP响应
+func (lb *LoadBalancer) handleUDPResponse(session *UDPSession, sessionKey string) {
+	defer func() {
+		session.conn.Close()
+		lb.udpSessions.Delete(sessionKey)
+	}()
+
+	buffer := make([]byte, 65535)
+	for {
+		session.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		n, err := session.conn.Read(buffer)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				lb.logger.Debug("UDP session timeout: %s", sessionKey)
+			} else {
+				lb.logger.Error("UDP read error: %v", err)
+			}
+			return
+		}
+
+		// 转发响应到客户端
+		if _, err := lb.UDPConn.WriteTo(buffer[:n], session.clientAddr); err != nil {
+			lb.logger.Error("Failed to write to client: %v", err)
+			return
+		}
+
+		session.lastActivity = time.Now()
+	}
+}
+
+// cleanupUDPSessions 清理过期的UDP会话
+func (lb *LoadBalancer) cleanupUDPSessions() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-lb.ctx.Done():
+			return
+		case <-ticker.C:
+			now := time.Now()
+			lb.udpSessions.Range(func(key, value interface{}) bool {
+				session := value.(*UDPSession)
+				if now.Sub(session.lastActivity) > 60*time.Second {
+					session.conn.Close()
+					lb.udpSessions.Delete(key)
+					lb.logger.Debug("UDP session cleaned up: %s", key)
+				}
+				return true
+			})
+		}
+	}
+}
+
+// UpdateBackends 更新后端地址列表
+func (lb *LoadBalancer) UpdateBackends(backends []string) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	lb.Backends = backends
+	lb.logger.Info("Load balancer backends updated: %v", backends)
+}
+
+// NewHealthChecker 创建健康检查器
+func NewHealthChecker(lb *LoadBalancer, logger *logs.Logger) *HealthChecker {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &HealthChecker{
+		interval: 10 * time.Second,
+		timeout:  5 * time.Second,
+		ctx:      ctx,
+		cancel:   cancel,
+		lb:       lb,
+		logger:   logger,
+	}
+}
+
+// Start 启动健康检查器
+func (hc *HealthChecker) Start() {
+	ticker := time.NewTicker(hc.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-hc.ctx.Done():
+			return
+		case <-ticker.C:
+			hc.checkHealth()
+		}
+	}
+}
+
+// Stop 停止健康检查器
+func (hc *HealthChecker) Stop() {
+	hc.cancel()
+}
+
+// checkHealth 检查后端健康状态
+func (hc *HealthChecker) checkHealth() {
+	hc.lb.mu.Lock()
+	defer hc.lb.mu.Unlock()
+
+	var healthyNodes []string
+	for _, backend := range hc.lb.Backends {
+		if hc.isHealthy(backend) {
+			healthyNodes = append(healthyNodes, backend)
+		}
+	}
+
+	// 更新健康节点列表
+	oldHealthyCount := len(hc.lb.HealthyNodes)
+	hc.lb.HealthyNodes = healthyNodes
+	newHealthyCount := len(healthyNodes)
+
+	if oldHealthyCount != newHealthyCount {
+		hc.logger.Info("Healthy backends updated: %d/%d", newHealthyCount, len(hc.lb.Backends))
+	}
+
+	// 只有当健康节点数量变化时才重置轮询索引
+	if oldHealthyCount != newHealthyCount && len(healthyNodes) > 0 {
+		hc.lb.CurrentIndex = 0
+	}
+}
+
+// isHealthy 检查单个后端是否健康
+func (hc *HealthChecker) isHealthy(backend string) bool {
+	conn, err := net.DialTimeout("tcp", backend, hc.timeout)
+	if err != nil {
+		hc.logger.Debug("Backend %s is unhealthy: %v", backend, err)
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 // setCorsHeaders 设置跨域响应头
@@ -245,10 +654,12 @@ func (m *Master) Run() {
 
 	// 创建需要API Key认证的端点
 	protectedEndpoints := map[string]http.HandlerFunc{
-		fmt.Sprintf("%s/instances", m.prefix):  m.handleInstances,
-		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
-		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
-		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
+		fmt.Sprintf("%s/instances", m.prefix):           m.handleInstances,
+		fmt.Sprintf("%s/instances/", m.prefix):          m.handleInstanceDetail,
+		fmt.Sprintf("%s/events", m.prefix):              m.handleSSE,
+		fmt.Sprintf("%s/info", m.prefix):                m.handleInfo,
+		fmt.Sprintf("%s/load-balancer", m.prefix):       m.handleLoadBalancer,
+		fmt.Sprintf("%s/load-balancer/backends", m.prefix): m.handleLoadBalancerBackends,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -352,6 +763,11 @@ func (m *Master) Run() {
 // Shutdown 关闭主控
 func (m *Master) Shutdown(ctx context.Context) error {
 	return m.shutdown(ctx, func() {
+		// 停止负载均衡器
+		if m.loadBalancer != nil {
+			m.loadBalancer.Stop()
+		}
+
 		// 声明一个已关闭通道的集合，避免重复关闭
 		var closedChannels sync.Map
 
@@ -951,6 +1367,138 @@ func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...stri
 	}
 }
 
+// handleLoadBalancer 处理负载均衡器请求
+func (m *Master) handleLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		m.handleGetLoadBalancer(w, r)
+	case http.MethodPost:
+		m.handleCreateLoadBalancer(w, r)
+	case http.MethodDelete:
+		m.handleDeleteLoadBalancer(w, r)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetLoadBalancer 处理获取负载均衡器状态请求
+func (m *Master) handleGetLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not configured", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, m.loadBalancer)
+}
+
+// handleCreateLoadBalancer 处理创建负载均衡器请求
+func (m *Master) handleCreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	var reqData struct {
+		ListenPort int      `json:"listen_port"`
+		Backends   []string `json:"backends"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		httpError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if reqData.ListenPort <= 0 || reqData.ListenPort > 65535 {
+		httpError(w, "Invalid listen port", http.StatusBadRequest)
+		return
+	}
+
+	if len(reqData.Backends) == 0 {
+		httpError(w, "At least one backend is required", http.StatusBadRequest)
+		return
+	}
+
+	// 验证后端地址格式
+	for _, backend := range reqData.Backends {
+		if _, err := net.ResolveTCPAddr("tcp", backend); err != nil {
+			httpError(w, fmt.Sprintf("Invalid backend address: %s", backend), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// 如果已存在负载均衡器，先停止它
+	if m.loadBalancer != nil {
+		m.loadBalancer.Stop()
+	}
+
+	// 创建新的负载均衡器
+	m.loadBalancer = NewLoadBalancer(reqData.ListenPort, reqData.Backends, m.logger)
+
+	// 启动负载均衡器
+	if err := m.loadBalancer.Start(); err != nil {
+		httpError(w, fmt.Sprintf("Failed to start load balancer: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, m.loadBalancer)
+}
+
+// handleDeleteLoadBalancer 处理删除负载均衡器请求
+func (m *Master) handleDeleteLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not configured", http.StatusNotFound)
+		return
+	}
+
+	if err := m.loadBalancer.Stop(); err != nil {
+		httpError(w, fmt.Sprintf("Failed to stop load balancer: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	m.loadBalancer = nil
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleLoadBalancerBackends 处理负载均衡器后端管理请求
+func (m *Master) handleLoadBalancerBackends(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not configured", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		m.handleUpdateLoadBalancerBackends(w, r)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleUpdateLoadBalancerBackends 处理更新负载均衡器后端请求
+func (m *Master) handleUpdateLoadBalancerBackends(w http.ResponseWriter, r *http.Request) {
+	var reqData struct {
+		Backends []string `json:"backends"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		httpError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(reqData.Backends) == 0 {
+		httpError(w, "At least one backend is required", http.StatusBadRequest)
+		return
+	}
+
+	// 验证后端地址格式
+	for _, backend := range reqData.Backends {
+		if _, err := net.ResolveTCPAddr("tcp", backend); err != nil {
+			httpError(w, fmt.Sprintf("Invalid backend address: %s", backend), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// 更新后端地址列表
+	m.loadBalancer.UpdateBackends(reqData.Backends)
+
+	writeJSON(w, http.StatusOK, m.loadBalancer)
+}
+
 // startEventDispatcher 启动事件分发器
 func (m *Master) startEventDispatcher() {
 	for event := range m.notifyChannel {
@@ -1296,6 +1844,55 @@ func generateOpenAPISpec() string {
         }
       }
     },
+    "/load-balancer": {
+      "get": {
+        "summary": "Get load balancer status",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadBalancer"}}}},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Load balancer not configured"},
+          "405": {"description": "Method not allowed"}
+        }
+      },
+      "post": {
+        "summary": "Create load balancer",
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateLoadBalancerRequest"}}}},
+        "responses": {
+          "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadBalancer"}}}},
+          "400": {"description": "Invalid input"},
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"},
+          "500": {"description": "Internal server error"}
+        }
+      },
+      "delete": {
+        "summary": "Delete load balancer",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "204": {"description": "Deleted"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Load balancer not configured"},
+          "405": {"description": "Method not allowed"},
+          "500": {"description": "Internal server error"}
+        }
+      }
+    },
+    "/load-balancer/backends": {
+      "put": {
+        "summary": "Update load balancer backends",
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateLoadBalancerBackendsRequest"}}}},
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LoadBalancer"}}}},
+          "400": {"description": "Invalid input"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Load balancer not configured"},
+          "405": {"description": "Method not allowed"}
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "summary": "Get OpenAPI specification",
@@ -1368,6 +1965,31 @@ func generateOpenAPISpec() string {
           "tls": {"type": "string", "description": "TLS code"},
           "crt": {"type": "string", "description": "Certificate path"},
           "key": {"type": "string", "description": "Private key path"}
+        }
+      },
+      "LoadBalancer": {
+        "type": "object",
+        "properties": {
+          "listen_port": {"type": "integer", "description": "Listen port"},
+          "backends": {"type": "array", "items": {"type": "string"}, "description": "Backend addresses"},
+          "healthy_nodes": {"type": "array", "items": {"type": "string"}, "description": "Healthy backend nodes"},
+          "current_index": {"type": "integer", "description": "Current round-robin index"},
+          "running": {"type": "boolean", "description": "Running status"}
+        }
+      },
+      "CreateLoadBalancerRequest": {
+        "type": "object",
+        "required": ["listen_port", "backends"],
+        "properties": {
+          "listen_port": {"type": "integer", "minimum": 1, "maximum": 65535, "description": "Port to listen on"},
+          "backends": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Backend server addresses"}
+        }
+      },
+      "UpdateLoadBalancerBackendsRequest": {
+        "type": "object",
+        "required": ["backends"],
+        "properties": {
+          "backends": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "Backend server addresses"}
         }
       }
     }
