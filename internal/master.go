@@ -76,6 +76,7 @@ type Master struct {
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	startTime     time.Time           // 启动时间
+	loadBalancer  *LoadBalancer       // 负载均衡器
 }
 
 // Instance 实例信息
@@ -103,6 +104,102 @@ type InstanceEvent struct {
 	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
 }
 
+// LoadBalancer 负载均衡器
+type LoadBalancer struct {
+	groups sync.Map // 负载均衡组映射表 [string]*InstanceGroup
+	mu     sync.RWMutex
+}
+
+// InstanceGroup 负载均衡组
+type InstanceGroup struct {
+	Name      string   `json:"name"`      // 组名
+	Strategy  string   `json:"strategy"`  // 负载均衡策略
+	Instances []string `json:"instances"` // 实例ID列表
+	Current   int      `json:"current"`   // 当前轮询位置
+	mu        sync.RWMutex
+}
+
+// LoadBalancerGroupRequest 负载均衡组请求
+type LoadBalancerGroupRequest struct {
+	Name      string   `json:"name"`      // 组名
+	Instances []string `json:"instances"` // 实例ID列表
+	Strategy  string   `json:"strategy"`  // 负载均衡策略，默认为round-robin
+}
+
+// NewLoadBalancer 创建新的负载均衡器
+func NewLoadBalancer() *LoadBalancer {
+	return &LoadBalancer{}
+}
+
+// GetGroup 获取负载均衡组
+func (lb *LoadBalancer) GetGroup(name string) (*InstanceGroup, bool) {
+	if value, ok := lb.groups.Load(name); ok {
+		return value.(*InstanceGroup), true
+	}
+	return nil, false
+}
+
+// CreateGroup 创建负载均衡组
+func (lb *LoadBalancer) CreateGroup(name string, instances []string, strategy string) *InstanceGroup {
+	if strategy == "" {
+		strategy = "round-robin"
+	}
+	
+	group := &InstanceGroup{
+		Name:      name,
+		Strategy:  strategy,
+		Instances: instances,
+		Current:   0,
+	}
+	
+	lb.groups.Store(name, group)
+	return group
+}
+
+// DeleteGroup 删除负载均衡组
+func (lb *LoadBalancer) DeleteGroup(name string) bool {
+	if _, ok := lb.groups.Load(name); ok {
+		lb.groups.Delete(name)
+		return true
+	}
+	return false
+}
+
+// GetAllGroups 获取所有负载均衡组
+func (lb *LoadBalancer) GetAllGroups() []*InstanceGroup {
+	var groups []*InstanceGroup
+	lb.groups.Range(func(key, value any) bool {
+		groups = append(groups, value.(*InstanceGroup))
+		return true
+	})
+	return groups
+}
+
+// GetNextInstance 获取下一个实例（轮询算法）
+func (ig *InstanceGroup) GetNextInstance() (string, bool) {
+	ig.mu.Lock()
+	defer ig.mu.Unlock()
+	
+	if len(ig.Instances) == 0 {
+		return "", false
+	}
+	
+	instanceID := ig.Instances[ig.Current]
+	ig.Current = (ig.Current + 1) % len(ig.Instances)
+	return instanceID, true
+}
+
+// UpdateInstances 更新实例列表
+func (ig *InstanceGroup) UpdateInstances(instances []string) {
+	ig.mu.Lock()
+	defer ig.mu.Unlock()
+	
+	ig.Instances = instances
+	if ig.Current >= len(instances) {
+		ig.Current = 0
+	}
+}
+
 // InstanceLogWriter 实例日志写入器
 type InstanceLogWriter struct {
 	instanceID string         // 实例ID
@@ -110,6 +207,14 @@ type InstanceLogWriter struct {
 	target     io.Writer      // 目标写入器
 	master     *Master        // 主控对象
 	statRegex  *regexp.Regexp // 统计信息正则表达式
+}
+
+// PersistentState 持久化状态结构
+type PersistentState struct {
+	Instances   map[string]*Instance      `json:"instances"`   // 实例数据
+	LBGroups    map[string]*InstanceGroup `json:"lb_groups"`   // 负载均衡组数据
+	Version     string                    `json:"version"`     // 状态版本
+	LastUpdated time.Time                 `json:"last_updated"` // 最后更新时间
 }
 
 // NewInstanceLogWriter 创建新的实例日志写入器
@@ -209,6 +314,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
 		notifyChannel: make(chan *InstanceEvent, 1024),
 		startTime:     time.Now(),
+		loadBalancer:  NewLoadBalancer(),
 	}
 	master.tunnelTCPAddr = host
 
@@ -245,10 +351,12 @@ func (m *Master) Run() {
 
 	// 创建需要API Key认证的端点
 	protectedEndpoints := map[string]http.HandlerFunc{
-		fmt.Sprintf("%s/instances", m.prefix):  m.handleInstances,
-		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
-		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
-		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
+		fmt.Sprintf("%s/instances", m.prefix):    m.handleInstances,
+		fmt.Sprintf("%s/instances/", m.prefix):   m.handleInstanceDetail,
+		fmt.Sprintf("%s/lb-groups", m.prefix):    m.handleLBGroups,
+		fmt.Sprintf("%s/lb-groups/", m.prefix):   m.handleLBGroupDetail,
+		fmt.Sprintf("%s/events", m.prefix):       m.handleSSE,
+		fmt.Sprintf("%s/info", m.prefix):         m.handleInfo,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -430,17 +538,29 @@ func (m *Master) Shutdown(ctx context.Context) error {
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
 	// 创建持久化数据
-	persistentData := make(map[string]*Instance)
+	persistentData := &PersistentState{
+		Instances:   make(map[string]*Instance),
+		LBGroups:    make(map[string]*InstanceGroup),
+		Version:     "1.0",
+		LastUpdated: time.Now(),
+	}
 
-	// 从sync.Map转换数据
+	// 从sync.Map转换实例数据
 	m.instances.Range(func(key, value any) bool {
 		instance := value.(*Instance)
-		persistentData[key.(string)] = instance
+		persistentData.Instances[key.(string)] = instance
 		return true
 	})
 
-	// 如果没有实例，直接返回
-	if len(persistentData) == 0 {
+	// 从sync.Map转换负载均衡组数据
+	m.loadBalancer.groups.Range(func(key, value any) bool {
+		group := value.(*InstanceGroup)
+		persistentData.LBGroups[key.(string)] = group
+		return true
+	})
+
+	// 如果没有数据，直接返回
+	if len(persistentData.Instances) == 0 && len(persistentData.LBGroups) == 0 {
 		// 如果状态文件存在，删除它
 		if _, err := os.Stat(m.statePath); err == nil {
 			return os.Remove(m.statePath)
@@ -472,7 +592,7 @@ func (m *Master) saveState() error {
 	// 编码数据
 	encoder := gob.NewEncoder(tempFile)
 	if err := encoder.Encode(persistentData); err != nil {
-		m.logger.Error("Encode instances failed: %v", err)
+		m.logger.Error("Encode state failed: %v", err)
 		tempFile.Close()
 		removeTemp()
 		return err
@@ -510,16 +630,37 @@ func (m *Master) loadState() {
 	}
 	defer file.Close()
 
-	// 解码数据
-	var persistentData map[string]*Instance
+	// 首先尝试解码新格式数据
+	var newPersistentData PersistentState
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&persistentData); err != nil {
-		m.logger.Error("Decode file failed: %v", err)
+	if err := decoder.Decode(&newPersistentData); err != nil {
+		// 如果新格式失败，尝试旧格式
+		file.Seek(0, 0)
+		var oldPersistentData map[string]*Instance
+		decoder = gob.NewDecoder(file)
+		if err := decoder.Decode(&oldPersistentData); err != nil {
+			m.logger.Error("Decode file failed: %v", err)
+			return
+		}
+
+		// 恢复实例（旧格式）
+		for id, instance := range oldPersistentData {
+			instance.stopped = make(chan struct{})
+			m.instances.Store(id, instance)
+
+			// 处理自启动
+			if instance.Restart {
+				go m.startInstance(instance)
+				m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
+			}
+		}
+
+		m.logger.Info("Loaded %v instances from %v (old format)", len(oldPersistentData), m.statePath)
 		return
 	}
 
-	// 恢复实例
-	for id, instance := range persistentData {
+	// 恢复实例（新格式）
+	for id, instance := range newPersistentData.Instances {
 		instance.stopped = make(chan struct{})
 		m.instances.Store(id, instance)
 
@@ -530,7 +671,13 @@ func (m *Master) loadState() {
 		}
 	}
 
-	m.logger.Info("Loaded %v instances from %v", len(persistentData), m.statePath)
+	// 恢复负载均衡组
+	for name, group := range newPersistentData.LBGroups {
+		m.loadBalancer.groups.Store(name, group)
+	}
+
+	m.logger.Info("Loaded %v instances and %v load balancer groups from %v", 
+		len(newPersistentData.Instances), len(newPersistentData.LBGroups), m.statePath)
 }
 
 // handleOpenAPISpec 处理OpenAPI规范请求
@@ -951,6 +1098,178 @@ func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...stri
 	}
 }
 
+// handleLBGroups 处理负载均衡组集合请求
+func (m *Master) handleLBGroups(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		// 获取所有负载均衡组
+		groups := m.loadBalancer.GetAllGroups()
+		writeJSON(w, http.StatusOK, groups)
+
+	case http.MethodPost:
+		// 创建新的负载均衡组
+		var reqData LoadBalancerGroupRequest
+		if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil || reqData.Name == "" {
+			httpError(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// 检查组是否已存在
+		if _, exists := m.loadBalancer.GetGroup(reqData.Name); exists {
+			httpError(w, "Load balancer group already exists", http.StatusConflict)
+			return
+		}
+
+		// 验证实例是否存在
+		for _, instanceID := range reqData.Instances {
+			if _, exists := m.findInstance(instanceID); !exists {
+				httpError(w, fmt.Sprintf("Instance %s not found", instanceID), http.StatusBadRequest)
+				return
+			}
+		}
+
+		// 创建负载均衡组
+		group := m.loadBalancer.CreateGroup(reqData.Name, reqData.Instances, reqData.Strategy)
+		
+		// 保存状态
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			m.saveState()
+		}()
+
+		writeJSON(w, http.StatusCreated, group)
+
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleLBGroupDetail 处理单个负载均衡组请求
+func (m *Master) handleLBGroupDetail(w http.ResponseWriter, r *http.Request) {
+	// 获取组名
+	name := strings.TrimPrefix(r.URL.Path, fmt.Sprintf("%s/lb-groups/", m.prefix))
+	if name == "" || name == "/" {
+		httpError(w, "Load balancer group name is required", http.StatusBadRequest)
+		return
+	}
+
+	// 查找负载均衡组
+	group, ok := m.loadBalancer.GetGroup(name)
+	if !ok {
+		httpError(w, "Load balancer group not found", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		m.handleGetLBGroup(w, group)
+	case http.MethodPut:
+		m.handlePutLBGroup(w, r, name, group)
+	case http.MethodDelete:
+		m.handleDeleteLBGroup(w, name, group)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleGetLBGroup 处理获取负载均衡组信息请求
+func (m *Master) handleGetLBGroup(w http.ResponseWriter, group *InstanceGroup) {
+	writeJSON(w, http.StatusOK, group)
+}
+
+// handlePutLBGroup 处理更新负载均衡组请求
+func (m *Master) handlePutLBGroup(w http.ResponseWriter, r *http.Request, name string, group *InstanceGroup) {
+	var reqData LoadBalancerGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		httpError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// 验证实例是否存在
+	for _, instanceID := range reqData.Instances {
+		if _, exists := m.findInstance(instanceID); !exists {
+			httpError(w, fmt.Sprintf("Instance %s not found", instanceID), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// 更新负载均衡组
+	group.UpdateInstances(reqData.Instances)
+	if reqData.Strategy != "" {
+		group.Strategy = reqData.Strategy
+	}
+
+	// 保存状态
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		m.saveState()
+	}()
+
+	writeJSON(w, http.StatusOK, group)
+}
+
+// handleDeleteLBGroup 处理删除负载均衡组请求
+func (m *Master) handleDeleteLBGroup(w http.ResponseWriter, name string, group *InstanceGroup) {
+	// 删除负载均衡组
+	m.loadBalancer.DeleteGroup(name)
+
+	// 保存状态
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		m.saveState()
+	}()
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetHealthyInstances 获取健康的实例列表
+func (m *Master) GetHealthyInstances(instanceIDs []string) []string {
+	var healthy []string
+	for _, instanceID := range instanceIDs {
+		if instance, exists := m.findInstance(instanceID); exists && instance.Status == "running" {
+			healthy = append(healthy, instanceID)
+		}
+	}
+	return healthy
+}
+
+// GetNextInstanceFromGroup 从负载均衡组获取下一个健康实例
+func (m *Master) GetNextInstanceFromGroup(groupName string) (*Instance, error) {
+	group, exists := m.loadBalancer.GetGroup(groupName)
+	if !exists {
+		return nil, fmt.Errorf("load balancer group %s not found", groupName)
+	}
+
+	// 获取健康的实例
+	healthyInstances := m.GetHealthyInstances(group.Instances)
+	if len(healthyInstances) == 0 {
+		return nil, fmt.Errorf("no healthy instances in group %s", groupName)
+	}
+
+	// 根据策略选择实例
+	var selectedInstanceID string
+	switch group.Strategy {
+	case "round-robin":
+		// 使用轮询算法选择实例
+		group.mu.Lock()
+		if len(healthyInstances) > 0 {
+			selectedInstanceID = healthyInstances[group.Current%len(healthyInstances)]
+			group.Current++
+		}
+		group.mu.Unlock()
+	default:
+		// 默认使用第一个健康实例
+		selectedInstanceID = healthyInstances[0]
+	}
+
+	instance, exists := m.findInstance(selectedInstanceID)
+	if !exists {
+		return nil, fmt.Errorf("selected instance %s not found", selectedInstanceID)
+	}
+
+	return instance, nil
+}
+
 // startEventDispatcher 启动事件分发器
 func (m *Master) startEventDispatcher() {
 	for event := range m.notifyChannel {
@@ -1193,7 +1512,7 @@ func generateOpenAPISpec() string {
   "openapi": "3.1.1",
   "info": {
     "title": "NodePass API",
-    "description": "API for managing NodePass server and client instances",
+    "description": "API for managing NodePass server and client instances and load balancer groups",
     "version": "%s"
   },
   "servers": [{"url": "/{prefix}/v1", "variables": {"prefix": {"default": "api", "description": "API prefix path"}}}],
@@ -1274,6 +1593,66 @@ func generateOpenAPISpec() string {
         }
       }
     },
+    "/lb-groups": {
+      "get": {
+        "summary": "List all load balancer groups",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/InstanceGroup"}}}}},
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"}
+        }
+      },
+      "post": {
+        "summary": "Create a new load balancer group",
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateLBGroupRequest"}}}},
+        "responses": {
+          "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InstanceGroup"}}}},
+          "400": {"description": "Invalid input"},
+          "401": {"description": "Unauthorized"},
+          "405": {"description": "Method not allowed"},
+          "409": {"description": "Load balancer group already exists"}
+        }
+      }
+    },
+    "/lb-groups/{name}": {
+      "parameters": [{"name": "name", "in": "path", "required": true, "schema": {"type": "string"}}],
+      "get": {
+        "summary": "Get load balancer group details",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InstanceGroup"}}}},
+          "400": {"description": "Load balancer group name required"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
+        }
+      },
+      "put": {
+        "summary": "Update load balancer group",
+        "security": [{"ApiKeyAuth": []}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateLBGroupRequest"}}}},
+        "responses": {
+          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/InstanceGroup"}}}},
+          "400": {"description": "Load balancer group name required or invalid input"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
+        }
+      },
+      "delete": {
+        "summary": "Delete load balancer group",
+        "security": [{"ApiKeyAuth": []}],
+        "responses": {
+          "204": {"description": "Deleted"},
+          "400": {"description": "Load balancer group name required"},
+          "401": {"description": "Unauthorized"},
+          "404": {"description": "Not found"},
+          "405": {"description": "Method not allowed"}
+        }
+      }
+    },
     "/events": {
       "get": {
         "summary": "Subscribe to instance events",
@@ -1338,10 +1717,28 @@ func generateOpenAPISpec() string {
           "udptx": {"type": "integer", "description": "UDP transmitted bytes"}
         }
       },
+      "InstanceGroup": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "description": "Load balancer group name"},
+          "strategy": {"type": "string", "enum": ["round-robin"], "description": "Load balancing strategy"},
+          "instances": {"type": "array", "items": {"type": "string"}, "description": "List of instance IDs"},
+          "current": {"type": "integer", "description": "Current round-robin position"}
+        }
+      },
       "CreateInstanceRequest": {
         "type": "object",
         "required": ["url"],
         "properties": {"url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}}
+      },
+      "CreateLBGroupRequest": {
+        "type": "object",
+        "required": ["name", "instances"],
+        "properties": {
+          "name": {"type": "string", "description": "Load balancer group name"},
+          "instances": {"type": "array", "items": {"type": "string"}, "description": "List of instance IDs"},
+          "strategy": {"type": "string", "enum": ["round-robin"], "description": "Load balancing strategy", "default": "round-robin"}
+        }
       },
       "UpdateInstanceRequest": {
         "type": "object",
@@ -1349,6 +1746,13 @@ func generateOpenAPISpec() string {
           "alias": {"type": "string", "description": "Instance alias"},
           "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
           "restart": {"type": "boolean", "description": "Instance restart policy"}
+        }
+      },
+      "UpdateLBGroupRequest": {
+        "type": "object",
+        "properties": {
+          "instances": {"type": "array", "items": {"type": "string"}, "description": "List of instance IDs"},
+          "strategy": {"type": "string", "enum": ["round-robin"], "description": "Load balancing strategy"}
         }
       },
       "PutInstanceRequest": {
