@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -59,6 +61,37 @@ const swaggerUIHTML = `<!DOCTYPE html>
 </body>
 </html>`
 
+// PersistentData 持久化数据结构
+type PersistentData struct {
+	Instances    map[string]*Instance `json:"instances"`
+	LoadBalancer *LoadBalancer        `json:"load_balancer,omitempty"`
+}
+
+// LoadBalancer 负载均衡器
+type LoadBalancer struct {
+	ListenPort      int      `json:"listen_port"`
+	Backends        []string `json:"backends"`
+	HealthyNodes    []string `json:"healthy_nodes"`
+	CurrentIndex    int64    `json:"current_index"`
+	HealthInterval  int      `json:"health_check_interval"`
+	HealthTimeout   int      `json:"health_check_timeout"`
+	Server          *http.Server `json:"-"`
+	HealthChecker   *HealthChecker `json:"-"`
+	ReverseProxy    *httputil.ReverseProxy `json:"-"`
+	mu              sync.RWMutex `json:"-"`
+	running         bool     `json:"-"`
+	stopChan        chan struct{} `json:"-"`
+}
+
+// HealthChecker 健康检查器
+type HealthChecker struct {
+	loadBalancer *LoadBalancer
+	interval     time.Duration
+	timeout      time.Duration
+	logger       *logs.Logger
+	stopChan     chan struct{}
+}
+
 // Master 实现主控模式功能
 type Master struct {
 	Common                            // 继承通用功能
@@ -69,6 +102,7 @@ type Master struct {
 	crtPath       string              // 证书路径
 	keyPath       string              // 密钥路径
 	instances     sync.Map            // 实例映射表
+	loadBalancer  *LoadBalancer       // 负载均衡器
 	server        *http.Server        // HTTP服务器
 	tlsConfig     *tls.Config         // TLS配置
 	masterURL     *url.URL            // 主控URL
@@ -245,10 +279,12 @@ func (m *Master) Run() {
 
 	// 创建需要API Key认证的端点
 	protectedEndpoints := map[string]http.HandlerFunc{
-		fmt.Sprintf("%s/instances", m.prefix):  m.handleInstances,
-		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
-		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
-		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
+		fmt.Sprintf("%s/instances", m.prefix):           m.handleInstances,
+		fmt.Sprintf("%s/instances/", m.prefix):          m.handleInstanceDetail,
+		fmt.Sprintf("%s/events", m.prefix):              m.handleSSE,
+		fmt.Sprintf("%s/info", m.prefix):                m.handleInfo,
+		fmt.Sprintf("%s/load-balancer", m.prefix):       m.handleLoadBalancer,
+		fmt.Sprintf("%s/load-balancer/backends", m.prefix): m.handleLoadBalancerBackends,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -410,6 +446,11 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
+		// 停止负载均衡器
+		if m.loadBalancer != nil {
+			m.stopLoadBalancer()
+		}
+
 		// 关闭事件通知通道，停止事件分发器
 		close(m.notifyChannel)
 
@@ -430,17 +471,45 @@ func (m *Master) Shutdown(ctx context.Context) error {
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
 	// 创建持久化数据
-	persistentData := make(map[string]*Instance)
+	persistentData := &PersistentData{
+		Instances: make(map[string]*Instance),
+	}
 
-	// 从sync.Map转换数据
+	// 从sync.Map转换数据 - 只保存可序列化的字段
 	m.instances.Range(func(key, value any) bool {
 		instance := value.(*Instance)
-		persistentData[key.(string)] = instance
+		// 创建一个新的实例对象，只包含可序列化的字段
+		cleanInstance := &Instance{
+			ID:      instance.ID,
+			Alias:   instance.Alias,
+			Type:    instance.Type,
+			Status:  instance.Status,
+			URL:     instance.URL,
+			Restart: instance.Restart,
+			TCPRX:   instance.TCPRX,
+			TCPTX:   instance.TCPTX,
+			UDPRX:   instance.UDPRX,
+			UDPTX:   instance.UDPTX,
+		}
+		persistentData.Instances[key.(string)] = cleanInstance
 		return true
 	})
 
-	// 如果没有实例，直接返回
-	if len(persistentData) == 0 {
+	// 如果有负载均衡器，保存它
+	if m.loadBalancer != nil {
+		// 创建一个简化的负载均衡器用于序列化
+		persistentData.LoadBalancer = &LoadBalancer{
+			ListenPort:     m.loadBalancer.ListenPort,
+			Backends:       m.loadBalancer.Backends,
+			HealthyNodes:   m.loadBalancer.HealthyNodes,
+			CurrentIndex:   m.loadBalancer.CurrentIndex,
+			HealthInterval: m.loadBalancer.HealthInterval,
+			HealthTimeout:  m.loadBalancer.HealthTimeout,
+		}
+	}
+
+	// 如果没有实例也没有负载均衡器，直接返回
+	if len(persistentData.Instances) == 0 && persistentData.LoadBalancer == nil {
 		// 如果状态文件存在，删除它
 		if _, err := os.Stat(m.statePath); err == nil {
 			return os.Remove(m.statePath)
@@ -510,16 +579,23 @@ func (m *Master) loadState() {
 	}
 	defer file.Close()
 
-	// 解码数据
-	var persistentData map[string]*Instance
+	// 尝试解码新格式的数据
+	var persistentData PersistentData
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&persistentData); err != nil {
-		m.logger.Error("Decode file failed: %v", err)
-		return
+		// 如果新格式失败，尝试旧格式
+		file.Seek(0, 0)
+		var oldData map[string]*Instance
+		decoder = gob.NewDecoder(file)
+		if err := decoder.Decode(&oldData); err != nil {
+			m.logger.Error("Decode file failed: %v", err)
+			return
+		}
+		persistentData.Instances = oldData
 	}
 
 	// 恢复实例
-	for id, instance := range persistentData {
+	for id, instance := range persistentData.Instances {
 		instance.stopped = make(chan struct{})
 		m.instances.Store(id, instance)
 
@@ -530,7 +606,15 @@ func (m *Master) loadState() {
 		}
 	}
 
-	m.logger.Info("Loaded %v instances from %v", len(persistentData), m.statePath)
+	// 恢复负载均衡器
+	if persistentData.LoadBalancer != nil {
+		m.loadBalancer = persistentData.LoadBalancer
+		m.loadBalancer.stopChan = make(chan struct{})
+		m.loadBalancer.mu = sync.RWMutex{}
+		m.logger.Info("Loaded load balancer with %v backends", len(m.loadBalancer.Backends))
+	}
+
+	m.logger.Info("Loaded %v instances from %v", len(persistentData.Instances), m.statePath)
 }
 
 // handleOpenAPISpec 处理OpenAPI规范请求
@@ -1373,4 +1457,309 @@ func generateOpenAPISpec() string {
     }
   }
 }`, openAPIVersion)
+}
+
+// handleLoadBalancer 处理负载均衡器请求
+func (m *Master) handleLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		m.handleCreateLoadBalancer(w, r)
+	case http.MethodGet:
+		m.handleGetLoadBalancer(w, r)
+	case http.MethodDelete:
+		m.handleDeleteLoadBalancer(w, r)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleLoadBalancerBackends 处理负载均衡器后端更新请求
+func (m *Master) handleLoadBalancerBackends(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPut:
+		m.handleUpdateLoadBalancerBackends(w, r)
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleCreateLoadBalancer 处理创建负载均衡器请求
+func (m *Master) handleCreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	var reqData struct {
+		ListenPort          int      `json:"listen_port"`
+		Backends            []string `json:"backends"`
+		HealthCheckInterval int      `json:"health_check_interval,omitempty"`
+		HealthCheckTimeout  int      `json:"health_check_timeout,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		httpError(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 验证参数
+	if reqData.ListenPort <= 0 || reqData.ListenPort > 65535 {
+		httpError(w, "Invalid listen port", http.StatusBadRequest)
+		return
+	}
+
+	if len(reqData.Backends) == 0 {
+		httpError(w, "At least one backend is required", http.StatusBadRequest)
+		return
+	}
+
+	// 检查是否已经存在负载均衡器
+	if m.loadBalancer != nil && m.loadBalancer.running {
+		httpError(w, "Load balancer already exists", http.StatusConflict)
+		return
+	}
+
+	// 设置默认值
+	if reqData.HealthCheckInterval == 0 {
+		reqData.HealthCheckInterval = 30
+	}
+	if reqData.HealthCheckTimeout == 0 {
+		reqData.HealthCheckTimeout = 5
+	}
+
+	// 创建负载均衡器
+	lb := &LoadBalancer{
+		ListenPort:     reqData.ListenPort,
+		Backends:       reqData.Backends,
+		HealthyNodes:   make([]string, 0),
+		CurrentIndex:   0,
+		HealthInterval: reqData.HealthCheckInterval,
+		HealthTimeout:  reqData.HealthCheckTimeout,
+		stopChan:       make(chan struct{}),
+		mu:             sync.RWMutex{},
+	}
+
+	// 启动负载均衡器
+	if err := m.startLoadBalancer(lb); err != nil {
+		httpError(w, fmt.Sprintf("Failed to start load balancer: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	m.loadBalancer = lb
+	m.saveState()
+
+	writeJSON(w, http.StatusCreated, lb)
+}
+
+// handleGetLoadBalancer 处理获取负载均衡器状态请求
+func (m *Master) handleGetLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not found", http.StatusNotFound)
+		return
+	}
+
+	m.loadBalancer.mu.RLock()
+	defer m.loadBalancer.mu.RUnlock()
+
+	writeJSON(w, http.StatusOK, m.loadBalancer)
+}
+
+// handleDeleteLoadBalancer 处理删除负载均衡器请求
+func (m *Master) handleDeleteLoadBalancer(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not found", http.StatusNotFound)
+		return
+	}
+
+	m.stopLoadBalancer()
+	m.loadBalancer = nil
+	m.saveState()
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Load balancer stopped"})
+}
+
+// handleUpdateLoadBalancerBackends 处理更新负载均衡器后端请求
+func (m *Master) handleUpdateLoadBalancerBackends(w http.ResponseWriter, r *http.Request) {
+	if m.loadBalancer == nil {
+		httpError(w, "Load balancer not found", http.StatusNotFound)
+		return
+	}
+
+	var reqData struct {
+		Backends []string `json:"backends"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+		httpError(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if len(reqData.Backends) == 0 {
+		httpError(w, "At least one backend is required", http.StatusBadRequest)
+		return
+	}
+
+	m.loadBalancer.mu.Lock()
+	m.loadBalancer.Backends = reqData.Backends
+	m.loadBalancer.HealthyNodes = make([]string, 0)
+	m.loadBalancer.CurrentIndex = 0
+	m.loadBalancer.mu.Unlock()
+
+	m.saveState()
+
+	writeJSON(w, http.StatusOK, m.loadBalancer)
+}
+
+// startLoadBalancer 启动负载均衡器
+func (m *Master) startLoadBalancer(lb *LoadBalancer) error {
+	// 创建反向代理
+	lb.ReverseProxy = &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			backend := m.getNextBackend(lb)
+			if backend == "" {
+				return
+			}
+
+			backendURL, err := url.Parse(backend)
+			if err != nil {
+				m.logger.Error("Invalid backend URL: %v", err)
+				return
+			}
+
+			req.URL.Scheme = backendURL.Scheme
+			req.URL.Host = backendURL.Host
+			req.URL.Path = backendURL.Path + req.URL.Path
+			req.Header.Set("X-Forwarded-For", req.RemoteAddr)
+			req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
+			req.Header.Set("X-Forwarded-Proto", req.URL.Scheme)
+		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			m.logger.Error("Load balancer proxy error: %v", err)
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		},
+	}
+
+	// 启动HTTP服务器
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		lb.ReverseProxy.ServeHTTP(w, r)
+	})
+
+	lb.Server = &http.Server{
+		Addr:    fmt.Sprintf(":%d", lb.ListenPort),
+		Handler: mux,
+	}
+
+	// 启动健康检查器
+	lb.HealthChecker = &HealthChecker{
+		loadBalancer: lb,
+		interval:     time.Duration(lb.HealthInterval) * time.Second,
+		timeout:      time.Duration(lb.HealthTimeout) * time.Second,
+		logger:       m.logger,
+		stopChan:     make(chan struct{}),
+	}
+
+	go lb.HealthChecker.start()
+
+	// 启动服务器
+	go func() {
+		if err := lb.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			m.logger.Error("Load balancer server error: %v", err)
+		}
+	}()
+
+	lb.running = true
+	m.logger.Info("Load balancer started on port %d with %d backends", lb.ListenPort, len(lb.Backends))
+
+	return nil
+}
+
+// stopLoadBalancer 停止负载均衡器
+func (m *Master) stopLoadBalancer() {
+	if m.loadBalancer == nil {
+		return
+	}
+
+	m.loadBalancer.running = false
+
+	// 停止健康检查器
+	if m.loadBalancer.HealthChecker != nil {
+		close(m.loadBalancer.HealthChecker.stopChan)
+	}
+
+	// 停止HTTP服务器
+	if m.loadBalancer.Server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		m.loadBalancer.Server.Shutdown(ctx)
+	}
+
+	// 停止负载均衡器
+	close(m.loadBalancer.stopChan)
+
+	m.logger.Info("Load balancer stopped")
+}
+
+// getNextBackend 获取下一个健康的后端
+func (m *Master) getNextBackend(lb *LoadBalancer) string {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	if len(lb.HealthyNodes) == 0 {
+		return ""
+	}
+
+	// 轮询算法
+	index := atomic.AddInt64(&lb.CurrentIndex, 1) % int64(len(lb.HealthyNodes))
+	return lb.HealthyNodes[index]
+}
+
+// HealthChecker 健康检查器方法
+func (hc *HealthChecker) start() {
+	ticker := time.NewTicker(hc.interval)
+	defer ticker.Stop()
+
+	// 立即执行一次健康检查
+	hc.checkHealth()
+
+	for {
+		select {
+		case <-hc.stopChan:
+			return
+		case <-ticker.C:
+			hc.checkHealth()
+		}
+	}
+}
+
+// checkHealth 执行健康检查
+func (hc *HealthChecker) checkHealth() {
+	hc.loadBalancer.mu.Lock()
+	defer hc.loadBalancer.mu.Unlock()
+
+	healthyNodes := make([]string, 0)
+
+	for _, backend := range hc.loadBalancer.Backends {
+		if hc.isHealthy(backend) {
+			healthyNodes = append(healthyNodes, backend)
+		}
+	}
+
+	hc.loadBalancer.HealthyNodes = healthyNodes
+	hc.logger.Debug("Health check completed: %d/%d backends healthy", len(healthyNodes), len(hc.loadBalancer.Backends))
+}
+
+// isHealthy 检查单个后端是否健康
+func (hc *HealthChecker) isHealthy(backend string) bool {
+	client := &http.Client{
+		Timeout: hc.timeout,
+	}
+
+	req, err := http.NewRequest("HEAD", backend, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode < 500
 }
