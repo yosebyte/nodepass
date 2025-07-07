@@ -692,6 +692,20 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
+			// 重置流量统计
+			if reqData.Action == "reset" {
+				instance.TCPRX = 0
+				instance.TCPTX = 0
+				instance.UDPRX = 0
+				instance.UDPTX = 0
+				m.instances.Store(id, instance)
+				m.saveState()
+				m.logger.Info("Traffic stats reset: [%v]", instance.ID)
+
+				// 发送流量统计重置事件
+				m.sendSSEEvent("update", instance)
+			}
+
 			// 更新自启动设置
 			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
 				instance.Restart = *reqData.Restart
@@ -715,7 +729,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			}
 
 			// 处理当前实例操作
-			if reqData.Action != "" {
+			if reqData.Action != "" && reqData.Action != "reset" {
 				m.processInstanceAction(instance, reqData.Action)
 			}
 		}
@@ -1347,7 +1361,7 @@ func generateOpenAPISpec() string {
         "type": "object",
         "properties": {
           "alias": {"type": "string", "description": "Instance alias"},
-          "action": {"type": "string", "enum": ["start", "stop", "restart"], "description": "Action for the instance"},
+          "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
           "restart": {"type": "boolean", "description": "Instance restart policy"}
         }
       },
