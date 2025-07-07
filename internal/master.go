@@ -786,12 +786,6 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	instance.URL = enhancedURL
 	instance.Type = instanceType
 
-	// 清空累计流量统计
-	instance.TCPRX = 0
-	instance.TCPTX = 0
-	instance.UDPRX = 0
-	instance.UDPTX = 0
-
 	// 更新实例状态
 	instance.Status = "stopped"
 	m.instances.Store(id, instance)
