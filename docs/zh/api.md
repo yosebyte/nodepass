@@ -917,8 +917,8 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 #### PATCH /instances/{id}
 - **描述**：更新实例状态、别名或执行控制操作
 - **认证**：需要API Key
-- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart", "restart": true|false }`
-- **特点**：不中断正在运行的实例，仅更新指定字段
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false }`
+- **特点**：不中断正在运行的实例，仅更新指定字段。`action: "reset"` 可将该实例的流量统计（tcprx、tcptx、udprx、udptx）清零。
 - **示例**：
 ```javascript
 // 更新别名和自启动策略
@@ -943,13 +943,23 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ action: 'restart' })
 });
+
+// 清零流量统计
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ action: 'reset' })
+});
 ```
 
 #### PUT /instances/{id}
 - **描述**：完全更新实例URL配置
 - **认证**：需要API Key
 - **请求体**：`{ "url": "新的client://或server://格式的URL" }`
-- **特点**：会重启实例并重置流量统计
+- **特点**：会重启实例。
 - **限制**：API Key实例（ID为`********`）不支持此操作
 - **示例**：
 ```javascript

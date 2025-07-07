@@ -998,10 +998,10 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, or perform control operations
+- **Description**: Update instance state, alias, or perform control actions
 - **Authentication**: API Key required
-- **Request Body**: `{ "alias": "new alias", "action": "start|stop|restart", "restart": true|false }`
-- **Features**: Does not interrupt running instances, only updates specified fields
+- **Request Body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
+- **Note**: Only specified fields are updated without interrupting running instances. `action: "reset"` will clear the traffic statistics (tcprx, tcptx, udprx, udptx) for the instance.
 - **Example**:
 ```javascript
 // Update alias and auto-start policy
@@ -1026,14 +1026,24 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ action: 'restart' })
 });
+
+// Clear traffic statistics
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ action: 'reset' })
+});
 ```
 
 #### PUT /instances/{id}
-- **Description**: Completely update instance URL configuration
+- **Description**: Fully update the instance URL configuration
 - **Authentication**: API Key required
-- **Request Body**: `{ "url": "new client:// or server:// format URL" }`
-- **Features**: Will restart instance and reset traffic statistics
-- **Restrictions**: API Key instance (ID `********`) does not support this operation
+- **Request Body**: `{ "url": "new client:// or server:// style URL" }`
+- **Note**: The instance will be restarted.
+- **Restriction**: API Key instance (ID `********`) does not support this operation
 - **Example**:
 ```javascript
 // Update instance URL
