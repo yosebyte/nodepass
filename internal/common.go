@@ -234,7 +234,7 @@ func (c *Common) stop() {
 	if c.tunnelPool != nil {
 		active := c.tunnelPool.Active()
 		c.tunnelPool.Close()
-		c.logger.Debug("Tunnel connection closed: active %v", active)
+		c.logger.Debug("Tunnel connection closed: pool active %v", active)
 	}
 
 	// 清理目标UDP会话
@@ -424,9 +424,12 @@ func (c *Common) commonTCPLoop() {
 					return
 				}
 
-				c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+				c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-				defer c.tunnelPool.Put(id, remoteConn)
+				defer func() {
+					c.tunnelPool.Put(id, remoteConn)
+					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+				}()
 
 				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -482,9 +485,12 @@ func (c *Common) commonUDPLoop() {
 				continue
 			}
 
-			c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-			defer c.tunnelPool.Put(id, remoteConn)
+			defer func() {
+				c.tunnelPool.Put(id, remoteConn)
+				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+			}()
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -579,9 +585,12 @@ func (c *Common) commonTCPOnce(id string) {
 		return
 	}
 
-	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-	defer c.tunnelPool.Put(id, remoteConn)
+	defer func() {
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -620,9 +629,12 @@ func (c *Common) commonUDPOnce(id string) {
 		return
 	}
 
-	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-	defer c.tunnelPool.Put(id, remoteConn)
+	defer func() {
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -710,7 +722,7 @@ func (c *Common) singleTCPLoop() error {
 					return
 				}
 
-				c.logger.Debug("Target connection: active %v / %v per %v", c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
+				c.logger.Debug("Target connection: pool active %v / %v per %v", c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
 
 				defer func() {
 					if targetConn != nil {
