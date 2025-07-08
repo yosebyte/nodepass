@@ -426,11 +426,7 @@ func (c *Common) commonTCPLoop() {
 
 				c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
 
-				defer func() {
-					if remoteConn != nil {
-						remoteConn.Close()
-					}
-				}()
+				defer c.tunnelPool.Put(id, remoteConn)
 
 				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -453,7 +449,7 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
+				rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
 				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
@@ -487,11 +483,7 @@ func (c *Common) commonUDPLoop() {
 
 			c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
 
-			defer func() {
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
-			}()
+			defer c.tunnelPool.Put(id, remoteConn)
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -588,12 +580,7 @@ func (c *Common) commonTCPOnce(id string) {
 
 	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
 
-	// 确保连接关闭
-	defer func() {
-		if remoteConn != nil {
-			remoteConn.Close()
-		}
-	}()
+	defer c.tunnelPool.Put(id, remoteConn)
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -615,7 +602,7 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
+	rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 	// 交换完成，广播统计信息
 	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
@@ -634,12 +621,7 @@ func (c *Common) commonUDPOnce(id string) {
 
 	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
 
-	// 确保连接关闭
-	defer func() {
-		if remoteConn != nil {
-			remoteConn.Close()
-		}
-	}()
+	defer c.tunnelPool.Put(id, remoteConn)
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
@@ -740,7 +722,7 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn)
+				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
 				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
