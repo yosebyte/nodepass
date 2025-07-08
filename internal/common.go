@@ -419,7 +419,7 @@ func (c *Common) commonTCPLoop() {
 				// 从连接池获取连接
 				id, remoteConn := c.tunnelPool.ServerGet()
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v", id)
+					c.logger.Error("Get failed: %v not found", id)
 					c.tunnelPool.AddError()
 					return
 				}
@@ -477,6 +477,7 @@ func (c *Common) commonUDPLoop() {
 			// 从连接池获取连接
 			id, remoteConn := c.tunnelPool.ServerGet()
 			if remoteConn == nil {
+				c.logger.Error("Get failed: %v not found", id)
 				c.tunnelPool.AddError()
 				continue
 			}
@@ -574,7 +575,7 @@ func (c *Common) commonTCPOnce(id string) {
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v", id)
+		c.logger.Error("Get failed: %v not found", id)
 		return
 	}
 
@@ -615,7 +616,7 @@ func (c *Common) commonUDPOnce(id string) {
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v", id)
+		c.logger.Error("Get failed: %v not found", id)
 		return
 	}
 
