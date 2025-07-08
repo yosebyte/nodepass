@@ -67,10 +67,10 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 10s | `export NP_UDP_READ_TIMEOUT=30s` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 10s | `export NP_TCP_READ_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 10s | `export NP_TCP_DIAL_TIMEOUT=30s` |
+| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 20s | `export NP_UDP_READ_TIMEOUT=30s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 20s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 20s | `export NP_TCP_READ_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 20s | `export NP_TCP_DIAL_TIMEOUT=30s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
