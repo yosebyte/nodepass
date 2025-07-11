@@ -54,10 +54,10 @@ type Common struct {
 var (
 	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
 	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP缓冲区大小
-	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 10*time.Second) // UDP读取超时
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second) // UDP拨号超时
-	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 10*time.Second) // TCP读取超时
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 10*time.Second) // TCP拨号超时
+	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 20*time.Second) // UDP读取超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 20*time.Second) // UDP拨号超时
+	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 20*time.Second) // TCP读取超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 20*time.Second) // TCP拨号超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
 	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
@@ -234,7 +234,7 @@ func (c *Common) stop() {
 	if c.tunnelPool != nil {
 		active := c.tunnelPool.Active()
 		c.tunnelPool.Close()
-		c.logger.Debug("Tunnel connection closed: active %v", active)
+		c.logger.Debug("Tunnel connection closed: pool active %v", active)
 	}
 
 	// 清理目标UDP会话
@@ -419,17 +419,16 @@ func (c *Common) commonTCPLoop() {
 				// 从连接池获取连接
 				id, remoteConn := c.tunnelPool.ServerGet()
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v", id)
+					c.logger.Error("Get failed: %v not found", id)
 					c.tunnelPool.AddError()
 					return
 				}
 
-				c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+				c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 				defer func() {
-					if remoteConn != nil {
-						remoteConn.Close()
-					}
+					c.tunnelPool.Put(id, remoteConn)
+					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 				}()
 
 				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -453,7 +452,7 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
+				rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
 				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
@@ -481,16 +480,16 @@ func (c *Common) commonUDPLoop() {
 			// 从连接池获取连接
 			id, remoteConn := c.tunnelPool.ServerGet()
 			if remoteConn == nil {
+				c.logger.Error("Get failed: %v not found", id)
 				c.tunnelPool.AddError()
 				continue
 			}
 
-			c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 			defer func() {
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
+				c.tunnelPool.Put(id, remoteConn)
+				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 			}()
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -582,17 +581,15 @@ func (c *Common) commonTCPOnce(id string) {
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v", id)
+		c.logger.Error("Get failed: %v not found", id)
 		return
 	}
 
-	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-	// 确保连接关闭
 	defer func() {
-		if remoteConn != nil {
-			remoteConn.Close()
-		}
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -615,7 +612,7 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	rx, tx, _ := conn.DataExchange(remoteConn, targetConn)
+	rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 	// 交换完成，广播统计信息
 	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
@@ -628,17 +625,15 @@ func (c *Common) commonUDPOnce(id string) {
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v", id)
+		c.logger.Error("Get failed: %v not found", id)
 		return
 	}
 
-	c.logger.Debug("Tunnel connection: %v <- active %v", id, c.tunnelPool.Active())
+	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-	// 确保连接关闭
 	defer func() {
-		if remoteConn != nil {
-			remoteConn.Close()
-		}
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -727,7 +722,7 @@ func (c *Common) singleTCPLoop() error {
 					return
 				}
 
-				c.logger.Debug("Target connection: active %v / %v per %v", c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
+				c.logger.Debug("Target connection: pool active %v / %v per %v", c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
 
 				defer func() {
 					if targetConn != nil {
@@ -740,7 +735,7 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn)
+				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
 				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://cdn.yobc.de/assets/np-poster.png" alt="nodepass" width="448">
+  <img src="https://cdn.yobc.de/assets/np-gopher.png" alt="nodepass" width="300">
 
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
