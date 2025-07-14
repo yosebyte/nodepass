@@ -448,7 +448,7 @@ func (c *Common) commonTCPLoop() {
 					return
 				}
 
-				c.logger.Debug("TCP launch signal: %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+				c.logger.Debug("TCP launch signal: pid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
@@ -515,7 +515,7 @@ func (c *Common) commonUDPLoop() {
 					return
 				}
 
-				c.logger.Debug("UDP launch signal: %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+				c.logger.Debug("UDP launch signal: pid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 				c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 
 				// 处理UDP/TCP数据传输
@@ -576,7 +576,7 @@ func (c *Common) commonOnce() {
 
 // commonTCPOnce 共用处理单个TCP请求
 func (c *Common) commonTCPOnce(id string) {
-	c.logger.Debug("TCP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TCP launch signal: pid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
@@ -620,7 +620,7 @@ func (c *Common) commonTCPOnce(id string) {
 
 // commonUDPOnce 共用处理单个UDP请求
 func (c *Common) commonUDPOnce(id string) {
-	c.logger.Debug("UDP launch signal: %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("UDP launch signal: pid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
@@ -722,12 +722,11 @@ func (c *Common) singleTCPLoop() error {
 					return
 				}
 
-				c.logger.Debug("Target connection: pool active %v / %v per %v", c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
+				c.logger.Debug("Target connection: get relay-id <- pool active %v", c.tunnelPool.Active())
 
 				defer func() {
-					if targetConn != nil {
-						targetConn.Close()
-					}
+					c.tunnelPool.Put("", targetConn)
+					c.logger.Debug("Tunnel connection: put relay-id -> pool active %v", c.tunnelPool.Active())
 				}()
 
 				c.targetTCPConn = targetConn.(*net.TCPConn)
