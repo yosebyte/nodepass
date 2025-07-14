@@ -530,7 +530,11 @@ func (c *Common) commonUDPLoop() {
 
 				x, err := remoteConn.Read(buffer)
 				if err != nil {
-					c.logger.Error("Read failed: %v", err)
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						c.logger.Debug("Read timeout: %v", err)
+					} else {
+						c.logger.Error("Read failed: %v", err)
+					}
 					return
 				}
 
@@ -688,7 +692,11 @@ func (c *Common) commonUDPOnce(id string) {
 
 	x, err := c.targetUDPConn.Read(buffer)
 	if err != nil {
-		c.logger.Error("Read failed: %v", err)
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			c.logger.Debug("Read timeout: %v", err)
+		} else {
+			c.logger.Error("Read failed: %v", err)
+		}
 		return
 	}
 
