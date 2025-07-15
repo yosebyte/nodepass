@@ -13,34 +13,44 @@
 English | [简体中文](README_zh.md)
 </div>
 
-**NodePass** is an open-source, lightweight, enterprise-grade TCP/UDP network tunneling solution featuring an all-in-one architecture with separation of control and data channels, along with flexible and high-performance instance control. It supports zero-configuration deployment, intelligent connection pooling, tiered TLS encryption, and seamless protocol conversion. Designed for DevOps professionals and system administrators to effortlessly handle complex network scenarios including firewall traversal, NAT bypassing, and advanced tunnel management.
+**NodePass** is an open-source, lightweight, enterprise-grade TCP/UDP network tunneling solution featuring an all-in-one architecture with separation of control and data channels, along with flexible and high-performance instance control. It supports zero-configuration deployment, intelligent connection pooling, tiered TLS encryption, and seamless protocol conversion. Designed for DevOps professionals and system administrators to effortlessly handle complex network scenarios.
 
 ## 💎 Key Features
 
-- **🔀 Multiple Operating Modes**
-  - Server mode accepting incoming tunnels with configurable security
-  - Client mode for establishing outbound connections to tunnel servers
-  - Master mode with RESTful API for dynamic instance management
+- **🌐 Universal Functionality**
+  - Supports TCP/UDP tunneling and protocol conversion across diverse networks.
+  - Compatible with port mapping, NAT traversal, and traffic relay.
+  - Cross-platform, multi-architecture, single binary or container.
 
-- **🌍 Protocol Support**
-  - TCP tunneling with persistent connection handling
-  - UDP datagram forwarding with configurable buffer sizes
-  - Intelligent routing mechanisms for both protocols
+- **🚀 Connection Pool**
+  - Pre-established connections for zero-latency switching and forwarding.
+  - Eliminates handshake delays, boosts performance.
+  - Auto-scaling with real-time capacity adjustment.
 
-- **🛡️ Security Options**
-  - TLS Mode 0: Unencrypted mode for maximum speed in trusted networks
-  - TLS Mode 1: Self-signed certificates for quick secure setup
-  - TLS Mode 2: Custom certificate validation for enterprise security
+- **⚙️ Zero-Config**
+  - No config files required, ready to use via CLI.
+  - Optimized for CI/CD and containers.
+  - Flexible tuning via environment variables.
 
-- **⚡ Performance Features**
-  - Smart connection pooling with real-time capacity adaptation
-  - Dynamic interval adjustment based on network conditions
-  - Minimal resource footprint even under heavy load
+- **🔐 Multi-level Security**
+  - Three TLS modes: plaintext, self-signed, strict validation.
+  - Covers development to enterprise security needs.
+  - Hot-reload certificates with zero downtime.
 
-- **🧰 Simple Configuration**
-  - Zero configuration files required
-  - Simple command-line parameters
-  - Environment variables for fine-tuning performance
+- **🧠 Innovative Architecture**
+  - Integrated S/C/M architecture, flexible mode switching.
+  - Full decoupling of control/data channels.
+  - API-instance management, multi-instance collaboration.
+
+- **📈 Performance**
+  - Intelligent scheduling, auto-tuning, ultra-low resource usage.
+  - Stable under high concurrency and heavy load.
+  - Health checks, auto-reconnect, self-healing.
+
+- **💡 Visualization**
+  - Rich cross-platform visual frontends.
+  - One-click deployment scripts, easy management.
+  - Real-time monitoring, API-instance management, traffic stats.
 
 ## 📋 Quick Start
 
