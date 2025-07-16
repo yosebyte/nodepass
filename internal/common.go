@@ -822,6 +822,7 @@ func (c *Common) singleTCPLoop() error {
 				targetConn := c.tunnelPool.ClientGet("")
 				if targetConn == nil {
 					c.logger.Error("Get failed: no target connection available")
+					time.Sleep(100 * time.Millisecond)
 					return
 				}
 
