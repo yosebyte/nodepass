@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://cdn.yobc.de/assets/np-gopher.png" alt="nodepass" width="300">
 
-[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go#networking)
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/yosebyte/nodepass/total.svg)](https://github.com/yosebyte/nodepass/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
@@ -18,7 +18,7 @@
 ## 💎 核心功能
 
 - **🌐 通用网络隧道**
-  - 支持 TCP/UDP 隧道，具备协议转换能力，适配多种网络结构。
+  - 基础 TCP/UDP 隧道，具备协议转换能力，适配多种网络结构。
   - 完整适配端口映射、内网穿透、流量中转等多场景应用需求。
   - 多平台、多架构支持，支持独立二进制文件、容器灵活部署。
 
@@ -27,27 +27,27 @@
   - 消除连接的握手等待，显著提升了性能体验。
   - 支持实时容量自适应，动态调整连接池规模。
 
-- **⚙️ 零配置启动**
-  - 无需配置文件，仅命令行参数即可运行，适合自动化和快速迭代。
-  - 适配 CI/CD 流程与容器环境，极大提升部署和运维效率。
-  - 支持环境变量性能调优，灵活适应不同运行环境。
+- **🧬 创新架构设计**
+  - Server-Client-Master 多模式整合架构设计，灵活切换。
+  - 将 S/C 控制通道与数据通道完全解耦，相互独立、各司其职。
+  - 主控-实例的管理方式，支持动态扩容、多实例协作和集中控制。
 
 - **🔐 多级安全策略**
   - 三种 TLS 模式：明文、自签名、严格验证，适配不同安全等级。
   - 满足从开发测试到企业级高安全部署的全场景需求。
   - 支持证书文件的热重载，免停运、无缝处理证书更新问题。
 
-- **🧠 创新架构设计**
-  - Server-Client-Master 多模式整合架构设计，灵活切换。
-  - 将 S/C 控制通道与数据通道完全解耦，相互独立、各司其职。
-  - 主控-实例的管理方式，支持动态扩容、多实例协作和集中控制。
+- **⚙️ 极简配置方式**
+  - 无需配置文件，仅命令行参数即可运行，适合自动化和快速迭代。
+  - 适配 CI/CD 流程与容器环境，极大提升部署和运维效率。
+  - 支持环境变量性能调优，灵活适应不同运行环境。
 
 - **📈 高性能优化**
   - 智能流量调度与自动连接调优，极低资源占用。
   - 高并发、高负载状态下卓越的系统稳定性能。
   - 健康检查、断线重连、故障自愈，确保持续高可用。
 
-- **💡 可视化生态**
+- **💡 可视化管理**
   - 配套跨平台、多样化的管理前端应用，具备可视化配置能力。
   - 主流平台支持一键部署脚本，支撑灵活配置和辅助管理。
   - 具备实时隧道监控、实例管理、主控管理、流量统计等丰富功能。
@@ -88,7 +88,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 - [工作原理](/docs/zh/how-it-works.md)
 - [故障排除](/docs/zh/troubleshooting.md)
 
-## 🌐 生态系统
+## 🌱 生态系统
 
 [NodePassProject](https://github.com/NodePassProject) 组织开发了各种前端应用和辅助工具来增强 NodePass 体验：
 

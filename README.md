@@ -1,7 +1,7 @@
 <div align="center">
   <img src="https://cdn.yobc.de/assets/np-gopher.png" alt="nodepass" width="300">
 
-[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go#networking)
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
 [![GitHub downloads](https://img.shields.io/github/downloads/yosebyte/nodepass/total.svg)](https://github.com/yosebyte/nodepass/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/yosebyte/nodepass)](https://goreportcard.com/report/github.com/yosebyte/nodepass)
@@ -18,7 +18,7 @@ English | [简体中文](README_zh.md)
 ## 💎 Key Features
 
 - **🌐 Universal Functionality**
-  - Supports TCP/UDP tunneling and protocol conversion across diverse networks.
+  - Basic TCP/UDP tunneling and protocol conversion across diverse networks.
   - Compatible with port mapping, NAT traversal, and traffic relay.
   - Cross-platform, multi-architecture, single binary or container.
 
@@ -27,20 +27,20 @@ English | [简体中文](README_zh.md)
   - Eliminates handshake delays, boosts performance.
   - Auto-scaling with real-time capacity adjustment.
 
-- **⚙️ Zero-Config**
-  - No config files required, ready to use via CLI.
-  - Optimized for CI/CD and containers.
-  - Flexible tuning via environment variables.
+- **🧬 Innovative Architecture**
+  - Integrated S/C/M architecture, flexible mode switching.
+  - Full decoupling of control/data channels.
+  - API-instance management, multi-instance collaboration.
 
 - **🔐 Multi-level Security**
   - Three TLS modes: plaintext, self-signed, strict validation.
   - Covers development to enterprise security needs.
   - Hot-reload certificates with zero downtime.
 
-- **🧠 Innovative Architecture**
-  - Integrated S/C/M architecture, flexible mode switching.
-  - Full decoupling of control/data channels.
-  - API-instance management, multi-instance collaboration.
+- **⚙️ Minimal Configuration**
+  - No config files required, ready to use via CLI.
+  - Optimized for CI/CD and containers.
+  - Flexible tuning via environment variables.
 
 - **📈 Performance**
   - Intelligent scheduling, auto-tuning, ultra-low resource usage.
@@ -88,7 +88,7 @@ Explore the complete documentation to learn more about NodePass:
 - [How It Works](/docs/en/how-it-works.md)
 - [Troubleshooting](/docs/en/troubleshooting.md)
 
-## 🌐 Ecosystem
+## 🌱 Ecosystem
 
 The [NodePassProject](https://github.com/NodePassProject) organization develops various frontend applications and auxiliary tools to enhance the NodePass experience:
 
