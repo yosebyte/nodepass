@@ -477,99 +477,87 @@ func (c *Common) commonUDPLoop() {
 
 			c.logger.Debug("Target connection: %v <-> %v", c.targetUDPConn.LocalAddr(), clientAddr)
 
-			var id string
-			var remoteConn net.Conn
-			sessionKey := clientAddr.String()
-
-			// 获取或创建UDP会话
-			if session, ok := c.targetUDPSession.Load(sessionKey); ok {
-				// 复用现有会话
-				remoteConn = session.(net.Conn)
-				c.logger.Debug("Using UDP session: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-			} else {
-				// 获取池连接
-				id, remoteConn = c.tunnelPool.ServerGet()
-				if remoteConn == nil {
-					c.logger.Error("Get failed: %v not found", id)
-					c.tunnelPool.AddError()
-					continue
-				}
-				c.targetUDPSession.Store(sessionKey, remoteConn)
-				c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
-				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-
-				// 使用信号量限制并发数
-				c.semaphore <- struct{}{}
-
-				go func(remoteConn net.Conn, clientAddr *net.UDPAddr, sessionKey, id string) {
-					defer func() {
-						c.tunnelPool.Put(id, remoteConn)
-						c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-						c.targetUDPSession.Delete(sessionKey)
-						<-c.semaphore
-					}()
-
-					buffer := make([]byte, udpDataBufSize)
-
-					for {
-						select {
-						case <-c.ctx.Done():
-							return
-						default:
-							// 设置TCP读取超时
-							if err := remoteConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
-								c.logger.Error("SetReadDeadline failed: %v", err)
-								return
-							}
-
-							// 从池连接读取数据
-							x, err := remoteConn.Read(buffer)
-							if err != nil {
-								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-									c.logger.Debug("UDP session abort: %v", err)
-								} else if strings.Contains(err.Error(), "use of closed network connection") {
-									c.logger.Debug("Read closed: %v", err)
-								} else {
-									c.logger.Error("Read failed: %v", err)
-								}
-								return
-							}
-
-							// 将数据写入目标UDP连接
-							tx, err := c.targetUDPConn.WriteToUDP(buffer[:x], clientAddr)
-							if err != nil {
-								c.logger.Error("WriteToUDP failed: %v", err)
-								return
-							}
-							// 传输完成，广播统计信息
-							c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
-						}
-					}
-				}(remoteConn, clientAddr, sessionKey, id)
-
-				// 构建并发送启动URL到客户端
-				launchURL := &url.URL{
-					Host:     id,
-					Fragment: "2", // UDP模式
-				}
-
-				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
-				c.mu.Unlock()
-				if err != nil {
-					c.logger.Error("Write failed: %v", err)
-					continue
-				}
-
-				c.logger.Debug("UDP launch signal: pid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
-				c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
+			// 获取池连接
+			id, remoteConn := c.tunnelPool.ServerGet()
+			if remoteConn == nil {
+				c.logger.Error("Get failed: %v not found", id)
+				c.tunnelPool.AddError()
+				continue
 			}
+
+			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
+			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+
+			// 使用信号量限制并发数
+			c.semaphore <- struct{}{}
+
+			go func(remoteConn net.Conn, clientAddr *net.UDPAddr, id string) {
+				defer func() {
+					c.tunnelPool.Put(id, remoteConn)
+					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+					<-c.semaphore
+				}()
+
+				buffer := make([]byte, udpDataBufSize)
+
+				for {
+					select {
+					case <-c.ctx.Done():
+						return
+					default:
+						// 设置TCP读取超时
+						if err := remoteConn.SetReadDeadline(time.Now().Add(tcpReadTimeout)); err != nil {
+							c.logger.Error("SetReadDeadline failed: %v", err)
+							return
+						}
+
+						// 从池连接读取数据
+						x, err := remoteConn.Read(buffer)
+						if err != nil {
+							if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+								c.logger.Debug("UDP session abort: %v", err)
+							} else if strings.Contains(err.Error(), "use of closed network connection") {
+								c.logger.Debug("Read closed: %v", err)
+							} else {
+								c.logger.Error("Read failed: %v", err)
+							}
+							return
+						}
+
+						// 将数据写入目标UDP连接
+						tx, err := c.targetUDPConn.WriteToUDP(buffer[:x], clientAddr)
+						if err != nil {
+							c.logger.Error("WriteToUDP failed: %v", err)
+							return
+						}
+						// 传输完成，广播统计信息
+						c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
+					}
+				}
+			}(remoteConn, clientAddr, id)
+
+			// 构建并发送启动URL到客户端
+			launchURL := &url.URL{
+				Host:     clientAddr.String(),
+				Path:     id,
+				Fragment: "2", // UDP模式
+			}
+
+			c.mu.Lock()
+			_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
+			c.mu.Unlock()
+			if err != nil {
+				c.logger.Error("Write failed: %v", err)
+				continue
+			}
+
+			c.logger.Debug("UDP launch signal: pid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+			c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 
 			// 将原始数据写入池连接
 			rx, err := remoteConn.Write(buffer[:n])
 			if err != nil {
 				c.logger.Error("Write failed: %v", err)
-				c.targetUDPSession.Delete(sessionKey)
 				remoteConn.Close()
 				continue
 			}
@@ -611,7 +599,7 @@ func (c *Common) commonOnce() {
 			case "1": // TCP
 				go c.commonTCPOnce(signalURL.Host)
 			case "2": // UDP
-				go c.commonUDPOnce(signalURL.Host)
+				go c.commonUDPOnce(signalURL)
 			default:
 				// 健康检查或无效信号
 			}
@@ -664,10 +652,11 @@ func (c *Common) commonTCPOnce(id string) {
 }
 
 // commonUDPOnce 共用处理单个UDP请求
-func (c *Common) commonUDPOnce(id string) {
+func (c *Common) commonUDPOnce(signalURL *url.URL) {
+	id := strings.TrimPrefix(signalURL.Path, "/")
 	c.logger.Debug("UDP launch signal: pid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
-	// 先从池获取连接
+	// 获取池连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v not found", id)
@@ -676,30 +665,43 @@ func (c *Common) commonUDPOnce(id string) {
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
-	// 连接到目标UDP地址
-	targetConn, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
-	if err != nil {
-		c.logger.Error("Dial failed: %v", err)
-		return
+	var targetConn *net.UDPConn
+	sessionKey := signalURL.Host
+
+	// 获取或创建目标UDP会话
+	if session, ok := c.targetUDPSession.Load(sessionKey); ok {
+		targetConn = session.(*net.UDPConn)
+		c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+	} else {
+		// 创建新的会话
+		session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+		if err != nil {
+			c.logger.Error("Dial failed: %v", err)
+			return
+		}
+		c.targetUDPSession.Store(sessionKey, session)
+
+		targetConn = session.(*net.UDPConn)
+		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
-	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 	done := make(chan struct{}, 2)
 
 	go func() {
-		defer func() {
-			done <- struct{}{}
-		}()
+		defer func() { done <- struct{}{} }()
 		buffer := make([]byte, udpDataBufSize)
 		for {
 			select {
 			case <-c.ctx.Done():
 				return
 			default:
-				if err := remoteConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
+				// 设置TCP读取超时
+				if err := remoteConn.SetReadDeadline(time.Now().Add(tcpReadTimeout)); err != nil {
 					c.logger.Error("SetReadDeadline failed: %v", err)
 					return
 				}
+
+				// 从隧道连接读取数据
 				x, err := remoteConn.Read(buffer)
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -711,11 +713,14 @@ func (c *Common) commonUDPOnce(id string) {
 					}
 					return
 				}
+
+				// 将数据写入目标UDP连接
 				rx, err := targetConn.Write(buffer[:x])
 				if err != nil {
 					c.logger.Error("Write failed: %v", err)
 					return
 				}
+
 				// 传输完成，广播统计信息
 				c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
 			}
@@ -723,19 +728,20 @@ func (c *Common) commonUDPOnce(id string) {
 	}()
 
 	go func() {
-		defer func() {
-			done <- struct{}{}
-		}()
+		defer func() { done <- struct{}{} }()
 		buffer := make([]byte, udpDataBufSize)
 		for {
 			select {
 			case <-c.ctx.Done():
 				return
 			default:
+				// 设置UDP读取超时
 				if err := targetConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
 					c.logger.Error("SetReadDeadline failed: %v", err)
 					return
 				}
+
+				// 从目标UDP连接读取数据
 				x, err := targetConn.Read(buffer)
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -747,19 +753,22 @@ func (c *Common) commonUDPOnce(id string) {
 					}
 					return
 				}
+
+				// 将数据写回隧道连接
 				tx, err := remoteConn.Write(buffer[:x])
 				if err != nil {
 					c.logger.Error("Write failed: %v", err)
 					return
 				}
+
 				// 传输完成，广播统计信息
 				c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
 			}
 		}
 	}()
 
+	// 等待任一协程完成
 	<-done
-	targetConn.Close()
 	c.tunnelPool.Put(id, remoteConn)
 	c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 }
