@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -522,6 +523,8 @@ func (c *Common) commonUDPLoop() {
 							if err != nil {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
+								} else if err == io.EOF {
+									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)
 								}
@@ -707,6 +710,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						c.logger.Debug("UDP session abort: %v", err)
+					} else if err == io.EOF {
+						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
 					}
@@ -740,6 +745,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						c.logger.Debug("UDP session abort: %v", err)
+					} else if err == io.EOF {
+						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
 					}
@@ -900,8 +907,8 @@ func (c *Common) singleUDPLoop() error {
 							if err != nil {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
-								} else if strings.Contains(err.Error(), "use of closed network connection") {
-									c.logger.Debug("Read closed: %v", err)
+								} else if err == io.EOF {
+									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)
 								}
