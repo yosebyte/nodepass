@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	}
 	// 初始化公共字段
 	server.getTunnelKey(parsedURL)
+	server.getPoolCapacity(parsedURL)
 	server.getAddress(parsedURL)
 	return server
 }
@@ -99,6 +101,7 @@ func (s *Server) start() error {
 
 	// 初始化隧道连接池
 	s.tunnelPool = pool.NewServerPool(
+		s.maxPoolCapacity,
 		s.clientIP,
 		s.tlsConfig,
 		s.tunnelListener,
@@ -161,6 +164,7 @@ func (s *Server) tunnelHandshake() error {
 	// 构建并发送隧道URL到客户端
 	tunnelURL := &url.URL{
 		Host:     s.dataFlow,
+		Path:     strconv.Itoa(s.maxPoolCapacity),
 		Fragment: s.tlsCode,
 	}
 
