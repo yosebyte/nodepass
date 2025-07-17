@@ -504,8 +504,12 @@ func (c *Common) commonUDPLoop() {
 
 				go func(remoteConn net.Conn, clientAddr *net.UDPAddr, sessionKey, id string) {
 					defer func() {
+						// 重置池连接的读取超时
+						remoteConn.SetReadDeadline(time.Time{})
 						c.tunnelPool.Put(id, remoteConn)
 						c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+
+						// 清理UDP会话
 						c.targetUDPSession.Delete(sessionKey)
 						<-c.semaphore
 					}()
@@ -768,6 +772,15 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	// 等待任一协程完成
 	<-done
+
+	// 清理连接和会话
+	c.targetUDPSession.Delete(sessionKey)
+	if targetConn != nil {
+		targetConn.Close()
+	}
+
+	// 重置池连接的读取超时
+	remoteConn.SetReadDeadline(time.Time{})
 	c.tunnelPool.Put(id, remoteConn)
 	c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 }
@@ -913,7 +926,9 @@ func (c *Common) singleUDPLoop() error {
 									c.logger.Error("Read failed: %v", err)
 								}
 								c.targetUDPSession.Delete(sessionKey)
-								targetConn.Close()
+								if targetConn != nil {
+									targetConn.Close()
+								}
 								return
 							}
 
@@ -922,7 +937,9 @@ func (c *Common) singleUDPLoop() error {
 							if err != nil {
 								c.logger.Error("WriteToUDP failed: %v", err)
 								c.targetUDPSession.Delete(sessionKey)
-								targetConn.Close()
+								if targetConn != nil {
+									targetConn.Close()
+								}
 								return
 							}
 							// 传输完成，广播统计信息
@@ -938,7 +955,9 @@ func (c *Common) singleUDPLoop() error {
 			if err != nil {
 				c.logger.Error("Write failed: %v", err)
 				c.targetUDPSession.Delete(sessionKey)
-				targetConn.Close()
+				if targetConn != nil {
+					targetConn.Close()
+				}
 				return err
 			}
 
