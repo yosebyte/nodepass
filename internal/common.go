@@ -888,22 +888,15 @@ func (c *Common) singleUDPLoop() error {
 					}()
 
 					buffer := make([]byte, udpDataBufSize)
+					reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 
 					for {
 						select {
 						case <-c.ctx.Done():
 							return
 						default:
-							// 设置UDP读取超时
-							if err := targetConn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
-								c.logger.Error("SetReadDeadline failed: %v", err)
-								c.targetUDPSession.Delete(sessionKey)
-								targetConn.Close()
-								return
-							}
-
 							// 从UDP读取响应
-							n, err := targetConn.Read(buffer)
+							x, err := reader.Read(buffer)
 							if err != nil {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
@@ -918,7 +911,7 @@ func (c *Common) singleUDPLoop() error {
 							}
 
 							// 将响应写回隧道UDP连接
-							tx, err := c.tunnelUDPConn.WriteToUDP(buffer[:n], clientAddr)
+							tx, err := c.tunnelUDPConn.WriteToUDP(buffer[:x], clientAddr)
 							if err != nil {
 								c.logger.Error("WriteToUDP failed: %v", err)
 								c.targetUDPSession.Delete(sessionKey)
