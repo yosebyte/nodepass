@@ -115,18 +115,15 @@ func (c *Client) start() error {
 
 		go c.tunnelPool.ClientManager()
 
-		switch c.dataFlow {
-		case "-":
-			go c.commonOnce()
-			go c.commonQueue()
-		case "+":
+		if c.dataFlow == "+" {
 			// 初始化目标监听器
 			if err := c.initTargetListener(); err != nil {
 				return err
 			}
 			go c.commonLoop()
 		}
-		return c.healthCheck()
+
+		return c.commonControl()
 	}
 }
 

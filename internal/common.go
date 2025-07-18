@@ -47,6 +47,7 @@ type Common struct {
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
 	errChan          chan error         // 错误通道
+	checkPoint       time.Time          // 检查点时间
 	ctx              context.Context    // 上下文
 	cancel           context.CancelFunc // 取消函数
 }
@@ -309,6 +310,27 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	}
 }
 
+// commonControl 共用控制逻辑
+func (c *Common) commonControl() error {
+	go c.commonOnce()
+
+	errChan := make(chan error, 2)
+
+	go func() {
+		errChan <- c.commonQueue()
+	}()
+	go func() {
+		errChan <- c.healthCheck()
+	}()
+
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	case err := <-errChan:
+		return err
+	}
+}
+
 // commonQueue 共用信号队列
 func (c *Common) commonQueue() error {
 	for {
@@ -336,6 +358,7 @@ func (c *Common) commonQueue() error {
 // healthCheck 共用健康度检查
 func (c *Common) healthCheck() error {
 	flushURL := &url.URL{Fragment: "0"} // 连接池刷新信号
+	checkURL := &url.URL{Fragment: "f"} // 健康检查信号
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -358,7 +381,8 @@ func (c *Common) healthCheck() error {
 				c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 			} else {
 				// 发送普通心跳包
-				_, err := c.tunnelTCPConn.Write([]byte("\n"))
+				c.checkPoint = time.Now()
+				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(checkURL.String())), '\n'))
 				if err != nil {
 					c.mu.Unlock()
 					return err
@@ -419,8 +443,7 @@ func (c *Common) commonTCPLoop() {
 				// 从连接池获取连接
 				id, remoteConn := c.tunnelPool.ServerGet()
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v not found", id)
-					c.tunnelPool.AddError()
+					c.logger.Error("Get failed: %v", id)
 					return
 				}
 
@@ -491,8 +514,7 @@ func (c *Common) commonUDPLoop() {
 				// 获取池连接
 				id, remoteConn = c.tunnelPool.ServerGet()
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v not found", id)
-					c.tunnelPool.AddError()
+					c.logger.Error("Get failed: %v", id)
 					continue
 				}
 				c.targetUDPSession.Store(sessionKey, remoteConn)
@@ -528,6 +550,8 @@ func (c *Common) commonUDPLoop() {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
 								} else if err == io.EOF {
+									c.logger.Debug("UDP session close: %v", err)
+								} else if strings.Contains(err.Error(), "use of closed network connection") {
 									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)
@@ -613,8 +637,10 @@ func (c *Common) commonOnce() {
 				go c.commonTCPOnce(signalURL.Host)
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL)
+			case "f": // 健康检查
+				c.logger.Event("HEALTH_CHECK|ACTIVE=%v|LEGACY=%vms", c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds())
 			default:
-				// 健康检查或无效信号
+				// 无效信号
 			}
 		}
 	}
@@ -628,6 +654,7 @@ func (c *Common) commonTCPOnce(id string) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v not found", id)
+		c.tunnelPool.AddError()
 		return
 	}
 
@@ -673,6 +700,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
 		c.logger.Error("Get failed: %v not found", id)
+		c.tunnelPool.AddError()
 		return
 	}
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
@@ -716,6 +744,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 						c.logger.Debug("UDP session abort: %v", err)
 					} else if err == io.EOF {
 						c.logger.Debug("UDP session close: %v", err)
+					} else if strings.Contains(err.Error(), "use of closed network connection") {
+						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
 					}
@@ -750,6 +780,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						c.logger.Debug("UDP session abort: %v", err)
 					} else if err == io.EOF {
+						c.logger.Debug("UDP session close: %v", err)
+					} else if strings.Contains(err.Error(), "use of closed network connection") {
 						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
@@ -921,6 +953,8 @@ func (c *Common) singleUDPLoop() error {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
 								} else if err == io.EOF {
+									c.logger.Debug("UDP session close: %v", err)
+								} else if strings.Contains(err.Error(), "use of closed network connection") {
 									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)

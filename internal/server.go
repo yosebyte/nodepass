@@ -108,14 +108,11 @@ func (s *Server) start() error {
 
 	go s.tunnelPool.ServerManager()
 
-	switch s.dataFlow {
-	case "-":
+	if s.dataFlow == "-" {
 		go s.commonLoop()
-	case "+":
-		go s.commonOnce()
-		go s.commonQueue()
 	}
-	return s.healthCheck()
+
+	return s.commonControl()
 }
 
 // tunnelHandshake 与客户端进行握手
