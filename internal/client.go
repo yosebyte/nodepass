@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -165,7 +163,6 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 	c.dataFlow = tunnelURL.Host
-	c.maxPoolCapacity, _ = strconv.Atoi(strings.TrimPrefix(tunnelURL.Path, "/"))
 	c.tlsCode = tunnelURL.Fragment
 
 	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
