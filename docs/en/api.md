@@ -4,19 +4,22 @@
 
 NodePass offers a RESTful API in Master Mode that enables programmatic control and integration with frontend applications. This section provides comprehensive d     // Configure auto-start policy for new instance based on type
      if (data.success) {
-       const shouldAutoStart = config.type === 'server' || config.critical === true;
-       await setAutoStartPolicy(data.data.id, shouldAutoStart);
-     }ntation of the API endpoints, integration patterns, and best practices.
+
+# NodePass API Reference
+
+## Overview
+
+NodePass provides a RESTful API in Master Mode for programmatic control and frontend integration. This document covers all endpoints, data structures, and best practices.
 
 ## Master Mode API
 
-When running NodePass in Master Mode (`master://`), it exposes a REST API that allows frontend applications to:
+When running in `master://` mode, NodePass supports:
 
-1. Create and manage NodePass server and client instances
-2. Monitor connection status and statistics
-3. Control running instances (start, stop, restart)
-4. Configure auto-start policies for automatic instance management
-5. Configure behavior through parameters
+1. Creating and managing server/client instances
+2. Real-time monitoring of status, traffic, and health checks
+3. Instance control (start, stop, restart, reset traffic)
+4. Configurable auto-start policy
+5. Flexible parameter configuration
 
 ### Base URL
 
@@ -24,540 +27,79 @@ When running NodePass in Master Mode (`master://`), it exposes a REST API that a
 master://<api_addr>/<prefix>?<log>&<tls>
 ```
 
-Where:
-- `<api_addr>` is the address specified in the master mode URL (e.g., `0.0.0.0:9090`)
-- `<prefix>` is the optional API prefix (if not specified, `/api` will be used as the prefix)
+- `<api_addr>`: Listen address (e.g. `0.0.0.0:9090`)
+- `<prefix>`: API path prefix (default `/api`)
 
 ### Starting Master Mode
 
-To start NodePass in Master Mode with default settings:
-
 ```bash
 nodepass "master://0.0.0.0:9090?log=info"
-```
-
-With custom API prefix and TLS enabled:
-
-```bash
 nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 ```
 
-### Available Endpoints
+### Main Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/instances` | GET | List all NodePass instances |
-| `/instances` | POST | Create a new NodePass instance |
-| `/instances/{id}` | GET | Get details about a specific instance |
-| `/instances/{id}` | PATCH | Update instance state or control operations |
-| `/instances/{id}` | PUT | Update instance URL configuration |
-| `/instances/{id}` | DELETE | Remove a specific instance |
-| `/events` | GET | Subscribe to instance events using SSE |
-| `/info` | GET | Get master service information |
-| `/openapi.json` | GET | OpenAPI specification |
-| `/docs` | GET | Swagger UI documentation |
+| Endpoint           | Method | Description           |
+|--------------------|--------|----------------------|
+| `/instances`       | GET    | List all instances   |
+| `/instances`       | POST   | Create new instance  |
+| `/instances/{id}`  | GET    | Get instance details |
+| `/instances/{id}`  | PATCH  | Update/control       |
+| `/instances/{id}`  | PUT    | Update instance URL  |
+| `/instances/{id}`  | DELETE | Delete instance      |
+| `/events`          | GET    | SSE event stream     |
+| `/info`            | GET    | Master info          |
+| `/openapi.json`    | GET    | OpenAPI spec         |
+| `/docs`            | GET    | Swagger UI           |
 
 ### API Authentication
 
-The Master API now supports API Key authentication to prevent unauthorized access. The system automatically generates an API Key on first startup.
+API Key authentication is enabled by default. The key is auto-generated and stored in `nodepass.gob`.
 
-#### API Key Features
+- Protected: `/instances`, `/instances/{id}`, `/events`, `/info`
+- Public: `/openapi.json`, `/docs`
+- Use header: `X-API-Key: <key>`
+- Regenerate: PATCH `/instances/********` with `{ "action": "restart" }`
 
-1. **Automatic Generation**: Created automatically when master mode is first started
-2. **Persistent Storage**: The API Key is saved along with other instance configurations in the `nodepass.gob` file
-3. **Retention After Restart**: The API Key remains the same after restarting the master
-4. **Selective Protection**: Only critical API endpoints are protected, public documentation remains accessible
+### Instance Data Structure
 
-#### Protected Endpoints
-
-The following endpoints require API Key authentication:
-- `/instances` (all methods)
-- `/instances/{id}` (all methods: GET, PATCH, PUT, DELETE)
-- `/events`
-- `/info`
-
-The following endpoints are publicly accessible (no API Key required):
-- `/openapi.json`
-- `/docs`
-
-#### How to Use the API Key
-
-Include the API Key in your API requests:
-
-```javascript
-// Using an API Key for instance management requests
-async function getInstances() {
-  const response = await fetch(`${API_URL}/instances`, {
-    method: 'GET',
-    headers: {
-      'X-API-Key': 'your-api-key-here'
-    }
-  });
-  
-  return await response.json();
+```json
+{
+  "id": "a1b2c3d4",
+  "alias": "alias",
+  "type": "client|server",
+  "status": "running|stopped|error",
+  "url": "...",
+  "restart": true,
+  "tcprx": 0,
+  "tcptx": 0,
+  "udprx": 0,
+  "udptx": 0,
+  "pool": 0,   // Health check pool size
+  "ping": 0    // Health check ping (ms)
 }
 ```
 
-#### How to Get and Regenerate API Key
+- `pool`/`ping`: health check data, only available in debug mode
+- `tcprx`/`tcptx`/`udprx`/`udptx`: cumulative traffic stats
+- `restart`: auto-start policy
 
-The API Key can be found in the system startup logs, and can be regenerated using:
+### Instance URL Format
 
-```javascript
-// Regenerate the API Key (requires knowing the current API Key)
-async function regenerateApiKey() {
-  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': 'current-api-key'
-    },
-    body: JSON.stringify({ action: 'restart' })
-  });
-  
-  const result = await response.json();
-  return result.url; // The new API Key
-}
-```
+- Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<params>`
+- Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<params>`
+- Supported params: `tls`, `log`, `crt`, `key`
 
-**Note**: The API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+### Real-time Events (SSE)
 
-## Frontend Integration Guidelines
+- Event types: `initial`, `create`, `update`, `delete`, `shutdown`, `log`
+- Only normal logs are sent in `log` events; traffic/health logs are filtered
+- Connect to `/events` for real-time instance and log updates
 
-When integrating NodePass with frontend applications, consider the following important points:
+### Additional Notes
 
-### Instance Persistence
-
-NodePass Master Mode now supports instance persistence using the gob serialization format. Instances and their states are saved to a `nodepass.gob` file in the same directory as the executable, and automatically restored when the master restarts.
-
-Key persistence features:
-- Instance configurations are automatically saved to disk
-- Instance state (running/stopped) is preserved
-- Auto-start policies are preserved across master restarts
-- Traffic statistics are retained between restarts
-- Instances with auto-start policy enabled will automatically start when master restarts
-- No need for manual re-registration after restart
-
-**Note:** While instance configurations are now persisted, frontend applications should still maintain their own record of instance configurations as a backup strategy.
-
-### Instance ID Persistence
-
-With NodePass now using gob format for persistent storage of instance state, instance IDs **no longer change** after a master restart. This means:
-
-1. Frontend applications can safely use instance IDs as unique identifiers
-2. Instance configurations, states, and statistics are automatically restored after restart
-3. No need to implement logic for handling instance ID changes
-
-This greatly simplifies frontend integration by eliminating the previous complexity of handling instance recreation and ID mapping.
-
-### Auto-start Policy Management
-
-NodePass now supports configurable auto-start policies for instances, allowing for automatic instance management and improved reliability. The auto-start policy feature enables:
-
-1. **Automatic Instance Recovery**: Instances with auto-start policy enabled will automatically start when the master service restarts
-2. **Selective Auto-start**: Configure which instances should auto-start based on their importance or role
-3. **Persistent Policy Storage**: Auto-start policies are saved and restored across master restarts
-4. **Fine-grained Control**: Each instance can have its own auto-start policy setting
-
-#### How Auto-start Policy Works
-
-- **Policy Assignment**: Each instance has a `restart` boolean field that determines its auto-start behavior
-- **Master Startup**: When the master starts, it automatically launches all instances with `restart: true`
-- **Policy Persistence**: Auto-start policies are saved in the same `nodepass.gob` file as other instance data
-- **Runtime Management**: Auto-start policies can be modified while instances are running
-
-#### Best Practices for Auto-start Policy
-
-1. **Enable for Server Instances**: Server instances typically should have auto-start policy enabled for high availability
-2. **Selective Client Auto-start**: Enable auto-start policy for critical client connections only
-3. **Testing Scenarios**: Disable auto-start policy for temporary or testing instances
-4. **Load Balancing**: Use auto-start policies to maintain minimum instance counts for load distribution
-
-```javascript
-// Example: Configure auto-start policies based on instance role
-async function configureAutoStartPolicies(instances) {
-  for (const instance of instances) {
-    // Enable auto-start for servers and critical clients
-    const shouldAutoStart = instance.type === 'server' || 
-                            instance.tags?.includes('critical');
-    
-    await setAutoStartPolicy(instance.id, shouldAutoStart);
-  }
-}
-```
-
-### Instance Lifecycle Management
-
-For proper lifecycle management:
-
-1. **Creation**: Store instance configurations and URLs
-   ```javascript
-   async function createNodePassInstance(config) {
-     const response = await fetch(`${API_URL}/instances`, {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({
-         url: `server://0.0.0.0:${config.port}/${config.target}?tls=${config.tls}`
-       })
-     });
-     
-     const data = await response.json();
-     
-     // Configure restart policy for new instance based on type
-     if (data.success) {
-       const shouldAutoRestart = config.type === 'server' || config.critical === true;
-       await setRestartPolicy(data.data.id, shouldAutoRestart);
-     }
-     
-     // Store in frontend persistence
-     saveInstanceConfig({
-       id: data.data.id,
-       originalConfig: config,
-       url: data.data.url
-     });
-     
-     return data;
-   }
-   ```
-
-2. **Status Monitoring**: Monitor instance state changes
-   
-   NodePass provides two methods for monitoring instance status:
-   
-   A. **Using SSE (Recommended)**: Receive real-time events via persistent connection
-   ```javascript
-   function connectToEventSource() {
-     const eventSource = new EventSource(`${API_URL}/events`, {
-       // If authentication is needed, native EventSource doesn't support custom headers
-       // Need to use fetch API to implement a custom SSE client
-     });
-     
-     // If using API Key, use custom implementation instead of native EventSource
-     // Example using native EventSource (for non-protected endpoints)
-     eventSource.addEventListener('instance', (event) => {
-       const data = JSON.parse(event.data);
-       
-       switch (data.type) {
-         case 'initial':
-           console.log('Initial instance state:', data.instance);
-           updateInstanceUI(data.instance);
-           break;
-         case 'create':
-           console.log('Instance created:', data.instance);
-           addInstanceToUI(data.instance);
-           break;
-         case 'update':
-           console.log('Instance updated:', data.instance);
-           updateInstanceUI(data.instance);
-           break;
-         case 'delete':
-           console.log('Instance deleted:', data.instance);
-           removeInstanceFromUI(data.instance.id);
-           break;
-         case 'log':
-           console.log(`Instance ${data.instance.id} log:`, data.logs);
-           appendLogToInstanceUI(data.instance.id, data.logs);
-           break;
-         case 'shutdown':
-           console.log('Master service is shutting down');
-           // Close the event source and show notification
-           eventSource.close();
-           showShutdownNotification();
-           break;
-       }
-     });
-     
-     eventSource.addEventListener('error', (error) => {
-       console.error('SSE connection error:', error);
-       // Attempt to reconnect after a delay
-       setTimeout(() => {
-         eventSource.close();
-         connectToEventSource();
-       }, 5000);
-     });
-     
-     return eventSource;
-   }
-   
-   // Example of creating SSE connection with API Key
-   function connectToEventSourceWithApiKey(apiKey) {
-     // Native EventSource doesn't support custom headers, need to use fetch API
-     fetch(`${API_URL}/events`, {
-       method: 'GET',
-       headers: {
-         'X-API-Key': apiKey,
-         'Cache-Control': 'no-cache'
-       }
-     }).then(response => {
-       if (!response.ok) {
-         throw new Error(`HTTP error: ${response.status}`);
-       }
-       
-       const reader = response.body.getReader();
-       const decoder = new TextDecoder();
-       let buffer = '';
-       
-       function processStream() {
-         reader.read().then(({ value, done }) => {
-           if (done) {
-             console.log('Connection closed');
-             // Try to reconnect
-             setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
-             return;
-           }
-           
-           buffer += decoder.decode(value, { stream: true });
-           
-           const lines = buffer.split('\n\n');
-           buffer = lines.pop() || '';
-           
-           for (const line of lines) {
-             if (line.trim() === '') continue;
-             
-             const eventMatch = line.match(/^event: (.+)$/m);
-             const dataMatch = line.match(/^data: (.+)$/m);
-             
-             if (eventMatch && dataMatch) {
-               const data = JSON.parse(dataMatch[1]);
-               // Process events - see switch code above
-             }
-           }
-           
-           processStream();
-         }).catch(error => {
-           console.error('Read error:', error);
-           // Try to reconnect
-           setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
-         });
-       }
-       
-       processStream();
-     }).catch(error => {
-       console.error('Connection error:', error);
-       // Try to reconnect
-       setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
-     });
-   }
-   ```
-   
-   B. **Traditional Polling (Alternative)**: Use in environments where SSE is not supported
-   ```javascript
-   function startInstanceMonitoring(instanceId, interval = 5000) {
-     return setInterval(async () => {
-       try {
-         const response = await fetch(`${API_URL}/instances/${instanceId}`);
-         const data = await response.json();
-         
-         if (data.success) {
-           updateInstanceStatus(instanceId, data.data.status);
-           updateInstanceMetrics(instanceId, {
-             connections: data.data.connections,
-             pool_size: data.data.pool_size,
-             uptime: data.data.uptime
-           });
-         }
-       } catch (error) {
-         markInstanceUnreachable(instanceId);
-       }
-     }, interval);
-   }
-   ```
-
-   **Recommendation:** Prefer the SSE approach as it provides more efficient real-time monitoring and reduces server load. Only use the polling approach for client environments with specific compatibility needs or where SSE is not supported.
-
-3. **Instance Alias Management**: Set readable names for instances
-   ```javascript
-   // Batch set instance aliases
-   async function setInstanceAliases(instances) {
-     for (const instance of instances) {
-       // Generate meaningful aliases based on instance type and purpose
-       const alias = `${instance.type}-${instance.region || 'default'}-${instance.port || 'auto'}`;
-       await updateInstanceAlias(instance.id, alias);
-     }
-   }
-   
-   // Find instance by alias
-   async function findInstanceByAlias(targetAlias) {
-     const response = await fetch(`${API_URL}/instances`, {
-       headers: { 'X-API-Key': apiKey }
-     });
-     const data = await response.json();
-     
-     if (data.success) {
-       return data.data.find(instance => instance.alias === targetAlias);
-     }
-     return null;
-   }
-   ```
-
-4. **Control Operations**: Start, stop, restart instances
-   ```javascript
-   async function controlInstance(instanceId, action) {
-     // action can be: start, stop, restart
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',  // Note: API has been updated to use PATCH instead of PUT
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ action })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   
-   // Update instance alias
-   async function updateInstanceAlias(instanceId, alias) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 
-         'Content-Type': 'application/json',
-         'X-API-Key': apiKey // If API Key is enabled 
-       },
-       body: JSON.stringify({ alias })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   
-   // Update instance URL configuration
-   async function updateInstanceURL(instanceId, newURL) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PUT',
-       headers: { 
-         'Content-Type': 'application/json',
-         'X-API-Key': apiKey // If API Key is enabled 
-       },
-       body: JSON.stringify({ url: newURL })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   ```
-
-5. **Auto-start Policy Management**: Configure automatic startup behavior
-   ```javascript
-   async function setAutoStartPolicy(instanceId, enableAutoStart) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ restart: enableAutoStart })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   
-   // Combined operation: control instance and update auto-start policy
-   async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ 
-         action: action,
-         restart: enableAutoStart 
-       })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   
-   // Combined operation: update alias, control instance and auto-start policy
-   async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ 
-         alias: alias,
-         action: action,
-         restart: enableAutoStart 
-       })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   ```
-
-#### Complete Auto-start Policy Usage Example
-
-Here's a comprehensive example showing how to implement auto-start policy management in a real-world scenario:
-
-```javascript
-// Scenario: Setting up a load-balanced server cluster with auto-start policies
-async function setupServerCluster(serverConfigs) {
-  const clusterInstances = [];
-  
-  for (const config of serverConfigs) {
-    try {
-      // Create server instance
-      const instance = await createNodePassInstance({
-        type: 'server',
-        port: config.port,
-        target: config.target,
-        critical: config.isPrimary, // Primary servers are critical
-        tls: config.enableTLS
-      });
-      
-      if (instance.success) {
-        // Set meaningful instance alias
-        const alias = `${config.role}-server-${config.port}`;
-        await updateInstanceAlias(instance.data.id, alias);
-        
-        // Configure auto-start policy based on server role
-        const autoStartPolicy = config.isPrimary || config.role === 'essential';
-        await setAutoStartPolicy(instance.data.id, autoStartPolicy);
-        
-        // Start the instance
-        await controlInstance(instance.data.id, 'start');
-        
-        clusterInstances.push({
-          id: instance.data.id,
-          alias: alias,
-          role: config.role,
-          autoStartEnabled: autoStartPolicy
-        });
-        
-        console.log(`Server ${alias} created with auto-start policy: ${autoStartPolicy}`);
-      }
-    } catch (error) {
-      console.error(`Failed to create server ${config.role}:`, error);
-    }
-  }
-  
-  return clusterInstances;
-}
-
-// Monitor cluster health and adjust auto-start policies dynamically
-async function monitorClusterHealth(clusterInstances) {
-  const healthyInstances = [];
-  
-  for (const cluster of clusterInstances) {
-    const instance = await fetch(`${API_URL}/instances/${cluster.id}`);
-    const data = await instance.json();
-    
-    if (data.success && data.data.status === 'running') {
-      healthyInstances.push(cluster);
-    } else {
-      // If a critical instance is down, enable auto-start for backup instances
-      if (cluster.role === 'primary') {
-        await enableBackupInstanceAutoStart(clusterInstances);
-      }
-    }
-  }
-  
-  return healthyInstances;
-}
-
-async function enableBackupInstanceAutoStart(clusterInstances) {
-  const backupInstances = clusterInstances.filter(c => c.role === 'backup');
-  for (const backup of backupInstances) {
-    await setAutoStartPolicy(backup.id, true);
-    console.log(`Enabled auto-start policy for backup instance: ${backup.id}`);
-  }
-}
-```
-
+- All instance, traffic, health, alias, and auto-start data are persisted and restored after restart
+- Full OpenAPI spec: `/openapi.json`, Swagger UI: `/docs`
 ### Real-time Event Monitoring with SSE
 
 NodePass now supports Server-Sent Events (SSE) for real-time monitoring of instance state changes. This allows frontend applications to receive instant notifications about instance creation, updates, and deletions without polling.
@@ -762,16 +304,7 @@ When implementing SSE in your frontend:
 
 The Master API provides traffic statistics, but there are important requirements to note:
 
-1. **Enable Debug Mode**: Traffic statistics are only available when debug mode is enabled. 
-
-   ```bash
-   # Master with debug mode enabled
-   nodepass master://0.0.0.0:10101?log=debug
-   ```
-
-   Without enabling debug mode, traffic statistics will not be collected or returned by the API.
-
-2. **Basic Traffic Metrics**: NodePass periodically provides cumulative TCP and UDP traffic values in both inbound and outbound directions. The frontend application needs to store and process these values to derive meaningful statistics.
+1. **Basic Traffic Metrics**: NodePass periodically provides cumulative TCP and UDP traffic values in both inbound and outbound directions. The frontend application needs to store and process these values to derive meaningful statistics.
    ```javascript
    function processTrafficStats(instanceId, currentStats) {
      // Store the current timestamp
@@ -806,7 +339,7 @@ The Master API provides traffic statistics, but there are important requirements
    }
    ```
 
-3. **Data Persistence**: Since the API only provides cumulative values, the frontend must implement proper storage and calculation logic
+2. **Data Persistence**: Since the API only provides cumulative values, the frontend must implement proper storage and calculation logic
    ```javascript
    // Example of frontend storage structure for traffic history
    const trafficHistory = {};

@@ -4,100 +4,101 @@
 
 NodePass在主控模式（Master Mode）下提供了RESTful API，使前端应用能够以编程方式进行控制和集成。本节提供API端点、集成模式和最佳实践的全面文档。
 
-## 主控模式API
+# NodePass API 参考
 
-当NodePass以主控模式（`master://`）运行时，它会暴露REST API，允许前端应用：
+## 概述
 
-1. 创建和管理NodePass服务器和客户端实例
-2. 监控连接状态和统计信息
-3. 控制运行中的实例（启动、停止、重启）
-4. 配置实例自启动策略以实现自动化管理
-5. 通过参数配置行为
+NodePass 主控模式（Master Mode）下提供 RESTful API，支持前端集成和自动化。本文档涵盖所有接口、数据结构和最佳实践。
 
-### 基本URL
+## 主控模式 API
+
+主控模式（`master://`）下，NodePass 支持：
+
+1. 创建和管理服务端/客户端实例
+2. 实时监控状态、流量、健康检查
+3. 控制实例（启动、停止、重启、重置流量）
+4. 配置自启动策略
+5. 灵活参数配置
+
+### 基础 URL
 
 ```
 master://<api_addr>/<prefix>?<log>&<tls>
 ```
 
-其中：
-- `<api_addr>`是主控模式URL中指定的地址（例如`0.0.0.0:9090`）
-- `<prefix>`是可选的API前缀（如果未指定，则使用`/api`）
+- `<api_addr>`：监听地址（如 `0.0.0.0:9090`）
+- `<prefix>`：API 路径前缀（默认 `/api`）
 
 ### 启动主控模式
 
-使用默认设置启动主控模式的NodePass：
-
 ```bash
 nodepass "master://0.0.0.0:9090?log=info"
-```
-
-使用自定义API前缀和启用TLS：
-
-```bash
 nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 ```
 
-### 可用端点
+### 主要接口
 
-| 端点 | 方法 | 描述 |
-|----------|--------|-------------|
-| `/instances` | GET | 列出所有NodePass实例 |
-| `/instances` | POST | 创建新的NodePass实例 |
-| `/instances/{id}` | GET | 获取特定实例的详细信息 |
-| `/instances/{id}` | PATCH | 更新实例状态或控制操作 |
-| `/instances/{id}` | PUT | 更新实例URL配置 |
-| `/instances/{id}` | DELETE | 删除特定实例 |
-| `/events` | GET | 使用SSE订阅实例事件通知 |
-| `/info` | GET | 获取主控服务信息 |
-| `/openapi.json` | GET | OpenAPI规范 |
-| `/docs` | GET | Swagger UI文档界面 |
+| Endpoint           | Method | 说明                 |
+|--------------------|--------|----------------------|
+| `/instances`       | GET    | 获取所有实例         |
+| `/instances`       | POST   | 创建新实例           |
+| `/instances/{id}`  | GET    | 获取实例详情         |
+| `/instances/{id}`  | PATCH  | 更新/控制实例        |
+| `/instances/{id}`  | PUT    | 更新实例 URL         |
+| `/instances/{id}`  | DELETE | 删除实例             |
+| `/events`          | GET    | SSE 实时事件流       |
+| `/info`            | GET    | 获取主控服务信息     |
+| `/openapi.json`    | GET    | OpenAPI 规范         |
+| `/docs`            | GET    | Swagger UI 文档      |
 
-### API认证
+### API 鉴权
 
-NodePass主控API现在支持API Key认证，可以防止未经授权的访问。系统会在首次启动时自动生成一个API Key。
+API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`。
 
-#### API Key特点
+- 受保护接口：`/instances`、`/instances/{id}`、`/events`、`/info`
+- 公共接口：`/openapi.json`、`/docs`
+- 认证方式：请求头加 `X-API-Key: <key>`
+- 重置 Key：PATCH `/instances/********`，body `{ "action": "restart" }`
 
-1. **自动生成**：首次启动主控模式时自动创建
-2. **持久化存储**：API Key与其他实例配置一起保存在`nodepass.gob`文件中
-3. **重启后保留**：重启主控后API Key保持不变
-4. **选择性保护**：仅保护关键API端点，公共文档仍可访问
+### 实例数据结构
 
-#### 受保护的端点
-
-以下端点需要API Key认证：
-- `/instances`（所有方法）
-- `/instances/{id}`（所有方法：GET、PATCH、PUT、DELETE）
-- `/events`
-- `/info`
-
-以下端点可公开访问（无需API Key）：
-- `/openapi.json`
-- `/docs`
-
-#### 如何使用API Key
-
-在API请求中包含API Key：
-
-```javascript
-// 使用API Key进行实例管理请求
-async function getInstances() {
-  const response = await fetch(`${API_URL}/instances`, {
-    method: 'GET',
-    headers: {
-      'X-API-Key': 'your-api-key-here'
-    }
-  });
-  
-  return await response.json();
+```json
+{
+  "id": "a1b2c3d4",
+  "alias": "别名",
+  "type": "client|server",
+  "status": "running|stopped|error",
+  "url": "...",
+  "restart": true,
+  "tcprx": 0,
+  "tcptx": 0,
+  "udprx": 0,
+  "udptx": 0,
+  "pool": 0,   // 健康检查池连接数
+  "ping": 0    // 健康检查延迟(ms)
 }
 ```
 
-#### 如何获取和重新生成API Key
+- `pool`/`ping`：健康检查数据，仅 debug 模式下统计
+- `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
+- `restart`：自启动策略
 
-API Key可以在系统启动日志中找到，也可以通过以下方式重新生成：
+### 实例 URL 格式
 
+- 服务端：`server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<参数>`
+- 客户端：`client://<server_host>:<server_port>/<local_host>:<local_port>?<参数>`
+- 支持参数：`tls`、`log`、`crt`、`key`
+
+### 实时事件流（SSE）
+
+- 事件类型：`initial`、`create`、`update`、`delete`、`shutdown`、`log`
+- `log` 事件仅推送普通日志，流量/健康检查日志已被过滤
+- 连接 `/events` 可实时获取实例变更和日志
+
+### 其他说明
+
+- 所有实例、流量、健康检查、别名、自启动策略均持久化存储，重启后自动恢复
+- API 详细规范见 `/openapi.json`，Swagger UI 见 `/docs`
 ```javascript
 // 重新生成API Key（需要知道当前的API Key）
 async function regenerateApiKey() {
@@ -633,16 +634,7 @@ async function enableBackupInstanceAutoStart(clusterInstances) {
 
 主控API提供流量统计数据，但需要注意以下重要事项：
 
-1. **启用调试模式**：流量统计功能仅在启用调试模式时可用。
-
-   ```bash
-   # 启用调试模式的主控
-   nodepass master://0.0.0.0:10101?log=debug
-   ```
-
-   如果未启用调试模式，API将不会收集或返回流量统计数据。
-
-2. **基本流量指标**：NodePass周期性地提供TCP和UDP流量在入站和出站方向上的累计值，前端应用需要存储和处理这些值以获得有意义的统计信息。
+1. **基本流量指标**：NodePass周期性地提供TCP和UDP流量在入站和出站方向上的累计值，前端应用需要存储和处理这些值以获得有意义的统计信息。
    ```javascript
    function processTrafficStats(instanceId, currentStats) {
      // 存储当前时间戳
@@ -677,7 +669,7 @@ async function enableBackupInstanceAutoStart(clusterInstances) {
    }
    ```
 
-3. **数据持久化**：由于API只提供累计值，前端必须实现适当的存储和计算逻辑
+2. **数据持久化**：由于API只提供累计值，前端必须实现适当的存储和计算逻辑
    ```javascript
    // 前端流量历史存储结构示例
    const trafficHistory = {};
