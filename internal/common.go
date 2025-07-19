@@ -641,7 +641,7 @@ func (c *Common) commonOnce() {
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL)
 			case "f": // 健康检查
-				c.logger.Event("HEALTH_CHECK|ACTIVE=%v|LEGACY=%vms", c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds())
+				c.logger.Event("HEALTH_CHECKS|POOL=%v|PING=%vms", c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds())
 			default:
 				// 无效信号
 			}
