@@ -475,10 +475,11 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
+				rx, tx, err := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
+				c.logger.Debug("Exchange complete: %v", err)
+				c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(targetConn)
 		}
 	}
@@ -566,7 +567,8 @@ func (c *Common) commonUDPLoop() {
 								return
 							}
 							// 传输完成，广播统计信息
-							c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
+							c.logger.Debug("Transfer complete: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
+							c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
 						}
 					}
 				}(remoteConn, clientAddr, sessionKey, id)
@@ -600,7 +602,8 @@ func (c *Common) commonUDPLoop() {
 			}
 
 			// 传输完成，广播统计信息
-			c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
+			c.logger.Debug("Transfer complete: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
+			c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
 		}
 	}
 }
@@ -685,10 +688,11 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	rx, tx, _ := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
+	rx, tx, err := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
 
 	// 交换完成，广播统计信息
-	c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
+	c.logger.Debug("Exchange complete: %v", err)
+	c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -725,6 +729,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		targetConn = session.(*net.UDPConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
+	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	done := make(chan struct{}, 2)
 
@@ -760,7 +765,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				}
 
 				// 传输完成，广播统计信息
-				c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
+				c.logger.Debug("Transfer complete: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
+				c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
 			}
 		}
 	}()
@@ -797,7 +803,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				}
 
 				// 传输完成，广播统计信息
-				c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
+				c.logger.Debug("Transfer complete: %v <-> %v", targetConn.LocalAddr(), remoteConn.LocalAddr())
+				c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
 			}
 		}
 	}()
@@ -882,10 +889,11 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				rx, tx, _ := conn.DataExchange(tunnelConn, targetConn, tcpReadTimeout)
+				rx, tx, err := conn.DataExchange(tunnelConn, targetConn, tcpReadTimeout)
 
 				// 交换完成，广播统计信息
-				c.logger.Event("Exchange complete: TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
+				c.logger.Debug("Exchange complete: %v", err)
+				c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=0|UDP_TX=0", rx, tx)
 			}(tunnelConn)
 		}
 	}
@@ -977,7 +985,8 @@ func (c *Common) singleUDPLoop() error {
 								return
 							}
 							// 传输完成，广播统计信息
-							c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
+							c.logger.Debug("Transfer complete: %v <-> %v", c.tunnelUDPConn.LocalAddr(), targetConn.LocalAddr())
+							c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=0|UDP_TX=%v", tx)
 						}
 					}
 				}(targetConn, clientAddr, sessionKey)
@@ -996,7 +1005,8 @@ func (c *Common) singleUDPLoop() error {
 			}
 
 			// 传输完成，广播统计信息
-			c.logger.Event("Transfer complete: TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
+			c.logger.Debug("Transfer complete: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
+			c.logger.Event("TRAFFIC_STATS|TCP_RX=0|TCP_TX=0|UDP_RX=%v|UDP_TX=0", rx)
 		}
 	}
 }
