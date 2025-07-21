@@ -125,7 +125,7 @@ func (c *Common) getPoolCapacity(parsedURL *url.URL) {
 			c.maxPoolCapacity = value
 		}
 	} else {
-		c.maxPoolCapacity = 8192
+		c.maxPoolCapacity = 1024
 	}
 }
 
