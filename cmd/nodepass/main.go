@@ -40,6 +40,8 @@ func getParsedURL(args []string) *url.URL {
 // initLogLevel 初始化日志级别
 func initLogLevel(level string) {
 	switch level {
+	case "none":
+		logger.SetLogLevel(logs.None)
 	case "debug":
 		logger.SetLogLevel(logs.Debug)
 		logger.Debug("Init log level: DEBUG")
@@ -49,6 +51,9 @@ func initLogLevel(level string) {
 	case "error":
 		logger.SetLogLevel(logs.Error)
 		logger.Error("Init log level: ERROR")
+	case "event":
+		logger.SetLogLevel(logs.Event)
+		logger.Event("Init log level: EVENT")
 	default:
 		logger.SetLogLevel(logs.Info)
 		logger.Info("Init log level: INFO")
