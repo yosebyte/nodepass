@@ -374,6 +374,7 @@ func (c *Common) healthCheck() error {
 					return err
 				}
 				c.tunnelPool.Flush()
+				c.tunnelPool.ResetError()
 				time.Sleep(reportInterval) // 等待连接池刷新完成
 				c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 			}
@@ -630,6 +631,7 @@ func (c *Common) commonOnce() error {
 			case "0": // 连接池刷新
 				go func() {
 					c.tunnelPool.Flush()
+					c.tunnelPool.ResetError()
 					time.Sleep(reportInterval) // 等待连接池刷新完成
 					c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 				}()
