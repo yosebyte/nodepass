@@ -66,15 +66,15 @@ NodePass allows flexible configuration via URL query parameters. The following t
 
 | Parameter | Description           | server | client | master |
 |-----------|----------------------|:------:|:------:|:------:|
-| `log`     | Log level             |   ✔    |   ✔    |   ✔    |
-| `tls`     | TLS encryption mode   |   ✔    |   ✖    |   ✔    |
-| `crt`     | Custom certificate path|  ✔    |   ✖    |   ✔    |
-| `key`     | Custom key path       |   ✔    |   ✖    |   ✔    |
-| `min`     | Minimum pool capacity |   ✖    |   ✔    |   ✖    |
-| `max`     | Maximum pool capacity |   ✔    |   ✔    |   ✖    |
+| `log`     | Log level             |   O    |   O    |   O    |
+| `tls`     | TLS encryption mode   |   O    |   X    |   O    |
+| `crt`     | Custom certificate path|  O    |   X    |   O    |
+| `key`     | Custom key path       |   O    |   X    |   O    |
+| `min`     | Minimum pool capacity |   X    |   O    |   X    |
+| `max`     | Maximum pool capacity |   O    |   O    |   X    |
 
-- ✔: Parameter is valid and recommended for configuration
-- ✖: Parameter is not applicable and should be ignored
+- O: Parameter is valid and recommended for configuration
+- X: Parameter is not applicable and should be ignored
 
 **Best Practices:**
 - For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
