@@ -60,6 +60,27 @@ Example:
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 ```
 
+## URL Query Parameter Scope and Applicability
+
+NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
+
+| Parameter | Description           | server | client | master |
+|-----------|----------------------|:------:|:------:|:------:|
+| `log`     | Log level             |   ✔    |   ✔    |   ✔    |
+| `tls`     | TLS encryption mode   |   ✔    |   ✖    |   ✔    |
+| `crt`     | Custom certificate path|  ✔    |   ✖    |   ✔    |
+| `key`     | Custom key path       |   ✔    |   ✖    |   ✔    |
+| `min`     | Minimum pool capacity |   ✖    |   ✔    |   ✔    |
+| `max`     | Maximum pool capacity |   ✖    |   ✔    |   ✔    |
+
+- ✔: Parameter is valid and recommended for configuration
+- ✖: Parameter is not applicable and should be ignored
+
+**Best Practices:**
+- For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
+- For client/master modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
+- Log level (`log`) can be set in all modes for easier operations and troubleshooting.
+
 ## Environment Variables
 
 NodePass behavior can be fine-tuned using environment variables. Below is the complete list of available variables with their descriptions, default values, and recommended settings for different scenarios.
