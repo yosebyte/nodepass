@@ -20,7 +20,7 @@ Where:
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
-- `max=<max_pool>`: Maximum connection pool capacity (default: 8192, client mode only)
+- `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
 
 TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
@@ -93,7 +93,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
 - `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 8192)
+- `max`: Maximum connection pool capacity (default: 1024)
 
 #### How Client Mode Works
 

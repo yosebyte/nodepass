@@ -52,7 +52,7 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/p
 Connection pool capacity can be configured via URL query parameters:
 
 - `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 8192)
+- `max`: Maximum connection pool capacity (default: 1024)
 
 Example:
 ```bash
@@ -70,8 +70,8 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `tls`     | TLS encryption mode   |   ✔    |   ✖    |   ✔    |
 | `crt`     | Custom certificate path|  ✔    |   ✖    |   ✔    |
 | `key`     | Custom key path       |   ✔    |   ✖    |   ✔    |
-| `min`     | Minimum pool capacity |   ✖    |   ✔    |   ✔    |
-| `max`     | Maximum pool capacity |   ✖    |   ✔    |   ✔    |
+| `min`     | Minimum pool capacity |   ✖    |   ✔    |   ✖    |
+| `max`     | Maximum pool capacity |   ✔    |   ✔    |   ✖    |
 
 - ✔: Parameter is valid and recommended for configuration
 - ✖: Parameter is not applicable and should be ignored
