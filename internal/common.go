@@ -877,11 +877,13 @@ func (c *Common) singleTCPLoop() error {
 					return
 				}
 
-				c.logger.Debug("Target connection: get relay-id <- pool active %v", c.tunnelPool.Active())
+				c.logger.Debug("Target connection: get ******** <- pool active %v / %v per %v",
+					c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
 
 				defer func() {
-					c.tunnelPool.Put("", targetConn)
-					c.logger.Debug("Tunnel connection: put relay-id -> pool active %v", c.tunnelPool.Active())
+					if targetConn != nil {
+						targetConn.Close()
+					}
 				}()
 
 				c.targetTCPConn = targetConn.(*net.TCPConn)
