@@ -312,16 +312,11 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
-	go c.commonOnce()
+	errChan := make(chan error, 3)
 
-	errChan := make(chan error, 2)
-
-	go func() {
-		errChan <- c.commonQueue()
-	}()
-	go func() {
-		errChan <- c.healthCheck()
-	}()
+	go func() { errChan <- c.commonOnce() }()
+	go func() { errChan <- c.commonQueue() }()
+	go func() { errChan <- c.healthCheck() }()
 
 	select {
 	case <-c.ctx.Done():
@@ -358,15 +353,13 @@ func (c *Common) commonQueue() error {
 // healthCheck 共用健康度检查
 func (c *Common) healthCheck() error {
 	flushURL := &url.URL{Fragment: "0"} // 连接池刷新信号
-	checkURL := &url.URL{Fragment: "f"} // 健康检查信号
+	pingURL := &url.URL{Fragment: "i"}  // PING信号
 	for {
 		select {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
-			if !c.mu.TryLock() {
-				continue
-			}
+			c.mu.Lock()
 
 			// 连接池健康度检查
 			if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
@@ -382,7 +375,7 @@ func (c *Common) healthCheck() error {
 			} else {
 				// 发送普通心跳包
 				c.checkPoint = time.Now()
-				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(checkURL.String())), '\n'))
+				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pingURL.String())), '\n'))
 				if err != nil {
 					c.mu.Unlock()
 					return err
@@ -609,7 +602,8 @@ func (c *Common) commonUDPLoop() {
 }
 
 // commonOnce 共用处理单个请求
-func (c *Common) commonOnce() {
+func (c *Common) commonOnce() error {
+	pongURL := &url.URL{Fragment: "o"} // PONG信号
 	for {
 		// 等待连接池准备就绪
 		if !c.tunnelPool.Ready() {
@@ -619,13 +613,12 @@ func (c *Common) commonOnce() {
 
 		select {
 		case <-c.ctx.Done():
-			return
+			return c.ctx.Err()
 		case signal := <-c.signalChan:
 			// 解析信号URL
 			signalURL, err := url.Parse(signal)
 			if err != nil {
-				c.logger.Error("Parse failed: %v", err)
-				continue
+				return err
 			}
 
 			// 处理信号
@@ -640,7 +633,14 @@ func (c *Common) commonOnce() {
 				go c.commonTCPOnce(signalURL.Host)
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL)
-			case "f": // 健康检查
+			case "i": // PING
+				c.mu.Lock()
+				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pongURL.String())), '\n'))
+				c.mu.Unlock()
+				if err != nil {
+					return err
+				}
+			case "o": // PONG
 				c.logger.Event("HEALTH_CHECKS|POOL=%v|PING=%vms", c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds())
 			default:
 				// 无效信号

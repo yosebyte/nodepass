@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
 )
@@ -147,7 +148,7 @@ func (s *Server) tunnelHandshake() error {
 			continue
 		} else {
 			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-			s.bufReader = bufio.NewReader(s.tunnelTCPConn)
+			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: tcpReadTimeout})
 			s.tunnelTCPConn.SetKeepAlive(true)
 			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
