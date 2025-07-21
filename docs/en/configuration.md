@@ -4,8 +4,9 @@ NodePass uses a minimalist approach to configuration, with all settings specifie
 
 ## Log Levels
 
-NodePass provides five log verbosity levels that control the amount of information displayed:
+NodePass provides six log verbosity levels that control the amount of information displayed:
 
+- `none`: Disable logging - no log information displayed
 - `debug`: Verbose debugging information - shows all operations and connections
 - `info`: General operational information (default) - shows startup, shutdown, and key events
 - `warn`: Warning conditions - only shows potential issues that don't affect core functionality

@@ -18,7 +18,7 @@ Where:
 ### Query Parameters
 
 Common query parameters:
-- `log=<level>`: Log verbosity level (`debug`, `info`, `warn`, `error`, or `event`)
+- `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 8192, client mode only)
 
