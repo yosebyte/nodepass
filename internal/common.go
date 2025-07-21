@@ -359,7 +359,11 @@ func (c *Common) healthCheck() error {
 		case <-c.ctx.Done():
 			return c.ctx.Err()
 		default:
-			c.mu.Lock()
+			// 尝试获取锁
+			if !c.mu.TryLock() {
+				time.Sleep(time.Millisecond)
+				continue
+			}
 
 			// 连接池健康度检查
 			if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
@@ -372,14 +376,14 @@ func (c *Common) healthCheck() error {
 				c.tunnelPool.Flush()
 				time.Sleep(reportInterval) // 等待连接池刷新完成
 				c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
-			} else {
-				// 发送普通心跳包
-				c.checkPoint = time.Now()
-				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pingURL.String())), '\n'))
-				if err != nil {
-					c.mu.Unlock()
-					return err
-				}
+			}
+
+			// 发送PING信号
+			c.checkPoint = time.Now()
+			_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pingURL.String())), '\n'))
+			if err != nil {
+				c.mu.Unlock()
+				return err
 			}
 
 			c.mu.Unlock()
