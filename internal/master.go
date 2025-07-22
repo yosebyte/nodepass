@@ -73,6 +73,7 @@ type Master struct {
 	tlsConfig     *tls.Config         // TLS配置
 	masterURL     *url.URL            // 主控URL
 	statePath     string              // 实例状态持久化文件路径
+	stateMu       sync.Mutex          // 持久化文件写入互斥锁
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	startTime     time.Time           // 启动时间
@@ -448,6 +449,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
 	// 创建持久化数据
 	persistentData := make(map[string]*Instance)
 
