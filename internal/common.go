@@ -312,16 +312,15 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
-	errChan := make(chan error, 3)
-
-	go func() { errChan <- c.commonOnce() }()
-	go func() { errChan <- c.commonQueue() }()
-	go func() { errChan <- c.healthCheck() }()
+	// 信号消纳、信号队列和健康检查
+	go func() { c.errChan <- c.commonOnce() }()
+	go func() { c.errChan <- c.commonQueue() }()
+	go func() { c.errChan <- c.healthCheck() }()
 
 	select {
 	case <-c.ctx.Done():
 		return c.ctx.Err()
-	case err := <-errChan:
+	case err := <-c.errChan:
 		return err
 	}
 }

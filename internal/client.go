@@ -28,8 +28,8 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
+			errChan:    make(chan error, 3),
 			semaphore:  make(chan struct{}, semaphoreLimit),
-			errChan:    make(chan error, 2),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tunnelName: parsedURL.Hostname(),

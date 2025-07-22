@@ -32,6 +32,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsCode:    tlsCode,
 			dataFlow:   "+",
 			logger:     logger,
+			errChan:    make(chan error, 3),
 			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
