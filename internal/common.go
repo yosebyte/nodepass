@@ -167,12 +167,13 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	}
 }
 
-// initContext 初始化上下文
-func (c *Common) initContext() {
+// initBackground 初始化基本信息
+func (c *Common) initBackground() {
 	if c.cancel != nil {
 		c.cancel()
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
+	c.errChan = make(chan error, 3)
 }
 
 // initTargetListener 初始化目标监听器

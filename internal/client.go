@@ -28,7 +28,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
-			errChan:    make(chan error, 3),
 			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
@@ -74,7 +73,8 @@ func (c *Client) Run() {
 
 // start 启动客户端服务
 func (c *Client) start() error {
-	c.initContext()
+	// 初始化基本信息
+	c.initBackground()
 
 	// 通过是否监听成功判断单端转发或双端握手
 	if err := c.initTunnelListener(); err == nil {
