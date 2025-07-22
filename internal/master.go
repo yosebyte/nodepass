@@ -718,7 +718,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				instance.UDPRX = 0
 				instance.UDPTX = 0
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Traffic stats reset: [%v]", instance.ID)
 
 				// 发送流量统计重置事件
@@ -729,7 +729,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
 				instance.Restart = *reqData.Restart
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
 
 				// 发送restart策略变更事件
@@ -740,7 +740,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
 				instance.Alias = reqData.Alias
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Alias updated: %v [%v]", reqData.Alias, instance.ID)
 
 				// 发送别名变更事件
@@ -826,7 +826,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 func (m *Master) regenerateAPIKey(instance *Instance) {
 	instance.URL = generateAPIKey()
 	m.instances.Store(apiKeyID, instance)
-	m.saveState()
+	go m.saveState()
 	m.logger.Info("API Key regenerated: %v", instance.URL)
 }
 
@@ -867,7 +867,7 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 	}
 	m.instances.Delete(id)
 	// 删除实例后保存状态
-	m.saveState()
+	go m.saveState()
 	w.WriteHeader(http.StatusNoContent)
 
 	// 发送删除事件
@@ -1142,7 +1142,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	m.instances.Store(instance.ID, instance)
 
 	// 保存状态变更
-	m.saveState()
+	go m.saveState()
 
 	// 发送停止事件
 	m.sendSSEEvent("update", instance)
