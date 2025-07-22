@@ -49,12 +49,12 @@ const swaggerUIHTML = `<!DOCTYPE html>
   <div id="swagger-ui"></div>
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
   <script>
-    window.onload = () => SwaggerUIBundle({
-      spec: %s,
-      dom_id: '#swagger-ui',
-      presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
-      layout: "BaseLayout"
-    });
+	window.onload = () => SwaggerUIBundle({
+	  spec: %s,
+	  dom_id: '#swagger-ui',
+	  presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+	  layout: "BaseLayout"
+	});
   </script>
 </body>
 </html>`
@@ -73,6 +73,7 @@ type Master struct {
 	tlsConfig     *tls.Config         // TLS配置
 	masterURL     *url.URL            // 主控URL
 	statePath     string              // 实例状态持久化文件路径
+	stateMu       sync.Mutex          // 持久化文件写入互斥锁
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	startTime     time.Time           // 启动时间
@@ -90,6 +91,8 @@ type Instance struct {
 	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
 	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
 	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
+	Pool       int64              `json:"pool"`      // 健康检查池连接数
+	Ping       int64              `json:"ping"`      // 健康检查端内延迟
 	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
@@ -105,21 +108,23 @@ type InstanceEvent struct {
 
 // InstanceLogWriter 实例日志写入器
 type InstanceLogWriter struct {
-	instanceID string         // 实例ID
-	instance   *Instance      // 实例对象
-	target     io.Writer      // 目标写入器
-	master     *Master        // 主控对象
-	statRegex  *regexp.Regexp // 统计信息正则表达式
+	instanceID  string         // 实例ID
+	instance    *Instance      // 实例对象
+	target      io.Writer      // 目标写入器
+	master      *Master        // 主控对象
+	statRegex   *regexp.Regexp // 统计信息正则表达式
+	healthRegex *regexp.Regexp // 健康检查正则表达式
 }
 
 // NewInstanceLogWriter 创建新的实例日志写入器
 func NewInstanceLogWriter(instanceID string, instance *Instance, target io.Writer, master *Master) *InstanceLogWriter {
 	return &InstanceLogWriter{
-		instanceID: instanceID,
-		instance:   instance,
-		target:     target,
-		master:     master,
-		statRegex:  regexp.MustCompile(`TRAFFIC_STATS\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
+		instanceID:  instanceID,
+		instance:    instance,
+		target:      target,
+		master:      master,
+		statRegex:   regexp.MustCompile(`TRAFFIC_STATS\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
+		healthRegex: regexp.MustCompile(`HEALTH_CHECKS\|POOL=(\d+)\|PING=(\d+)ms`),
 	}
 }
 
@@ -140,9 +145,24 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
-
 			// 发送流量更新事件
 			w.master.sendSSEEvent("update", w.instance)
+			// 过滤统计日志
+			continue
+		}
+		// 解析并处理健康检查信息
+		if matches := w.healthRegex.FindStringSubmatch(line); len(matches) == 3 {
+			if v, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+				w.instance.Pool = v
+			}
+			if v, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
+				w.instance.Ping = v
+			}
+			w.master.instances.Store(w.instanceID, w.instance)
+			// 发送健康检查更新事件
+			w.master.sendSSEEvent("update", w.instance)
+			// 过滤检查日志
+			continue
 		}
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
@@ -429,6 +449,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+
 	// 创建持久化数据
 	persistentData := make(map[string]*Instance)
 
@@ -699,7 +722,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				instance.UDPRX = 0
 				instance.UDPTX = 0
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Traffic stats reset: [%v]", instance.ID)
 
 				// 发送流量统计重置事件
@@ -710,7 +733,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
 				instance.Restart = *reqData.Restart
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
 
 				// 发送restart策略变更事件
@@ -721,7 +744,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
 				instance.Alias = reqData.Alias
 				m.instances.Store(id, instance)
-				m.saveState()
+				go m.saveState()
 				m.logger.Info("Alias updated: %v [%v]", reqData.Alias, instance.ID)
 
 				// 发送别名变更事件
@@ -807,7 +830,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 func (m *Master) regenerateAPIKey(instance *Instance) {
 	instance.URL = generateAPIKey()
 	m.instances.Store(apiKeyID, instance)
-	m.saveState()
+	go m.saveState()
 	m.logger.Info("API Key regenerated: %v", instance.URL)
 }
 
@@ -848,7 +871,7 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 	}
 	m.instances.Delete(id)
 	// 删除实例后保存状态
-	m.saveState()
+	go m.saveState()
 	w.WriteHeader(http.StatusNoContent)
 
 	// 发送删除事件
@@ -1123,7 +1146,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	m.instances.Store(instance.ID, instance)
 
 	// 保存状态变更
-	m.saveState()
+	go m.saveState()
 
 	// 发送停止事件
 	m.sendSSEEvent("update", instance)
@@ -1200,185 +1223,187 @@ func generateOpenAPISpec() string {
 	return fmt.Sprintf(`{
   "openapi": "3.1.1",
   "info": {
-    "title": "NodePass API",
-    "description": "API for managing NodePass server and client instances",
-    "version": "%s"
+	"title": "NodePass API",
+	"description": "API for managing NodePass server and client instances",
+	"version": "%s"
   },
   "servers": [{"url": "/{prefix}/v1", "variables": {"prefix": {"default": "api", "description": "API prefix path"}}}],
   "security": [{"ApiKeyAuth": []}],
   "paths": {
-    "/instances": {
-      "get": {
-        "summary": "List all instances",
-        "security": [{"ApiKeyAuth": []}],
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Instance"}}}}},
-          "401": {"description": "Unauthorized"},
-          "405": {"description": "Method not allowed"}
-        }
-      },
-      "post": {
-        "summary": "Create a new instance",
-        "security": [{"ApiKeyAuth": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateInstanceRequest"}}}},
-        "responses": {
-          "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
-          "400": {"description": "Invalid input"},
-          "401": {"description": "Unauthorized"},
-          "405": {"description": "Method not allowed"},
-          "409": {"description": "Instance ID already exists"}
-        }
-      }
-    },
-    "/instances/{id}": {
-      "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
-      "get": {
-        "summary": "Get instance details",
-        "security": [{"ApiKeyAuth": []}],
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
-          "400": {"description": "Instance ID required"},
-          "401": {"description": "Unauthorized"},
-          "404": {"description": "Not found"},
-          "405": {"description": "Method not allowed"}
-        }
-      },
-      "patch": {
-        "summary": "Update instance",
-        "security": [{"ApiKeyAuth": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateInstanceRequest"}}}},
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
-          "400": {"description": "Instance ID required or invalid input"},
-          "401": {"description": "Unauthorized"},
-          "404": {"description": "Not found"},
-          "405": {"description": "Method not allowed"}
-        }
-      },
-      "put": {
-        "summary": "Update instance URL",
-        "security": [{"ApiKeyAuth": []}],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PutInstanceRequest"}}}},
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
-          "400": {"description": "Instance ID required or invalid input"},
-          "401": {"description": "Unauthorized"},
-          "403": {"description": "Forbidden"},
-          "404": {"description": "Not found"},
-          "405": {"description": "Method not allowed"},
-          "409": {"description": "Instance URL conflict"}
-        }
-      },
-      "delete": {
-        "summary": "Delete instance",
-        "security": [{"ApiKeyAuth": []}],
-        "responses": {
-          "204": {"description": "Deleted"},
-          "400": {"description": "Instance ID required"},
-          "401": {"description": "Unauthorized"},
-          "403": {"description": "Forbidden"},
-          "404": {"description": "Not found"},
-          "405": {"description": "Method not allowed"}
-        }
-      }
-    },
-    "/events": {
-      "get": {
-        "summary": "Subscribe to instance events",
+	"/instances": {
+	  "get": {
+		"summary": "List all instances",
 		"security": [{"ApiKeyAuth": []}],
-        "responses": {
-          "200": {"description": "Success", "content": {"text/event-stream": {}}},
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Instance"}}}}},
 		  "401": {"description": "Unauthorized"},
-          "405": {"description": "Method not allowed"}
-        }
-      }
-    },
-    "/info": {
-      "get": {
-        "summary": "Get master information",
-        "security": [{"ApiKeyAuth": []}],
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MasterInfo"}}}},
-          "401": {"description": "Unauthorized"},
-          "405": {"description": "Method not allowed"}
-        }
-      }
-    },
-    "/openapi.json": {
-      "get": {
-        "summary": "Get OpenAPI specification",
-        "responses": {
-          "200": {"description": "Success", "content": {"application/json": {}}}
-        }
-      }
-    },
-    "/docs": {
-      "get": {
-        "summary": "Get Swagger UI",
-        "responses": {
-          "200": {"description": "Success", "content": {"text/html": {}}}
-        }
-      }
-    }
+		  "405": {"description": "Method not allowed"}
+		}
+	  },
+	  "post": {
+		"summary": "Create a new instance",
+		"security": [{"ApiKeyAuth": []}],
+		"requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateInstanceRequest"}}}},
+		"responses": {
+		  "201": {"description": "Created", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+		  "400": {"description": "Invalid input"},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"},
+		  "409": {"description": "Instance ID already exists"}
+		}
+	  }
+	},
+	"/instances/{id}": {
+	  "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}],
+	  "get": {
+		"summary": "Get instance details",
+		"security": [{"ApiKeyAuth": []}],
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+		  "400": {"description": "Instance ID required"},
+		  "401": {"description": "Unauthorized"},
+		  "404": {"description": "Not found"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  },
+	  "patch": {
+		"summary": "Update instance",
+		"security": [{"ApiKeyAuth": []}],
+		"requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateInstanceRequest"}}}},
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+		  "400": {"description": "Instance ID required or invalid input"},
+		  "401": {"description": "Unauthorized"},
+		  "404": {"description": "Not found"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  },
+	  "put": {
+		"summary": "Update instance URL",
+		"security": [{"ApiKeyAuth": []}],
+		"requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PutInstanceRequest"}}}},
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Instance"}}}},
+		  "400": {"description": "Instance ID required or invalid input"},
+		  "401": {"description": "Unauthorized"},
+		  "403": {"description": "Forbidden"},
+		  "404": {"description": "Not found"},
+		  "405": {"description": "Method not allowed"},
+		  "409": {"description": "Instance URL conflict"}
+		}
+	  },
+	  "delete": {
+		"summary": "Delete instance",
+		"security": [{"ApiKeyAuth": []}],
+		"responses": {
+		  "204": {"description": "Deleted"},
+		  "400": {"description": "Instance ID required"},
+		  "401": {"description": "Unauthorized"},
+		  "403": {"description": "Forbidden"},
+		  "404": {"description": "Not found"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  }
+	},
+	"/events": {
+	  "get": {
+		"summary": "Subscribe to instance events",
+		"security": [{"ApiKeyAuth": []}],
+		"responses": {
+		  "200": {"description": "Success", "content": {"text/event-stream": {}}},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  }
+	},
+	"/info": {
+	  "get": {
+		"summary": "Get master information",
+		"security": [{"ApiKeyAuth": []}],
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MasterInfo"}}}},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  }
+	},
+	"/openapi.json": {
+	  "get": {
+		"summary": "Get OpenAPI specification",
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {}}}
+		}
+	  }
+	},
+	"/docs": {
+	  "get": {
+		"summary": "Get Swagger UI",
+		"responses": {
+		  "200": {"description": "Success", "content": {"text/html": {}}}
+		}
+	  }
+	}
   },
   "components": {
-    "securitySchemes": {
-      "ApiKeyAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Key",
-        "description": "API Key for authentication"
-      }
-    },
-    "schemas": {
-      "Instance": {
-        "type": "object",
-        "properties": {
-          "id": {"type": "string", "description": "Unique identifier"},
-          "alias": {"type": "string", "description": "Instance alias"},
-          "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
-          "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
-          "url": {"type": "string", "description": "Command string or API Key"},
-          "restart": {"type": "boolean", "description": "Restart policy"},
-          "tcprx": {"type": "integer", "description": "TCP received bytes"},
-          "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
-          "udprx": {"type": "integer", "description": "UDP received bytes"},
-          "udptx": {"type": "integer", "description": "UDP transmitted bytes"}
-        }
-      },
-      "CreateInstanceRequest": {
-        "type": "object",
-        "required": ["url"],
-        "properties": {"url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}}
-      },
-      "UpdateInstanceRequest": {
-        "type": "object",
-        "properties": {
-          "alias": {"type": "string", "description": "Instance alias"},
-          "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-          "restart": {"type": "boolean", "description": "Instance restart policy"}
-        }
-      },
-      "PutInstanceRequest": {
-        "type": "object",
-        "required": ["url"],
-        "properties": {"url": {"type": "string", "description": "New command string(scheme://host:port/host:port)"}}
-      },
-      "MasterInfo": {
-        "type": "object",
-        "properties": {
-          "os": {"type": "string", "description": "Operating system"},
-          "arch": {"type": "string", "description": "System architecture"},
-          "ver": {"type": "string", "description": "NodePass version"},
+   "securitySchemes": {
+	 "ApiKeyAuth": {
+	"type": "apiKey",
+	"in": "header",
+	"name": "X-API-Key",
+	"description": "API Key for authentication"
+	 }
+   },
+   "schemas": {
+	 "Instance": {
+	"type": "object",
+	"properties": {
+	  "id": {"type": "string", "description": "Unique identifier"},
+	  "alias": {"type": "string", "description": "Instance alias"},
+	  "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
+	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
+	  "url": {"type": "string", "description": "Command string or API Key"},
+	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "tcprx": {"type": "integer", "description": "TCP received bytes"},
+	  "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
+	  "udprx": {"type": "integer", "description": "UDP received bytes"},
+	  "udptx": {"type": "integer", "description": "UDP transmitted bytes"},
+	  "pool": {"type": "integer", "description": "Health check pool active"},
+	  "ping": {"type": "integer", "description": "Health check one-way latency"},
+	}
+	 },
+	  "CreateInstanceRequest": {
+		"type": "object",
+		"required": ["url"],
+		"properties": {"url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}}
+	  },
+	  "UpdateInstanceRequest": {
+		"type": "object",
+		"properties": {
+		  "alias": {"type": "string", "description": "Instance alias"},
+		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
+		  "restart": {"type": "boolean", "description": "Instance restart policy"}
+		}
+	  },
+	  "PutInstanceRequest": {
+		"type": "object",
+		"required": ["url"],
+		"properties": {"url": {"type": "string", "description": "New command string(scheme://host:port/host:port)"}}
+	  },
+	  "MasterInfo": {
+		"type": "object",
+		"properties": {
+		  "os": {"type": "string", "description": "Operating system"},
+		  "arch": {"type": "string", "description": "System architecture"},
+		  "ver": {"type": "string", "description": "NodePass version"},
 		  "name": {"type": "string", "description": "Hostname"},
-          "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
-          "log": {"type": "string", "description": "Log level"},
-          "tls": {"type": "string", "description": "TLS code"},
-          "crt": {"type": "string", "description": "Certificate path"},
-          "key": {"type": "string", "description": "Private key path"}
-        }
-      }
-    }
+		  "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
+		  "log": {"type": "string", "description": "Log level"},
+		  "tls": {"type": "string", "description": "TLS code"},
+		  "crt": {"type": "string", "description": "Certificate path"},
+		  "key": {"type": "string", "description": "Private key path"}
+		}
+	  }
+	}
   }
 }`, openAPIVersion)
 }

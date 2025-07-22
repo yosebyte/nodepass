@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
 )
@@ -28,7 +29,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		Common: Common{
 			logger:     logger,
 			semaphore:  make(chan struct{}, semaphoreLimit),
-			errChan:    make(chan error, 2),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tunnelName: parsedURL.Hostname(),
@@ -73,7 +73,8 @@ func (c *Client) Run() {
 
 // start 启动客户端服务
 func (c *Client) start() error {
-	c.initContext()
+	// 初始化基本信息
+	c.initBackground()
 
 	// 通过是否监听成功判断单端转发或双端握手
 	if err := c.initTunnelListener(); err == nil {
@@ -115,18 +116,15 @@ func (c *Client) start() error {
 
 		go c.tunnelPool.ClientManager()
 
-		switch c.dataFlow {
-		case "-":
-			go c.commonOnce()
-			go c.commonQueue()
-		case "+":
+		if c.dataFlow == "+" {
 			// 初始化目标监听器
 			if err := c.initTargetListener(); err != nil {
 				return err
 			}
 			go c.commonLoop()
 		}
-		return c.healthCheck()
+
+		return c.commonControl()
 	}
 }
 
@@ -139,7 +137,7 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(c.tunnelTCPConn)
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: tcpReadTimeout})
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 

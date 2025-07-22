@@ -18,9 +18,9 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 ### 查询参数说明
 
 通用查询参数：
-- `log=<level>`：日志详细级别（`debug`、`info`、`warn`、`error`或`event`）
+- `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
 - `min=<min_pool>`：最小连接池容量（默认：64，仅适用于client模式）
-- `max=<max_pool>`：最大连接池容量（默认：8192，仅适用于client模式）
+- `max=<max_pool>`：最大连接池容量（默认：1024，仅适用于client模式）
 
 TLS相关参数（仅适用于server/master模式）：
 - `tls=<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）
@@ -93,7 +93,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
 - `min`：最小连接池容量（默认：64）
-- `max`：最大连接池容量（默认：8192）
+- `max`：最大连接池容量（默认：1024）
 
 #### 客户端模式工作原理
 

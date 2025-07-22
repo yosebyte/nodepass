@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
 )
@@ -38,6 +39,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	}
 	// 初始化公共字段
 	server.getTunnelKey(parsedURL)
+	server.getPoolCapacity(parsedURL)
 	server.getAddress(parsedURL)
 	return server
 }
@@ -75,7 +77,8 @@ func (s *Server) Run() {
 
 // start 启动服务端
 func (s *Server) start() error {
-	s.initContext()
+	// 初始化基本信息
+	s.initBackground()
 
 	// 初始化隧道监听器
 	if err := s.initTunnelListener(); err != nil {
@@ -99,6 +102,7 @@ func (s *Server) start() error {
 
 	// 初始化隧道连接池
 	s.tunnelPool = pool.NewServerPool(
+		s.maxPoolCapacity,
 		s.clientIP,
 		s.tlsConfig,
 		s.tunnelListener,
@@ -106,14 +110,11 @@ func (s *Server) start() error {
 
 	go s.tunnelPool.ServerManager()
 
-	switch s.dataFlow {
-	case "-":
+	if s.dataFlow == "-" {
 		go s.commonLoop()
-	case "+":
-		go s.commonOnce()
-		go s.commonQueue()
 	}
-	return s.healthCheck()
+
+	return s.commonControl()
 }
 
 // tunnelHandshake 与客户端进行握手
@@ -148,7 +149,7 @@ func (s *Server) tunnelHandshake() error {
 			continue
 		} else {
 			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-			s.bufReader = bufio.NewReader(s.tunnelTCPConn)
+			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: tcpReadTimeout})
 			s.tunnelTCPConn.SetKeepAlive(true)
 			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 

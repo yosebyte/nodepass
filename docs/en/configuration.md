@@ -4,8 +4,9 @@ NodePass uses a minimalist approach to configuration, with all settings specifie
 
 ## Log Levels
 
-NodePass provides five log verbosity levels that control the amount of information displayed:
+NodePass provides six log verbosity levels that control the amount of information displayed:
 
+- `none`: Disable logging - no log information displayed
 - `debug`: Verbose debugging information - shows all operations and connections
 - `info`: General operational information (default) - shows startup, shutdown, and key events
 - `warn`: Warning conditions - only shows potential issues that don't affect core functionality
@@ -51,13 +52,34 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/p
 Connection pool capacity can be configured via URL query parameters:
 
 - `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 8192)
+- `max`: Maximum connection pool capacity (default: 1024)
 
 Example:
 ```bash
 # Set minimum pool to 32 and maximum to 4096
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 ```
+
+## URL Query Parameter Scope and Applicability
+
+NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
+
+| Parameter | Description           | server | client | master |
+|-----------|----------------------|:------:|:------:|:------:|
+| `log`     | Log level             |   O    |   O    |   O    |
+| `tls`     | TLS encryption mode   |   O    |   X    |   O    |
+| `crt`     | Custom certificate path|  O    |   X    |   O    |
+| `key`     | Custom key path       |   O    |   X    |   O    |
+| `min`     | Minimum pool capacity |   X    |   O    |   X    |
+| `max`     | Maximum pool capacity |   O    |   O    |   X    |
+
+- O: Parameter is valid and recommended for configuration
+- X: Parameter is not applicable and should be ignored
+
+**Best Practices:**
+- For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
+- For client/master modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
+- Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables
 

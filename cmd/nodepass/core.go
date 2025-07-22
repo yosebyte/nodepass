@@ -34,7 +34,7 @@ func coreDispatch(parsedURL *url.URL) {
 // getTLSProtocol 获取TLS配置
 func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 	// 生成基本TLS配置
-	tlsConfig, err := cert.NewTLSConfig("yosebyte/nodepass:" + version)
+	tlsConfig, err := cert.NewTLSConfig(version)
 	if err != nil {
 		logger.Error("Generate failed: %v", err)
 		logger.Warn("TLS code-0: nil cert")
