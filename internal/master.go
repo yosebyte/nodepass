@@ -145,8 +145,6 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
-			// 发送流量更新事件
-			w.master.sendSSEEvent("update", w.instance)
 			// 过滤统计日志
 			continue
 		}
