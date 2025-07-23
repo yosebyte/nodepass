@@ -512,7 +512,7 @@ func (c *Common) commonUDPLoop() {
 			// 读取来自目标的UDP数据
 			n, clientAddr, err := c.targetUDPConn.ReadFromUDP(buffer)
 			if err != nil {
-				c.logger.Error("ReadFromUDP failed: %v", err)
+				c.logger.Error("Read failed: %v", err)
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
@@ -905,6 +905,8 @@ func (c *Common) singleTCPLoop() error {
 			// 接受来自隧道的TCP连接
 			tunnelConn, err := c.tunnelListener.Accept()
 			if err != nil {
+				c.logger.Error("Accept failed: %v", err)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
@@ -974,6 +976,8 @@ func (c *Common) singleUDPLoop() error {
 			// 读取来自隧道的UDP数据
 			rx, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
 			if err != nil {
+				c.logger.Error("Read failed: %v", err)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
