@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -575,10 +574,6 @@ func (c *Common) commonUDPLoop() {
 							if err != nil {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
-								} else if err == io.EOF {
-									c.logger.Debug("UDP session close: %v", err)
-								} else if strings.Contains(err.Error(), "use of closed network connection") {
-									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)
 								}
@@ -588,7 +583,7 @@ func (c *Common) commonUDPLoop() {
 							// 将数据写入目标UDP连接
 							tx, err := c.targetUDPConn.WriteToUDP(buffer[:x], clientAddr)
 							if err != nil {
-								c.logger.Error("WriteToUDP failed: %v", err)
+								c.logger.Error("Write failed: %v", err)
 								return
 							}
 							// 传输完成，广播统计信息
@@ -789,10 +784,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						c.logger.Debug("UDP session abort: %v", err)
-					} else if err == io.EOF {
-						c.logger.Debug("UDP session close: %v", err)
-					} else if strings.Contains(err.Error(), "use of closed network connection") {
-						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
 					}
@@ -836,10 +827,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 				if err != nil {
 					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 						c.logger.Debug("UDP session abort: %v", err)
-					} else if err == io.EOF {
-						c.logger.Debug("UDP session close: %v", err)
-					} else if strings.Contains(err.Error(), "use of closed network connection") {
-						c.logger.Debug("UDP session close: %v", err)
 					} else {
 						c.logger.Error("Read failed: %v", err)
 					}
@@ -1035,10 +1022,6 @@ func (c *Common) singleUDPLoop() error {
 							if err != nil {
 								if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 									c.logger.Debug("UDP session abort: %v", err)
-								} else if err == io.EOF {
-									c.logger.Debug("UDP session close: %v", err)
-								} else if strings.Contains(err.Error(), "use of closed network connection") {
-									c.logger.Debug("UDP session close: %v", err)
 								} else {
 									c.logger.Error("Read failed: %v", err)
 								}
@@ -1052,7 +1035,7 @@ func (c *Common) singleUDPLoop() error {
 							// 将响应写回隧道UDP连接
 							tx, err := c.tunnelUDPConn.WriteToUDP(buffer[:x], clientAddr)
 							if err != nil {
-								c.logger.Error("WriteToUDP failed: %v", err)
+								c.logger.Error("Write failed: %v", err)
 								c.targetUDPSession.Delete(sessionKey)
 								if targetConn != nil {
 									targetConn.Close()
