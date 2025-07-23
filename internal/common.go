@@ -318,7 +318,6 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
 	errChan := make(chan error, 3)
-	defer close(errChan)
 
 	// 信号消纳、信号队列和健康检查
 	go func() { errChan <- c.commonOnce() }()
@@ -879,7 +878,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 // singleLoop 单端转发处理循环
 func (c *Common) singleLoop() error {
 	errChan := make(chan error, 2)
-	defer close(errChan)
 
 	for {
 		select {
