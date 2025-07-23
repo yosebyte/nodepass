@@ -345,6 +345,7 @@ func (c *Common) commonQueue() error {
 			case c.signalChan <- signal:
 			default:
 				c.logger.Debug("Queue limit reached: %v", semaphoreLimit)
+				time.Sleep(50 * time.Millisecond)
 			}
 		}
 	}
@@ -361,7 +362,7 @@ func (c *Common) healthCheck() error {
 		default:
 			// 尝试获取锁
 			if !c.mu.TryLock() {
-				time.Sleep(time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
@@ -406,7 +407,7 @@ func (c *Common) commonLoop() {
 				go c.commonUDPLoop()
 				return
 			}
-			time.Sleep(time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
 }
@@ -421,6 +422,8 @@ func (c *Common) commonTCPLoop() {
 			// 接受来自目标的TCP连接
 			targetConn, err := c.targetListener.Accept()
 			if err != nil {
+				c.logger.Error("Accept failed: %v", err)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
@@ -495,6 +498,8 @@ func (c *Common) commonUDPLoop() {
 			// 读取来自目标的UDP数据
 			n, clientAddr, err := c.targetUDPConn.ReadFromUDP(buffer)
 			if err != nil {
+				c.logger.Error("ReadFromUDP failed: %v", err)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
@@ -612,7 +617,7 @@ func (c *Common) commonOnce() error {
 	for {
 		// 等待连接池准备就绪
 		if !c.tunnelPool.Ready() {
-			time.Sleep(time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			continue
 		}
 
@@ -879,7 +884,7 @@ func (c *Common) singleTCPLoop() error {
 				targetConn := c.tunnelPool.ClientGet("")
 				if targetConn == nil {
 					c.logger.Error("Get failed: no target connection available")
-					time.Sleep(100 * time.Millisecond)
+					time.Sleep(50 * time.Millisecond)
 					return
 				}
 
