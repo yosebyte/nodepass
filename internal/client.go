@@ -30,7 +30,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 			logger:     logger,
 			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
-			errChan:    make(chan error, 3),
 		},
 		tunnelName: parsedURL.Hostname(),
 	}

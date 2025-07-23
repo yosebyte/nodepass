@@ -46,7 +46,6 @@ type Common struct {
 	semaphore        chan struct{}      // 信号量通道
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
-	errChan          chan error         // 错误通道
 	checkPoint       time.Time          // 检查点时间
 	ctx              context.Context    // 上下文
 	cancel           context.CancelFunc // 取消函数
@@ -298,7 +297,6 @@ func (c *Common) stop() {
 	// 清空通道
 	drain(c.semaphore)
 	drain(c.signalChan)
-	drain(c.errChan)
 }
 
 // shutdown 共用优雅关闭
@@ -319,15 +317,18 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
+	errChan := make(chan error, 3)
+	defer close(errChan)
+
 	// 信号消纳、信号队列和健康检查
-	go func() { c.errChan <- c.commonOnce() }()
-	go func() { c.errChan <- c.commonQueue() }()
-	go func() { c.errChan <- c.healthCheck() }()
+	go func() { errChan <- c.commonOnce() }()
+	go func() { errChan <- c.commonQueue() }()
+	go func() { errChan <- c.healthCheck() }()
 
 	select {
 	case <-c.ctx.Done():
 		return c.ctx.Err()
-	case err := <-c.errChan:
+	case err := <-errChan:
 		return err
 	}
 }
@@ -877,18 +878,21 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 // singleLoop 单端转发处理循环
 func (c *Common) singleLoop() error {
+	errChan := make(chan error, 2)
+	defer close(errChan)
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return context.Canceled
 		default:
 			go func() {
-				c.errChan <- c.singleTCPLoop()
+				errChan <- c.singleTCPLoop()
 			}()
 			go func() {
-				c.errChan <- c.singleUDPLoop()
+				errChan <- c.singleUDPLoop()
 			}()
-			return <-c.errChan
+			return <-errChan
 		}
 	}
 }
