@@ -77,8 +77,8 @@ func (s *Server) Run() {
 
 // start 启动服务端
 func (s *Server) start() error {
-	// 初始化基本信息
-	s.initBackground()
+	// 初始化上下文
+	s.initContext()
 
 	// 初始化隧道监听器
 	if err := s.initTunnelListener(); err != nil {

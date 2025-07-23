@@ -73,8 +73,8 @@ func (c *Client) Run() {
 
 // start 启动客户端服务
 func (c *Client) start() error {
-	// 初始化基本信息
-	c.initBackground()
+	// 初始化上下文
+	c.initContext()
 
 	// 通过是否监听成功判断单端转发或双端握手
 	if err := c.initTunnelListener(); err == nil {
