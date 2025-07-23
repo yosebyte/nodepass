@@ -167,13 +167,12 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	}
 }
 
-// initBackground 初始化基本信息
-func (c *Common) initBackground() {
+// initContext 初始化上下文
+func (c *Common) initContext() {
 	if c.cancel != nil {
 		c.cancel()
 	}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
-	c.errChan = make(chan error, 3)
 }
 
 // initTargetListener 初始化目标监听器
@@ -224,6 +223,17 @@ func (c *Common) initTunnelListener() error {
 	c.tunnelUDPConn = tunnelUDPConn
 
 	return nil
+}
+
+// drain 清空通道中的所有元素
+func drain[T any](ch <-chan T) {
+	for {
+		select {
+		case <-ch:
+		default:
+			return
+		}
+	}
 }
 
 // stop 共用停止服务
@@ -285,14 +295,10 @@ func (c *Common) stop() {
 		c.logger.Debug("Tunnel listener closed: %v", c.tunnelListener.Addr())
 	}
 
-	// 清空信号通道
-	for {
-		select {
-		case <-c.signalChan:
-		default:
-			return
-		}
-	}
+	// 清空通道
+	drain(c.semaphore)
+	drain(c.signalChan)
+	drain(c.errChan)
 }
 
 // shutdown 共用优雅关闭
