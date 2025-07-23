@@ -463,6 +463,14 @@ func (c *Common) commonTCPLoop() {
 
 				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
+				// 监听上下文，避免泄漏
+				go func() {
+					<-c.ctx.Done()
+					if remoteConn != nil {
+						remoteConn.Close()
+					}
+				}()
+
 				// 构建并发送启动URL到客户端
 				launchURL := &url.URL{
 					Host:     id,
@@ -544,6 +552,14 @@ func (c *Common) commonUDPLoop() {
 						// 清理UDP会话
 						c.targetUDPSession.Delete(sessionKey)
 						<-c.semaphore
+					}()
+
+					// 监听上下文，避免泄漏
+					go func() {
+						<-c.ctx.Done()
+						if remoteConn != nil {
+							remoteConn.Close()
+						}
 					}()
 
 					buffer := make([]byte, udpDataBufSize)
@@ -752,6 +768,15 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	go func() {
 		defer func() { done <- struct{}{} }()
+
+		// 监听上下文，避免泄漏
+		go func() {
+			<-c.ctx.Done()
+			if remoteConn != nil {
+				remoteConn.Close()
+			}
+		}()
+
 		buffer := make([]byte, udpDataBufSize)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: tcpReadTimeout}
 		for {
@@ -790,6 +815,15 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	go func() {
 		defer func() { done <- struct{}{} }()
+
+		// 监听上下文，避免泄漏
+		go func() {
+			<-c.ctx.Done()
+			if targetConn != nil {
+				targetConn.Close()
+			}
+		}()
+
 		buffer := make([]byte, udpDataBufSize)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 		for {
@@ -886,6 +920,14 @@ func (c *Common) singleTCPLoop() error {
 					<-c.semaphore
 				}()
 
+				// 监听上下文，避免泄漏
+				go func() {
+					<-c.ctx.Done()
+					if tunnelConn != nil {
+						tunnelConn.Close()
+					}
+				}()
+
 				// 从连接池中获取连接
 				targetConn := c.tunnelPool.ClientGet("")
 				if targetConn == nil {
@@ -964,6 +1006,14 @@ func (c *Common) singleUDPLoop() error {
 							targetConn.Close()
 						}
 						<-c.semaphore
+					}()
+
+					// 监听上下文，避免泄漏
+					go func() {
+						<-c.ctx.Done()
+						if targetConn != nil {
+							targetConn.Close()
+						}
 					}()
 
 					buffer := make([]byte, udpDataBufSize)
