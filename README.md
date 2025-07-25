@@ -122,6 +122,9 @@ This project is provided "as is" without any warranties. Users assume all risks 
     <td width="200" align="center">
       <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
     </td>
+    <td width="200" align="center">
+      <a href="https://t.me/xiao_bai_xue_zhang"><img src="https://cdn.yobc.de/assets/xuezhang.png"></a>
+    </td>
   </tr>
 </table>
 

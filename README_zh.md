@@ -122,6 +122,9 @@ nodepass "master://:10101/api?log=debug&tls=1"
     <td width="200" align="center">
       <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
     </td>
+    <td width="200" align="center">
+      <a href="https://t.me/xiao_bai_xue_zhang"><img src="https://cdn.yobc.de/assets/xuezhang.png"></a>
+    </td>
   </tr>
 </table>
 
