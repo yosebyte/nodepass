@@ -141,7 +141,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			for i, stat := range stats {
 				if v, err := strconv.ParseUint(matches[i+1], 10, 64); err == nil {
 					// 累加新的统计数据
-					*stat += v
+					*stat = v
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
