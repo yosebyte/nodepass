@@ -87,12 +87,16 @@ type Instance struct {
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
 	Restart    bool               `json:"restart"`   // 是否自启动
+	Pool       int64              `json:"pool"`      // 健康检查池连接数
+	Ping       int64              `json:"ping"`      // 健康检查端内延迟
 	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
 	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
 	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
 	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
-	Pool       int64              `json:"pool"`      // 健康检查池连接数
-	Ping       int64              `json:"ping"`      // 健康检查端内延迟
+	TCPRXBase  uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
+	TCPTXBase  uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
+	UDPRXBase  uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
+	UDPTXBase  uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
 	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
@@ -138,10 +142,10 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		// 解析并处理统计信息
 		if matches := w.statRegex.FindStringSubmatch(line); len(matches) == 5 {
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
+			bases := []uint64{w.instance.TCPRXBase, w.instance.TCPTXBase, w.instance.UDPRXBase, w.instance.UDPTXBase}
 			for i, stat := range stats {
 				if v, err := strconv.ParseUint(matches[i+1], 10, 64); err == nil {
-					// 累加新的统计数据
-					*stat = v
+					*stat = bases[i] + v
 				}
 			}
 			w.master.instances.Store(w.instanceID, w.instance)
@@ -1016,11 +1020,11 @@ func (m *Master) startInstance(instance *Instance) {
 		}
 	}
 
-	// 保存原始流量统计
-	originalTCPRX := instance.TCPRX
-	originalTCPTX := instance.TCPTX
-	originalUDPRX := instance.UDPRX
-	originalUDPTX := instance.UDPTX
+	// 启动前，记录基线
+	instance.TCPRXBase = instance.TCPRX
+	instance.TCPTXBase = instance.TCPTX
+	instance.UDPRXBase = instance.UDPRX
+	instance.UDPTXBase = instance.UDPTX
 
 	// 获取可执行文件路径
 	execPath, err := os.Executable()
@@ -1050,13 +1054,6 @@ func (m *Master) startInstance(instance *Instance) {
 	} else {
 		instance.cmd = cmd
 		instance.Status = "running"
-
-		// 恢复原始流量统计
-		instance.TCPRX = originalTCPRX
-		instance.TCPTX = originalTCPTX
-		instance.UDPRX = originalUDPRX
-		instance.UDPTX = originalUDPTX
-
 		go m.monitorInstance(instance, cmd)
 	}
 
