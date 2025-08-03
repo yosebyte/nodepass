@@ -451,7 +451,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
-	m.stateMu.Lock()
+	if !m.stateMu.TryLock() {
+		return nil
+	}
 	defer m.stateMu.Unlock()
 
 	// 创建持久化数据
