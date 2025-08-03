@@ -866,22 +866,46 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 }
 
-// singleLoop 单端转发处理循环
-func (c *Common) singleLoop() error {
-	errChan := make(chan error, 2)
+// singleControl 单端控制处理循环
+func (c *Common) singleControl() error {
+	errChan := make(chan error, 3)
 
+	// 启动单端控制、TCP和UDP处理循环
+	go func() { errChan <- c.singleEventLoop() }()
+	go func() { errChan <- c.singleTCPLoop() }()
+	go func() { errChan <- c.singleUDPLoop() }()
+
+	select {
+	case <-c.ctx.Done():
+		return context.Canceled
+	case err := <-errChan:
+		return err
+	}
+}
+
+// singleEventLoop 单端转发事件循环
+func (c *Common) singleEventLoop() error {
 	for {
 		select {
 		case <-c.ctx.Done():
 			return context.Canceled
 		default:
-			go func() {
-				errChan <- c.singleTCPLoop()
-			}()
-			go func() {
-				errChan <- c.singleUDPLoop()
-			}()
-			return <-errChan
+			ping := -1
+			now := time.Now()
+
+			// 尝试连接到目标地址
+			if conn, err := net.DialTimeout("tcp", c.targetAddr, reportInterval); err == nil {
+				ping = int(time.Since(now).Milliseconds())
+				conn.Close()
+			}
+
+			// 发送健康检查和流量统计事件
+			c.logger.Event("HEALTH_CHECKS|POOL=%v|PING=%vms", c.tunnelPool.Active(), ping)
+			c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX), atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
+
+			// 等待下一个报告间隔
+			time.Sleep(reportInterval)
 		}
 	}
 }

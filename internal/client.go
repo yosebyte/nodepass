@@ -94,7 +94,7 @@ func (c *Client) start() error {
 
 		go c.tunnelPool.ClientManager()
 
-		return c.singleLoop()
+		return c.singleControl()
 	} else {
 		if err := c.tunnelHandshake(); err != nil {
 			return err
