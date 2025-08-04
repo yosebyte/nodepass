@@ -890,7 +890,7 @@ func (c *Common) singleEventLoop() error {
 		case <-c.ctx.Done():
 			return context.Canceled
 		default:
-			ping := -1
+			ping := 0
 			now := time.Now()
 
 			// 尝试连接到目标地址
