@@ -300,6 +300,9 @@ func (c *Common) stop() {
 	// 清空通道
 	drain(c.semaphore)
 	drain(c.signalChan)
+
+	// 检查清零
+	c.logger.Event("HEALTH_CHECKS|POOL=0|PING=0ms")
 }
 
 // shutdown 共用优雅关闭
