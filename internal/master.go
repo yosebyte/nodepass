@@ -112,23 +112,21 @@ type InstanceEvent struct {
 
 // InstanceLogWriter 实例日志写入器
 type InstanceLogWriter struct {
-	instanceID  string         // 实例ID
-	instance    *Instance      // 实例对象
-	target      io.Writer      // 目标写入器
-	master      *Master        // 主控对象
-	statRegex   *regexp.Regexp // 统计信息正则表达式
-	healthRegex *regexp.Regexp // 健康检查正则表达式
+	instanceID string         // 实例ID
+	instance   *Instance      // 实例对象
+	target     io.Writer      // 目标写入器
+	master     *Master        // 主控对象
+	checkPoint *regexp.Regexp // 检查点正则表达式
 }
 
 // NewInstanceLogWriter 创建新的实例日志写入器
 func NewInstanceLogWriter(instanceID string, instance *Instance, target io.Writer, master *Master) *InstanceLogWriter {
 	return &InstanceLogWriter{
-		instanceID:  instanceID,
-		instance:    instance,
-		target:      target,
-		master:      master,
-		statRegex:   regexp.MustCompile(`TRAFFIC_STATS\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
-		healthRegex: regexp.MustCompile(`HEALTH_CHECKS\|POOL=(\d+)\|PING=(\d+)ms`),
+		instanceID: instanceID,
+		instance:   instance,
+		target:     target,
+		master:     master,
+		checkPoint: regexp.MustCompile(`CHECK_POINT\|POOL=(\d+)\|PING=(\d+)ms\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
 	}
 }
 
@@ -139,33 +137,31 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		// 解析并处理统计信息
-		if matches := w.statRegex.FindStringSubmatch(line); len(matches) == 5 {
+		// 解析并处理检查点信息
+		if matches := w.checkPoint.FindStringSubmatch(line); len(matches) == 7 {
+			// matches[1] = POOL, matches[2] = PING, matches[3] = TCP_RX, matches[4] = TCP_TX, matches[5] = UDP_RX, matches[6] = UDP_TX
+			if pool, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+				w.instance.Pool = pool
+			}
+			if ping, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
+				w.instance.Ping = ping
+			}
+
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
 			bases := []uint64{w.instance.TCPRXBase, w.instance.TCPTXBase, w.instance.UDPRXBase, w.instance.UDPTXBase}
 			for i, stat := range stats {
-				if v, err := strconv.ParseUint(matches[i+1], 10, 64); err == nil {
+				if v, err := strconv.ParseUint(matches[i+3], 10, 64); err == nil {
 					*stat = bases[i] + v
 				}
 			}
+
 			w.master.instances.Store(w.instanceID, w.instance)
-			// 过滤统计日志
-			continue
-		}
-		// 解析并处理健康检查信息
-		if matches := w.healthRegex.FindStringSubmatch(line); len(matches) == 3 {
-			if v, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
-				w.instance.Pool = v
-			}
-			if v, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
-				w.instance.Ping = v
-			}
-			w.master.instances.Store(w.instanceID, w.instance)
-			// 发送健康检查更新事件
+			// 发送检查点更新事件
 			w.master.sendSSEEvent("update", w.instance)
-			// 过滤检查日志
+			// 过滤检查点日志
 			continue
 		}
+
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 

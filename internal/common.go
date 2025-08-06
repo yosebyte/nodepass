@@ -301,8 +301,10 @@ func (c *Common) stop() {
 	drain(c.semaphore)
 	drain(c.signalChan)
 
-	// 检查清零
-	c.logger.Event("HEALTH_CHECKS|POOL=0|PING=0ms")
+	// 发送检查点事件
+	c.logger.Event("CHECK_POINT|POOL=0|PING=0ms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+		atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
+		atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 }
 
 // shutdown 共用优雅关闭
@@ -674,9 +676,11 @@ func (c *Common) commonOnce() error {
 					return err
 				}
 			case "o": // PONG
-				c.logger.Event("HEALTH_CHECKS|POOL=%v|PING=%vms", c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds())
-				c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-					atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX), atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
+				// 发送检查点事件
+				c.logger.Event("CHECK_POINT|POOL=%v|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+					c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds(),
+					atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
+					atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 			default:
 				// 无效信号
 			}
@@ -902,10 +906,11 @@ func (c *Common) singleEventLoop() error {
 				conn.Close()
 			}
 
-			// 发送健康检查和流量统计事件
-			c.logger.Event("HEALTH_CHECKS|POOL=%v|PING=%vms", c.tunnelPool.Active(), ping)
-			c.logger.Event("TRAFFIC_STATS|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX), atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
+			// 发送检查点事件
+			c.logger.Event("CHECK_POINT|POOL=%v|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+				c.tunnelPool.Active(), ping,
+				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
+				atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 
 			// 等待下一个报告间隔
 			time.Sleep(reportInterval)
