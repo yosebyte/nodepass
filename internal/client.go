@@ -33,10 +33,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	// 初始化公共字段
-	client.getTunnelKey(parsedURL)
-	client.getPoolCapacity(parsedURL)
-	client.getAddress(parsedURL)
+	client.initConfig(parsedURL)
 	return client
 }
 

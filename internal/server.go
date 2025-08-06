@@ -37,10 +37,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		},
 		tlsConfig: tlsConfig,
 	}
-	// 初始化公共字段
-	server.getTunnelKey(parsedURL)
-	server.getPoolCapacity(parsedURL)
-	server.getAddress(parsedURL)
+	server.initConfig(parsedURL)
 	return server
 }
 

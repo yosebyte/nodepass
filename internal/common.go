@@ -43,6 +43,7 @@ type Common struct {
 	tunnelPool       *pool.Pool         // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
+	readTimeout      time.Duration      // 读取超时
 	semaphore        chan struct{}      // 信号量通道
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
@@ -99,39 +100,6 @@ func (c *Common) xor(data []byte) []byte {
 	return data
 }
 
-// getTunnelKey 从URL中获取隧道密钥
-func (c *Common) getTunnelKey(parsedURL *url.URL) {
-	if key := parsedURL.User.Username(); key != "" {
-		c.tunnelKey = key
-	} else {
-		portStr := parsedURL.Port()
-		if portNum, err := strconv.Atoi(portStr); err == nil {
-			c.tunnelKey = fmt.Sprintf("%x", portNum)
-		} else {
-			c.tunnelKey = fmt.Sprintf("%x", portStr)
-		}
-	}
-}
-
-// getPoolCapacity 获取连接池容量设置
-func (c *Common) getPoolCapacity(parsedURL *url.URL) {
-	if min := parsedURL.Query().Get("min"); min != "" {
-		if value, err := strconv.Atoi(min); err == nil && value > 0 {
-			c.minPoolCapacity = value
-		}
-	} else {
-		c.minPoolCapacity = 64
-	}
-
-	if max := parsedURL.Query().Get("max"); max != "" {
-		if value, err := strconv.Atoi(max); err == nil && value > 0 {
-			c.maxPoolCapacity = value
-		}
-	} else {
-		c.maxPoolCapacity = 1024
-	}
-}
-
 // getAddress 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) {
 	// 解析隧道地址
@@ -168,6 +136,58 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
 	}
+}
+
+// getTunnelKey 从URL中获取隧道密钥
+func (c *Common) getTunnelKey(parsedURL *url.URL) {
+	if key := parsedURL.User.Username(); key != "" {
+		c.tunnelKey = key
+	} else {
+		portStr := parsedURL.Port()
+		if portNum, err := strconv.Atoi(portStr); err == nil {
+			c.tunnelKey = fmt.Sprintf("%x", portNum)
+		} else {
+			c.tunnelKey = fmt.Sprintf("%x", portStr)
+		}
+	}
+}
+
+// getPoolCapacity 获取连接池容量设置
+func (c *Common) getPoolCapacity(parsedURL *url.URL) {
+	if min := parsedURL.Query().Get("min"); min != "" {
+		if value, err := strconv.Atoi(min); err == nil && value > 0 {
+			c.minPoolCapacity = value
+		}
+	} else {
+		c.minPoolCapacity = 64
+	}
+
+	if max := parsedURL.Query().Get("max"); max != "" {
+		if value, err := strconv.Atoi(max); err == nil && value > 0 {
+			c.maxPoolCapacity = value
+		}
+	} else {
+		c.maxPoolCapacity = 1024
+	}
+}
+
+// getReadTimeout 获取读取超时设置
+func (c *Common) getReadTimeout(parsedURL *url.URL) {
+	if timeout := parsedURL.Query().Get("read"); timeout != "" {
+		if value, err := time.ParseDuration(timeout); err == nil && value > 0 {
+			c.readTimeout = value
+		}
+	} else {
+		c.readTimeout = 300 * time.Second
+	}
+}
+
+// initConfig 初始化配置
+func (c *Common) initConfig(parsedURL *url.URL) {
+	c.getTunnelKey(parsedURL)
+	c.getAddress(parsedURL)
+	c.getPoolCapacity(parsedURL)
+	c.getReadTimeout(parsedURL)
 }
 
 // initContext 初始化上下文
