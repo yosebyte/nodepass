@@ -60,9 +60,7 @@ type Common struct {
 var (
 	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
 	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP缓冲区大小
-	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 20*time.Second) // UDP读取超时
 	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 20*time.Second) // UDP拨号超时
-	tcpReadTimeout  = getEnvAsDuration("NP_TCP_READ_TIMEOUT", 20*time.Second) // TCP读取超时
 	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 20*time.Second) // TCP拨号超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
@@ -519,7 +517,7 @@ func (c *Common) commonTCPLoop() {
 				c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				_, _, err := conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
+				_, _, err := conn.DataExchange(remoteConn, targetConn, c.readTimeout)
 
 				// 交换完成
 				c.logger.Debug("Exchange complete: %v", err)
@@ -591,7 +589,7 @@ func (c *Common) commonUDPLoop() {
 					}()
 
 					buffer := make([]byte, udpDataBufSize)
-					reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: tcpReadTimeout}
+					reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 
 					for {
 						select {
@@ -748,7 +746,7 @@ func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	// 交换数据
-	_, _, err = conn.DataExchange(remoteConn, targetConn, tcpReadTimeout)
+	_, _, err = conn.DataExchange(remoteConn, targetConn, c.readTimeout)
 
 	// 交换完成
 	c.logger.Debug("Exchange complete: %v", err)
@@ -806,7 +804,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		}()
 
 		buffer := make([]byte, udpDataBufSize)
-		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: tcpReadTimeout}
+		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 		for {
 			select {
 			case <-c.ctx.Done():
@@ -848,7 +846,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		}()
 
 		buffer := make([]byte, udpDataBufSize)
-		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
+		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 		for {
 			select {
 			case <-c.ctx.Done():
@@ -998,7 +996,7 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 
 				// 交换数据
-				_, _, err = conn.DataExchange(tunnelConn, targetConn, tcpReadTimeout)
+				_, _, err = conn.DataExchange(tunnelConn, targetConn, c.readTimeout)
 
 				// 交换完成
 				c.logger.Debug("Exchange complete: %v", err)
@@ -1067,7 +1065,7 @@ func (c *Common) singleUDPLoop() error {
 					}()
 
 					buffer := make([]byte, udpDataBufSize)
-					reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
+					reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 
 					for {
 						select {

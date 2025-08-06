@@ -125,7 +125,7 @@ func (s *Server) tunnelHandshake() error {
 			continue
 		}
 
-		tunnelTCPConn.SetReadDeadline(time.Now().Add(tcpReadTimeout))
+		tunnelTCPConn.SetReadDeadline(time.Now().Add(s.readTimeout))
 
 		bufReader := bufio.NewReader(tunnelTCPConn)
 		rawTunnelKey, err := bufReader.ReadString('\n')
@@ -146,7 +146,7 @@ func (s *Server) tunnelHandshake() error {
 			continue
 		} else {
 			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: tcpReadTimeout})
+			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: s.readTimeout})
 			s.tunnelTCPConn.SetKeepAlive(true)
 			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
