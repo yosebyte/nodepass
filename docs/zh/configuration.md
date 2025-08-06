@@ -60,6 +60,15 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/p
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 ```
 
+## 数据读取超时
+数据读取超时可以通过URL查询参数`read`设置，单位为秒或分钟：
+- `read`: 数据读取超时时间（默认: 300秒）
+示例：
+```bash
+# 设置数据读取超时为60秒
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=60s"
+```
+
 ## URL查询参数配置及作用范围
 
 NodePass支持通过URL查询参数进行灵活配置，不同参数在 server、client、master 模式下的适用性如下表：
@@ -72,6 +81,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `key`     | 自定义密钥路径       |   O    |   X    |   O    |
 | `min`     | 最小连接池容量       |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       |   O    |   O    |   X    |
+| `read`    | 数据读取超时时间     |   O    |   O    |   X    |
 
 
 - O：参数有效，推荐根据实际场景配置
@@ -90,9 +100,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 20s | `export NP_UDP_READ_TIMEOUT=30s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 20s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 20s | `export NP_TCP_READ_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 20s | `export NP_TCP_DIAL_TIMEOUT=30s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
@@ -143,10 +151,6 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 默认值(8192)适用于大多数情况
   - 考虑为媒体流或游戏服务器增加到16384或更高
 
-- `NP_UDP_READ_TIMEOUT`：UDP读取操作超时
-  - 对于高延迟网络或响应时间慢的应用增加此值
-  - 对于需要快速故障转移的低延迟应用减少此值
-
 - `NP_UDP_DIAL_TIMEOUT`：UDP拨号超时
   - 对于高延迟网络增加此值
   - 对于需要快速连接的应用减少此值
@@ -154,11 +158,6 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 ### TCP设置
 
 对于TCP连接的优化：
-
-- `NP_TCP_READ_TIMEOUT`：TCP读取操作超时
-  - 对于高延迟网络或响应慢的服务器增加此值
-  - 对于需要快速检测断开连接的应用降低此值
-  - 影响数据传输过程中的等待时间
 
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
   - 对于网络条件不稳定的环境增加此值
@@ -219,7 +218,6 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
 export NP_MIN_POOL_INTERVAL=100ms
 export NP_MAX_POOL_INTERVAL=1s
 export NP_SEMAPHORE_LIMIT=4096
-export NP_UDP_READ_TIMEOUT=5s
 export NP_REPORT_INTERVAL=1s
 ```
 

@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 Where:
@@ -21,6 +21,7 @@ Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
+- `read=<timeout>`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
 
 TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
@@ -36,7 +37,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&read=<timeout>"
 ```
 
 #### Parameters
@@ -84,7 +85,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 #### Parameters
@@ -94,6 +95,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `log`: Log level (debug, info, warn, error, event)
 - `min`: Minimum connection pool capacity (default: 64)
 - `max`: Maximum connection pool capacity (default: 1024)
+- `read`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
 
 #### How Client Mode Works
 
@@ -168,11 +170,16 @@ In master mode, NodePass:
 
 All endpoints are relative to the configured prefix (default: `/api`):
 
+**Protected Endpoints (Require API Key):**
 - `GET {prefix}/v1/instances` - List all instances
 - `POST {prefix}/v1/instances` - Create a new instance with JSON body: `{"url": "server://0.0.0.0:10101/0.0.0.0:8080"}`
 - `GET {prefix}/v1/instances/{id}` - Get instance details
 - `PATCH {prefix}/v1/instances/{id}` - Update instance with JSON body: `{"action": "start|stop|restart"}`
 - `DELETE {prefix}/v1/instances/{id}` - Delete instance
+- `GET {prefix}/v1/events` - Server-Sent Events stream (SSE)
+- `GET {prefix}/v1/info` - Get system information
+
+**Public Endpoints (No API Key Required):**
 - `GET {prefix}/v1/openapi.json` - OpenAPI specification
 - `GET {prefix}/v1/docs` - Swagger UI documentation
 
@@ -196,27 +203,52 @@ nodepass "master://0.0.0.0:9090?log=info&tls=2&crt=/path/to/cert.pem&key=/path/t
 
 ### Creating and Managing via API
 
-You can use standard HTTP requests to manage NodePass instances through the master API:
+NodePass master mode provides RESTful API for instance management, and all API requests require authentication using an API Key.
+
+#### API Key Retrieval
+
+When starting master mode, the system automatically generates an API Key and displays it in the logs:
 
 ```bash
-# Create and manage instances via API (using default prefix)
+# Start master mode
+nodepass "master://0.0.0.0:9090?log=info"
+
+# The log output will show:
+# INFO: API Key created: abc123def456...
+```
+
+#### API Request Examples
+
+All protected API endpoints require the `X-API-Key` header:
+
+```bash
+# Get API Key (assume: abc123def456789)
+
+# Create instance via API (using default prefix)
 curl -X POST http://localhost:9090/api/v1/instances \
-  -H "Content-Type: application/json" \
+  -H "X-API-Key: abc123def456789" \
   -d '{"url":"server://0.0.0.0:10101/0.0.0.0:8080?tls=1"}'
 
 # Using custom prefix
 curl -X POST http://localhost:9090/admin/v1/instances \
-  -H "Content-Type: application/json" \
+  -H "X-API-Key: abc123def456789" \
   -d '{"url":"server://0.0.0.0:10101/0.0.0.0:8080?tls=1"}'
 
 # List all running instances
-curl http://localhost:9090/api/v1/instances
+curl http://localhost:9090/api/v1/instances \
+  -H "X-API-Key: abc123def456789"
 
 # Control an instance (replace {id} with actual instance ID)
-curl -X PUT http://localhost:9090/api/v1/instances/{id} \
-  -H "Content-Type: application/json" \
+curl -X PATCH http://localhost:9090/api/v1/instances/{id} \
+  -H "X-API-Key: abc123def456789" \
   -d '{"action":"restart"}'
 ```
+
+#### Public Endpoints
+
+The following endpoints do not require API Key authentication:
+- `GET {prefix}/v1/openapi.json` - OpenAPI specification
+- `GET {prefix}/v1/docs` - Swagger UI documentation
 
 ## Bidirectional Data Flow Explanation
 
@@ -228,12 +260,12 @@ NodePass supports flexible bidirectional data flow configuration:
 - **No Server Required**: Operates independently without server handshake
 - **Use Case**: Local proxy, simple port forwarding, testing environments, high-performance forwarding
 
-### Server Receives Mode (dataFlow: "-")
+### Server Receives Mode
 - **Server**: Listens for incoming connections on target_addr, forwards through tunnel to client
 - **Client**: Connects to local target_addr to provide services
 - **Use Case**: Expose internal services to external access
 
-### Server Sends Mode (dataFlow: "+")  
+### Server Sends Mode
 - **Server**: Connects to remote target_addr to fetch data, sends through tunnel to client
 - **Client**: Listens locally to receive connections from server
 - **Use Case**: Access remote services through tunnel proxy
