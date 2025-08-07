@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 Where:
@@ -19,6 +19,7 @@ Where:
 
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
+- `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
 - `read=<timeout>`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
@@ -37,7 +38,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&read=<timeout>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&read=<timeout>"
 ```
 
 #### Parameters
@@ -45,6 +46,10 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`: Address for the TCP tunnel endpoint (control channel) that clients will connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `mode`: Run mode control for data flow direction
+  - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
+  - `1`: Force reverse mode - server binds to target address locally and receives traffic
+  - `2`: Force forward mode - server connects to remote target address
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
   - `1`: Self-signed certificate (automatically generated)
@@ -54,15 +59,20 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 #### How Server Mode Works
 
-In server mode, NodePass supports two data flow directions:
+Server mode supports automatic mode detection or forced mode selection through the `mode` parameter:
 
-**Mode 1: Server Receives Traffic** (target_addr is local address)
+**Mode 0: Automatic Detection** (default)
+- Attempts to bind to `target_addr` locally first
+- If successful, operates in reverse mode (server receives traffic)  
+- If binding fails, operates in forward mode (server sends traffic)
+
+**Mode 1: Reverse Mode** (server receives traffic)
 1. Listens for TCP tunnel connections (control channel) on `tunnel_addr`
-2. Listens for incoming TCP and UDP traffic on `target_addr` 
+2. Binds to and listens for incoming TCP and UDP traffic on `target_addr` 
 3. When a connection arrives at `target_addr`, it signals the connected client through the control channel
 4. Creates a data channel for each connection with the specified TLS encryption level
 
-**Mode 2: Server Sends Traffic** (target_addr is remote address)
+**Mode 2: Forward Mode** (server sends traffic)
 1. Listens for TCP tunnel connections (control channel) on `tunnel_addr`
 2. Waits for clients to listen locally and receive connections through the tunnel
 3. Establishes connections to remote `target_addr` and forwards data
@@ -70,14 +80,14 @@ In server mode, NodePass supports two data flow directions:
 #### Examples
 
 ```bash
-# No TLS encryption for data channel - Server receives mode
+# Automatic mode detection with no TLS encryption
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
-# Self-signed certificate (auto-generated) - Server sends mode
-nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=1"
+# Force reverse mode with self-signed certificate
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 
-# Custom domain certificate - Server receives mode
-nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+# Force forward mode with custom certificate
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### Client Mode
@@ -85,7 +95,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 #### Parameters
@@ -93,49 +103,59 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `mode`: Run mode control for client behavior
+  - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
+  - `1`: Force single-end forwarding mode - local proxy with connection pooling
+  - `2`: Force dual-end handshake mode - requires server coordination
 - `min`: Minimum connection pool capacity (default: 64)
 - `max`: Maximum connection pool capacity (default: 1024)
 - `read`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
 
 #### How Client Mode Works
 
-In client mode, NodePass supports three operating modes:
+Client mode supports automatic mode detection or forced mode selection through the `mode` parameter:
 
-**Mode 1: Client Single-End Forwarding** (when tunnel address is local)
+**Mode 0: Automatic Detection** (default)
+- Attempts to bind to `tunnel_addr` locally first
+- If successful, operates in single-end forwarding mode
+- If binding fails, operates in dual-end handshake mode
+
+**Mode 1: Single-End Forwarding Mode**
 1. Listens for TCP and UDP connections on the local tunnel address
 2. Uses connection pooling technology to pre-establish TCP connections to target address, eliminating connection latency
 3. Directly forwards received traffic to the target address with high performance
 4. No handshake with server required, enables point-to-point direct forwarding
 5. Suitable for local proxy and simple forwarding scenarios
 
-**Mode 2: Client Receives Traffic** (when server sends traffic)
-1. Connects to the server's TCP tunnel endpoint (control channel)
-2. Listens locally and waits for connections through the tunnel
-3. Establishes connections to local `target_addr` and forwards data
+**Mode 2: Dual-End Handshake Mode**
+- **Client Receives Traffic** (when server sends traffic)
+  1. Connects to the server's TCP tunnel endpoint (control channel)
+  2. Listens locally and waits for connections through the tunnel
+  3. Establishes connections to local `target_addr` and forwards data
 
-**Mode 3: Client Sends Traffic** (when server receives traffic)
-1. Connects to the server's TCP tunnel endpoint (control channel)
-2. Listens for signals from the server through this control channel
-3. When a signal is received, establishes a data connection with the TLS security level specified by the server
-4. Creates a connection to `target_addr` and forwards traffic
+- **Client Sends Traffic** (when server receives traffic)
+  1. Connects to the server's TCP tunnel endpoint (control channel)
+  2. Listens for signals from the server through this control channel
+  3. When a signal is received, establishes a data connection with the TLS security level specified by the server
+  4. Creates a connection to `target_addr` and forwards traffic
 
 #### Examples
 
 ```bash
-# Client single-end forwarding mode - Local proxy listening on port 1080, forwarding to target server
-nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
+# Automatic mode detection - Local proxy listening on port 1080, forwarding to target server
+nodepass "client://127.0.0.1:1080/target.example.com:8080?log=debug"
 
-# Connect to a NodePass server and adopt its TLS security policy - Client sends mode
-nodepass client://server.example.com:10101/127.0.0.1:8080
+# Force single-end forwarding mode - High performance local proxy
+nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
 
-# Connect with debug logging - Client receives mode
-nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
+# Force dual-end handshake mode - Connect to NodePass server and adopt its TLS security policy
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
-# Custom connection pool capacity - High performance configuration
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096"
+# Connect with debug logging and custom connection pool capacity
+nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128&max=4096"
 
-# Resource-constrained configuration - Small connection pool
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"
+# Resource-constrained configuration with forced mode
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&max=512&log=info"
 ```
 
 ### Master Mode (API)

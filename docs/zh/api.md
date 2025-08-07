@@ -87,7 +87,18 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 服务端：`server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<参数>`
 - 客户端：`client://<server_host>:<server_port>/<local_host>:<local_port>?<参数>`
-- 支持参数：`tls`、`log`、`crt`、`key`
+- 支持参数：`tls`、`log`、`crt`、`key`、`mode`、`min`、`max`、`read`
+
+### URL 查询参数
+
+- `log`：日志级别（`none`、`debug`、`info`、`warn`、`error`、`event`）
+- `mode`：运行模式控制（`0`、`1`、`2`）- 控制操作行为
+  - 对于服务端：`0`=自动，`1`=反向模式，`2`=正向模式
+  - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
+- `tls`：TLS加密模式（`0`、`1`、`2`）- 仅服务端/主控模式
+- `crt`/`key`：证书/密钥文件路径（当`tls=2`时）
+- `min`/`max`：连接池容量（仅客户端模式）
+- `read`：数据读取超时时间
 
 ### 实时事件流（SSE）
 
@@ -1015,7 +1026,7 @@ server://<bind_address>:<bind_port>/<target_host>:<target_port>?<parameters>
 
 示例：
 - `server://0.0.0.0:8080/localhost:3000` - 在8080端口监听，转发到本地3000端口
-- `server://0.0.0.0:9090/localhost:8080?tls=1` - 启用TLS的服务器
+- `server://0.0.0.0:9090/localhost:8080?tls=1&mode=1` - 启用TLS的服务器，强制反向模式
 
 #### 客户端模式 (Client Mode)
 ```
@@ -1024,13 +1035,17 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 示例：
 - `client://example.com:8080/localhost:3000` - 连接到远程服务器，本地监听3000端口
-- `client://vpn.example.com:443/localhost:22?tls=1` - 通过TLS连接到VPN服务器
+- `client://vpn.example.com:443/localhost:22?mode=2&min=32&max=512` - 通过VPN连接，强制双端模式
 
 #### 支持的参数
 
-| 参数 | 描述 | 值 | 默认值 |
-|------|------|----|----|
-| `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` |
-| `log` | 日志级别 | `trace`, `debug`, `info`, `warn`, `error` | `info` |
-| `crt` | 证书路径 | 文件路径 | 无 |
+| 参数 | 描述 | 值 | 默认值 | 适用范围 |
+|------|------|----|----|---------|
+| `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
+| `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` | 仅服务器 |
+| `log` | 日志级别 | `none`, `debug`, `info`, `warn`, `error`, `event` | `info` | 两者 |
+| `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端 |
+| `max` | 最大连接池容量 | 整数 > 0 | `1024` | 两者 |
+| `read` | 读取超时时间 | 时间长度 (如 `300s`, `5m`) | `300s` | 两者 |
+| `crt` | 证书路径 | 文件路径 | 无 | 仅服务器 |
 | `key` | 私钥路径 | 文件路径 | 无 |

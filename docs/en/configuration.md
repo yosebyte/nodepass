@@ -47,6 +47,66 @@ Example with TLS Mode 2 (custom certificate):
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
+## Run Mode Control
+
+NodePass supports configurable run modes via the `mode` query parameter to control the behavior of both client and server instances. This provides flexibility in deployment scenarios where automatic mode detection may not be suitable.
+
+### Client Mode Control
+
+For client instances, the `mode` parameter controls the connection strategy:
+
+- **Mode 0** (Default): Automatic mode detection
+  - Attempts to bind to tunnel address locally first
+  - If successful, operates in single-end forwarding mode
+  - If binding fails, operates in dual-end handshake mode
+  
+- **Mode 1**: Force single-end forwarding mode
+  - Binds to tunnel address locally and forwards traffic directly to target
+  - Uses connection pooling for high performance
+  - No handshake with server required
+  
+- **Mode 2**: Force dual-end handshake mode
+  - Always connects to remote server for tunnel establishment
+  - Requires handshake with server before data transfer
+  - Supports bidirectional data flow coordination
+
+Example:
+```bash
+# Force client to operate in single-end forwarding mode
+nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1"
+
+# Force client to operate in dual-end handshake mode
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
+```
+
+### Server Mode Control
+
+For server instances, the `mode` parameter controls the data flow direction:
+
+- **Mode 0** (Default): Automatic flow direction detection
+  - Attempts to bind to target address locally first
+  - If successful, operates in reverse mode (server receives traffic)
+  - If binding fails, operates in forward mode (server sends traffic)
+  
+- **Mode 1**: Force reverse mode
+  - Server binds to target address locally and receives traffic
+  - Incoming connections are forwarded to connected clients
+  - Data flow: External → Server → Client → Target
+  
+- **Mode 2**: Force forward mode  
+  - Server connects to remote target address
+  - Client connections are forwarded to remote target
+  - Data flow: Client → Server → External Target
+
+Example:
+```bash
+# Force server to operate in reverse mode
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1"
+
+# Force server to operate in forward mode
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
+```
+
 ## Connection Pool Capacity Parameters
 
 Connection pool capacity can be configured via URL query parameters:
@@ -79,6 +139,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `tls`     | TLS encryption mode   |   O    |   X    |   O    |
 | `crt`     | Custom certificate path|  O    |   X    |   O    |
 | `key`     | Custom key path       |   O    |   X    |   O    |
+| `mode`    | Run mode control      |   O    |   O    |   X    |
 | `min`     | Minimum pool capacity |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity |   O    |   O    |   X    |
 | `read`    | Data read timeout     |   O    |   O    |   X    |
@@ -89,6 +150,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 **Best Practices:**
 - For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
 - For client/master modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
+- Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables

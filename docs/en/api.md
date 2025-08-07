@@ -88,7 +88,18 @@ API Key authentication is enabled by default. The key is auto-generated and stor
 
 - Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<params>`
 - Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<params>`
-- Supported params: `tls`, `log`, `crt`, `key`
+- Supported params: `tls`, `log`, `crt`, `key`, `mode`, `min`, `max`, `read`
+
+### URL Query Parameters
+
+- `log`: Log level (`none`, `debug`, `info`, `warn`, `error`, `event`)
+- `mode`: Run mode control (`0`, `1`, `2`) - controls operational behavior
+  - For servers: `0`=auto, `1`=reverse mode, `2`=forward mode
+  - For clients: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
+- `tls`: TLS encryption mode (`0`, `1`, `2`) - server/master modes only
+- `crt`/`key`: Certificate/key file paths (when `tls=2`)
+- `min`/`max`: Connection pool capacity (client mode only)
+- `read`: Data read timeout duration
 
 ### Real-time Events (SSE)
 
@@ -639,7 +650,7 @@ server://<bind_address>:<bind_port>/<target_host>:<target_port>?<parameters>
 
 Examples:
 - `server://0.0.0.0:8080/localhost:3000` - Listen on port 8080, forward to local port 3000
-- `server://0.0.0.0:9090/localhost:8080?tls=1` - Server with TLS enabled
+- `server://0.0.0.0:9090/localhost:8080?tls=1&mode=1` - Server with TLS enabled, forced reverse mode
 
 #### Client Mode
 ```
@@ -648,13 +659,17 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 Examples:
 - `client://example.com:8080/localhost:3000` - Connect to remote server, listen locally on port 3000
-- `client://vpn.example.com:443/localhost:22?tls=1` - Connect to VPN server via TLS
+- `client://vpn.example.com:443/localhost:22?mode=2&min=32&max=512` - Connect to VPN server, forced dual-end mode
 
 #### Supported Parameters
 
-| Parameter | Description | Values | Default |
-|-----------|-------------|---------|---------|
-| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` |
-| `log` | Log level | `trace`, `debug`, `info`, `warn`, `error` | `info` |
-| `crt` | Certificate path | File path | None |
+| Parameter | Description | Values | Default | Applicable To |
+|-----------|-------------|---------|---------|---------------|
+| `mode` | Run mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
+| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
+| `log` | Log level | `none`, `debug`, `info`, `warn`, `error`, `event` | `info` | Both |
+| `min` | Min pool capacity | Integer > 0 | `64` | Client only |
+| `max` | Max pool capacity | Integer > 0 | `1024` | Both |
+| `read` | Read timeout | Duration (e.g., `300s`, `5m`) | `300s` | Both |
+| `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None |

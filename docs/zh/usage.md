@@ -7,7 +7,7 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 其中：
@@ -19,6 +19,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 通用查询参数：
 - `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
+- `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
 - `min=<min_pool>`：最小连接池容量（默认：64，仅适用于client模式）
 - `max=<max_pool>`：最大连接池容量（默认：1024，仅适用于client模式）
 - `read=<timeout>`：数据读取超时时间（默认：300s，支持时间单位如5s、30s、5m等）
@@ -37,7 +38,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&read=<timeout>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&read=<timeout>"
 ```
 
 #### 参数
@@ -45,6 +46,10 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `mode`：数据流方向的运行模式控制
+  - `0`：自动检测（默认）- 首先尝试本地绑定，如果不可用则回退
+  - `1`：强制反向模式 - 服务器本地绑定目标地址并接收流量
+  - `2`：强制正向模式 - 服务器连接到远程目标地址
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
   - `1`：自签名证书（自动生成）
@@ -54,15 +59,20 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 #### 服务端模式工作原理
 
-在服务端模式下，NodePass支持两种数据流方向：
+服务端模式通过`mode`参数支持自动模式检测或强制模式选择：
 
-**模式一：服务端接收流量**（target_addr为本地地址）
+**模式0：自动检测**（默认）
+- 首先尝试本地绑定`target_addr`
+- 如果成功，以反向模式运行（服务端接收流量）
+- 如果绑定失败，以正向模式运行（服务端发送流量）
+
+**模式1：反向模式**（服务端接收流量）
 1. 在`tunnel_addr`上监听TCP隧道连接（控制通道）
-2. 在`target_addr`上监听传入的TCP和UDP流量
-3. 当`target_addr`收到连接时，通过控制通道向客户端发送信号
+2. 绑定并在`target_addr`上监听传入的TCP和UDP流量
+3. 当`target_addr`收到连接时，通过控制通道向已连接的客户端发送信号
 4. 为每个连接创建具有指定TLS加密级别的数据通道
 
-**模式二：服务端发送流量**（target_addr为远程地址）
+**模式2：正向模式**（服务端发送流量）
 1. 在`tunnel_addr`上监听TCP隧道连接（控制通道）
 2. 等待客户端在其本地监听，并通过隧道接收连接
 3. 建立到远程`target_addr`的连接并转发数据
@@ -70,14 +80,14 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 #### 示例
 
 ```bash
-# 数据通道无TLS加密 - 服务端接收模式
+# 自动模式检测，无TLS加密
 nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=0"
 
-# 自签名证书（自动生成） - 服务端发送模式
-nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=1"
+# 强制反向模式，自签名证书
+nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 
-# 自定义域名证书 - 服务端接收模式
-nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+# 强制正向模式，自定义证书
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 客户端模式
@@ -85,7 +95,7 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=2&crt=/path/to/cer
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
 ```
 
 #### 参数
@@ -93,46 +103,60 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `mode`：客户端行为的运行模式控制
+  - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
+  - `1`：强制单端转发模式 - 带连接池的本地代理
+  - `2`：强制双端握手模式 - 需要服务器协调
 - `min`：最小连接池容量（默认：64）
 - `max`：最大连接池容量（默认：1024）
 - `read`：数据读取超时时间（默认：300s，支持时间单位如5s、30s、5m等）
 
 #### 客户端模式工作原理
 
-在客户端模式下，NodePass支持三种操作模式：
+客户端模式通过`mode`参数支持自动模式检测或强制模式选择：
 
-**模式一：客户端单端转发**（当隧道地址为本地地址时）
+**模式0：自动检测**（默认）
+- 首先尝试本地绑定`tunnel_addr`
+- 如果成功，以单端转发模式运行
+- 如果绑定失败，以双端握手模式运行
+
+**模式1：单端转发模式**
 1. 在本地隧道地址上监听TCP和UDP连接
 2. 使用连接池技术预建立到目标地址的TCP连接，消除连接延迟
 3. 直接将接收到的流量转发到目标地址，实现高性能转发
 4. 无需与服务端握手，实现点对点的直接转发
 5. 适用于本地代理和简单转发场景
 
-**模式二：客户端接收流量**（当服务端发送流量时）
-1. 连接到服务端的TCP隧道端点（控制通道）
-2. 在本地监听端口，等待通过隧道传入的连接
-3. 建立到本地`target_addr`的连接并转发数据
+**模式2：双端握手模式**
+- **客户端接收流量**（当服务端发送流量时）
+  1. 连接到服务端的TCP隧道端点（控制通道）
+  2. 在本地监听端口，等待通过隧道传入的连接
+  3. 建立到本地`target_addr`的连接并转发数据
 
-**模式三：客户端发送流量**（当服务端接收流量时）
-1. 连接到服务端的TCP隧道端点（控制通道）
-2. 通过控制通道监听来自服务端的信号
-3. 当收到信号时，使用服务端指定的TLS安全级别建立数据连接
-4. 建立到`target_addr`的本地连接并转发流量
+- **客户端发送流量**（当服务端接收流量时）
+  1. 连接到服务端的TCP隧道端点（控制通道）
+  2. 通过控制通道监听来自服务端的信号
+  3. 当收到信号时，使用服务端指定的TLS安全级别建立数据连接
+  4. 建立到`target_addr`的连接并转发流量
 
 #### 示例
 
 ```bash
-# 客户端单端转发模式 - 本地代理监听1080端口，转发到目标服务器
-nodepass client://127.0.0.1:1080/target.example.com:8080?log=debug
+# 自动模式检测 - 本地代理监听1080端口，转发到目标服务器
+nodepass "client://127.0.0.1:1080/target.example.com:8080?log=debug"
 
-# 连接到NodePass服务端并采用其TLS安全策略 - 客户端发送模式
-nodepass client://server.example.com:10101/127.0.0.1:8080
+# 强制单端转发模式 - 高性能本地代理
+nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
 
-# 使用调试日志连接 - 客户端接收模式  
-nodepass client://server.example.com:10101/192.168.1.100:8080?log=debug
+# 强制双端握手模式 - 连接到NodePass服务端并采用其TLS安全策略
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
-# 自定义连接池容量 - 高性能配置
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=4096"
+# 使用调试日志和自定义连接池容量连接
+nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128&max=4096"
+
+# 强制模式的资源受限配置
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&max=512&log=info"
+```
 
 # 资源受限配置 - 小型连接池
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"

@@ -76,9 +76,30 @@ This enables verbose output to help identify:
 - Data transfer details
 - Error conditions
 
+### Example 6: Run Mode Control
+
+Control the operational behavior with explicit mode settings:
+
+```bash
+# Force server to operate in reverse mode (server receives traffic)
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1&tls=1"
+
+# Force client to operate in single-end forwarding mode (high performance local proxy)
+nodepass "client://127.0.0.1:1080/remote.example.com:8080?mode=1&min=128&max=1024"
+
+# Force client to operate in dual-end handshake mode (requires server coordination)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&log=debug"
+```
+
+These configurations:
+- **Server mode=1**: Forces reverse mode where server binds to target address locally
+- **Client mode=1**: Forces single-end forwarding with connection pooling for maximum performance
+- **Client mode=2**: Forces dual-end handshake mode for scenarios requiring server coordination
+- Use mode control when automatic detection doesn't match your deployment requirements
+
 ## Database Access Through Firewall
 
-### Example 6: Database Tunneling
+### Example 7: Database Tunneling
 
 Enable secure access to a database server behind a firewall:
 
@@ -98,7 +119,7 @@ This configuration:
 
 ## Secure Microservice Communication
 
-### Example 7: Service-to-Service Communication
+### Example 8: Service-to-Service Communication
 
 Enable secure communication between microservices:
 
@@ -118,7 +139,7 @@ This setup:
 
 ## IoT Device Management
 
-### Example 8: IoT Gateway
+### Example 9: IoT Gateway
 
 Create a central access point for IoT devices:
 
@@ -138,7 +159,7 @@ This configuration:
 
 ## Multi-environment Development
 
-### Example 9: Development Environment Access
+### Example 10: Development Environment Access
 
 Access different development environments through tunnels:
 
