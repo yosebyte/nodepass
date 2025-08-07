@@ -25,6 +25,7 @@ type Common struct {
 	mu               sync.Mutex         // 互斥锁
 	logger           *logs.Logger       // 日志记录器
 	tlsCode          string             // TLS模式代码
+	runMode          string             // 运行模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
 	tunnelAddr       string             // 隧道地址字符串
@@ -180,12 +181,22 @@ func (c *Common) getReadTimeout(parsedURL *url.URL) {
 	}
 }
 
+// getRunMode 获取运行模式
+func (c *Common) getRunMode(parsedURL *url.URL) {
+	if mode := parsedURL.Query().Get("mode"); mode != "" {
+		c.runMode = mode
+	} else {
+		c.runMode = "0"
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getTunnelKey(parsedURL)
 	c.getAddress(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getReadTimeout(parsedURL)
+	c.getRunMode(parsedURL)
 }
 
 // initContext 初始化上下文
