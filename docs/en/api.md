@@ -71,12 +71,12 @@ API Key authentication is enabled by default. The key is auto-generated and stor
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "pool": 0,
+  "ping": 0,
   "tcprx": 0,
   "tcptx": 0,
   "udprx": 0,
-  "udptx": 0,
-  "pool": 0,   // Health check pool size
-  "ping": 0    // Health check ping (ms)
+  "udptx": 0
 }
 ```
 
@@ -665,11 +665,11 @@ Examples:
 
 | Parameter | Description | Values | Default | Applicable To |
 |-----------|-------------|---------|---------|---------------|
-| `mode` | Run mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
-| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
 | `log` | Log level | `none`, `debug`, `info`, `warn`, `error`, `event` | `info` | Both |
+| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
+| `crt` | Certificate path | File path | None | Server only |
+| `key` | Private key path | File path | None | Server only |
+| `mode` | Run mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `min` | Min pool capacity | Integer > 0 | `64` | Client only |
 | `max` | Max pool capacity | Integer > 0 | `1024` | Both |
 | `read` | Read timeout | Duration (e.g., `300s`, `5m`) | `300s` | Both |
-| `crt` | Certificate path | File path | None | Server only |
-| `key` | Private key path | File path | None |

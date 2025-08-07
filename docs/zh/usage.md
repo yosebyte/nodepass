@@ -156,7 +156,6 @@ nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128
 
 # 强制模式的资源受限配置
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&max=512&log=info"
-```
 
 # 资源受限配置 - 小型连接池
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"
