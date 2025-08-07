@@ -30,7 +30,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
-			dataFlow:   "+",
 			logger:     logger,
 			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
@@ -82,9 +81,21 @@ func (s *Server) start() error {
 		return err
 	}
 
-	// 通过是否监听成功判断数据流向
-	if err := s.initTargetListener(); err == nil {
+	// 运行模式判断
+	switch s.runMode {
+	case "1": // 反向模式
+		if err := s.initTargetListener(); err != nil {
+			return err
+		}
 		s.dataFlow = "-"
+	case "2": // 正向模式
+		s.dataFlow = "+"
+	default: // 自动判断
+		if err := s.initTargetListener(); err == nil {
+			s.dataFlow = "-"
+		} else {
+			s.dataFlow = "+"
+		}
 	}
 
 	// 与客户端进行握手

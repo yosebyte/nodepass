@@ -73,56 +73,77 @@ func (c *Client) start() error {
 	// 初始化上下文
 	c.initContext()
 
-	// 通过是否监听成功判断单端转发或双端握手
-	if err := c.initTunnelListener(); err == nil {
-		// 初始化连接池
-		c.tunnelPool = pool.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			true,
-			c.tunnelName,
-			func() (net.Conn, error) {
-				return net.DialTCP("tcp", nil, c.targetTCPAddr)
-			})
-
-		go c.tunnelPool.ClientManager()
-
-		return c.singleControl()
-	} else {
-		if err := c.tunnelHandshake(); err != nil {
+	// 运行模式判断
+	switch c.runMode {
+	case "1": // 单端模式
+		if err := c.initTunnelListener(); err != nil {
 			return err
 		}
-
-		// 初始化连接池
-		c.tunnelPool = pool.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			false,
-			c.tunnelName,
-			func() (net.Conn, error) {
-				return net.DialTCP("tcp", nil, c.tunnelTCPAddr)
-			})
-
-		go c.tunnelPool.ClientManager()
-
-		if c.dataFlow == "+" {
-			// 初始化目标监听器
-			if err := c.initTargetListener(); err != nil {
-				return err
-			}
-			go c.commonLoop()
+		return c.singleStart()
+	case "2": // 双端模式
+		return c.commonStart()
+	default: // 自动判断
+		if err := c.initTunnelListener(); err == nil {
+			return c.singleStart()
+		} else {
+			return c.commonStart()
 		}
-
-		return c.commonControl()
 	}
+}
+
+// singleStart 启动单端转发模式
+func (c *Client) singleStart() error {
+	// 初始化连接池
+	c.tunnelPool = pool.NewClientPool(
+		c.minPoolCapacity,
+		c.maxPoolCapacity,
+		minPoolInterval,
+		maxPoolInterval,
+		reportInterval,
+		c.tlsCode,
+		true,
+		c.tunnelName,
+		func() (net.Conn, error) {
+			return net.DialTCP("tcp", nil, c.targetTCPAddr)
+		})
+
+	go c.tunnelPool.ClientManager()
+
+	return c.singleControl()
+}
+
+// commonStart 启动双端握手模式
+func (c *Client) commonStart() error {
+	// 与隧道服务端进行握手
+	if err := c.tunnelHandshake(); err != nil {
+		return err
+	}
+
+	// 初始化连接池
+	c.tunnelPool = pool.NewClientPool(
+		c.minPoolCapacity,
+		c.maxPoolCapacity,
+		minPoolInterval,
+		maxPoolInterval,
+		reportInterval,
+		c.tlsCode,
+		false,
+		c.tunnelName,
+		func() (net.Conn, error) {
+			return net.DialTCP("tcp", nil, c.tunnelTCPAddr)
+		})
+
+	go c.tunnelPool.ClientManager()
+
+	if c.dataFlow == "+" {
+		// 初始化目标监听器
+		if err := c.initTargetListener(); err != nil {
+			return err
+		}
+		go c.commonLoop()
+	}
+
+	return c.commonControl()
 }
 
 // tunnelHandshake 与隧道服务端进行握手
