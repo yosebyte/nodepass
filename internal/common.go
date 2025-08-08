@@ -993,9 +993,6 @@ func (c *Common) singleTCPLoop() error {
 					return
 				}
 
-				c.logger.Debug("Target connection: get ******** <- pool active %v / %v per %v",
-					c.tunnelPool.Active(), c.tunnelPool.Capacity(), c.tunnelPool.Interval())
-
 				defer func() {
 					if targetConn != nil {
 						targetConn.Close()
