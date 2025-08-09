@@ -196,7 +196,7 @@ func (c *Common) getRunMode(parsedURL *url.URL) {
 func (c *Common) getRateLimit(parsedURL *url.URL) {
 	if limit := parsedURL.Query().Get("rate"); limit != "" {
 		if value, err := strconv.Atoi(limit); err == nil && value > 0 {
-			c.rateLimit = value
+			c.rateLimit = value * 125000
 		}
 	} else {
 		c.rateLimit = 0
@@ -216,7 +216,7 @@ func (c *Common) initConfig(parsedURL *url.URL) {
 // initRateLimiter 初始化全局限速器
 func (c *Common) initRateLimiter() {
 	if c.rateLimit > 0 {
-		c.rateLimiter = conn.NewRateLimiter(int64(c.rateLimit)<<20, int64(c.rateLimit)<<20)
+		c.rateLimiter = conn.NewRateLimiter(int64(c.rateLimit), int64(c.rateLimit))
 	}
 }
 
