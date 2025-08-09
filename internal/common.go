@@ -247,7 +247,7 @@ func (c *Common) initTargetListener() error {
 		return err
 	}
 	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
-	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.UDPRX, TX: &c.UDPTX}
+	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.UDPRX, TX: &c.UDPTX, Rate: c.rateLimiter}
 
 	return nil
 }
@@ -492,7 +492,7 @@ func (c *Common) commonTCPLoop() {
 			}
 
 			c.targetTCPConn = targetConn.(*net.TCPConn)
-			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.TCPRX, TX: &c.TCPTX}
+			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.TCPRX, TX: &c.TCPTX, Rate: c.rateLimiter}
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 			// 使用信号量限制并发数
@@ -773,7 +773,7 @@ func (c *Common) commonTCPOnce(id string) {
 	}()
 
 	c.targetTCPConn = targetConn.(*net.TCPConn)
-	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.TCPRX, TX: &c.TCPTX}
+	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.TCPRX, TX: &c.TCPTX, Rate: c.rateLimiter}
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
@@ -817,7 +817,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		c.targetUDPSession.Store(sessionKey, session)
 
 		targetConn = session.(*net.UDPConn)
-		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.UDPRX, TX: &c.UDPTX}
+		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.UDPRX, TX: &c.UDPTX, Rate: c.rateLimiter}
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
@@ -1000,7 +1000,7 @@ func (c *Common) singleTCPLoop() error {
 			}
 
 			c.tunnelTCPConn = tunnelConn.(*net.TCPConn)
-			tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.TCPRX, TX: &c.TCPTX}
+			tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.TCPRX, TX: &c.TCPTX, Rate: c.rateLimiter}
 			c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
 
 			// 使用信号量限制并发数
@@ -1087,7 +1087,7 @@ func (c *Common) singleUDPLoop() error {
 				c.targetUDPSession.Store(sessionKey, session)
 
 				targetConn = session.(*net.UDPConn)
-				targetConn = &conn.StatConn{Conn: targetConn, RX: &c.UDPRX, TX: &c.UDPTX}
+				targetConn = &conn.StatConn{Conn: targetConn, RX: &c.UDPRX, TX: &c.UDPTX, Rate: c.rateLimiter}
 				c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 				// 使用信号量限制并发数

@@ -37,6 +37,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		tlsConfig: tlsConfig,
 	}
 	server.initConfig(parsedURL)
+	server.initRateLimiter()
 	return server
 }
 

@@ -34,6 +34,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		tunnelName: parsedURL.Hostname(),
 	}
 	client.initConfig(parsedURL)
+	client.initRateLimiter()
 	return client
 }
 
