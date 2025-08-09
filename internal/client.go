@@ -42,7 +42,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 func (c *Client) Run() {
 	c.logger.Info("Client started: %v@%v/%v?log=%v&min=%v&max=%v&mode=%v&read=%v&rate=%v",
 		c.tunnelKey, c.tunnelAddr, c.targetTCPAddr, c.logger.GetLogLevel(),
-		c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit)
+		c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
 
 	// 启动客户端服务并处理重启
 	go func() {
@@ -53,7 +53,7 @@ func (c *Client) Run() {
 				c.stop()
 				c.logger.Info("Client restarted: %v@%v/%v?log=%v&min=%v&max=%v&mode=%v&read=%v&rate=%v",
 					c.tunnelKey, c.tunnelAddr, c.targetTCPAddr, c.logger.GetLogLevel(),
-					c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit)
+					c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
 			}
 		}
 	}()

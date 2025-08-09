@@ -45,7 +45,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 func (s *Server) Run() {
 	s.logger.Info("Server started: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
 		s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
-		s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit)
+		s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
 
 	// 启动服务端并处理重启
 	go func() {
@@ -56,7 +56,7 @@ func (s *Server) Run() {
 				s.stop()
 				s.logger.Info("Server restarted: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
 					s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
-					s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit)
+					s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
 			}
 		}
 	}()
