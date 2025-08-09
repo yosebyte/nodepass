@@ -43,7 +43,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 // Run 管理服务端生命周期
 func (s *Server) Run() {
-	s.logger.Info("Server started: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
+	s.logger.Info("Server started: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
+		s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
+		s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit)
 
 	// 启动服务端并处理重启
 	go func() {
@@ -52,7 +54,9 @@ func (s *Server) Run() {
 			if err := s.start(); err != nil {
 				s.logger.Error("Server error: %v", err)
 				s.stop()
-				s.logger.Info("Server restarted: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
+				s.logger.Info("Server restarted: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
+					s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
+					s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit)
 			}
 		}
 	}()

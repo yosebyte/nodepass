@@ -40,7 +40,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 
 // Run 管理客户端生命周期
 func (c *Client) Run() {
-	c.logger.Info("Client started: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
+	c.logger.Info("Client started: %v@%v/%v?log=%v&min=%v&max=%v&mode=%v&read=%v&rate=%v",
+		c.tunnelKey, c.tunnelAddr, c.targetTCPAddr, c.logger.GetLogLevel(),
+		c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit)
 
 	// 启动客户端服务并处理重启
 	go func() {
@@ -49,7 +51,9 @@ func (c *Client) Run() {
 			if err := c.start(); err != nil {
 				c.logger.Error("Client error: %v", err)
 				c.stop()
-				c.logger.Info("Client restarted: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
+				c.logger.Info("Client restarted: %v@%v/%v?log=%v&min=%v&max=%v&mode=%v&read=%v&rate=%v",
+					c.tunnelKey, c.tunnelAddr, c.targetTCPAddr, c.logger.GetLogLevel(),
+					c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit)
 			}
 		}
 	}()
