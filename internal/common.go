@@ -921,6 +921,8 @@ func (c *Common) singleControl() error {
 
 // singleEventLoop 单端转发事件循环
 func (c *Common) singleEventLoop() error {
+	badPing := 0
+	maxBadPing := 3
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -940,6 +942,20 @@ func (c *Common) singleEventLoop() error {
 				c.tunnelPool.Active(), ping,
 				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
 				atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
+
+			// 连续零ping时刷新连接池
+			if ping == 0 {
+				if badPing < maxBadPing {
+					badPing++
+				}
+				if badPing == maxBadPing && c.tunnelPool.Active() > 0 {
+					c.tunnelPool.Flush()
+					badPing = 0
+					c.logger.Debug("Target pool reset: %v active connections", c.tunnelPool.Active())
+				}
+			} else {
+				badPing = 0
+			}
 
 			// 等待下一个报告间隔
 			time.Sleep(reportInterval)
