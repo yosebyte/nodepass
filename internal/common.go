@@ -351,6 +351,11 @@ func (c *Common) stop() {
 	drain(c.semaphore)
 	drain(c.signalChan)
 
+	// 重置全局限速器
+	if c.rateLimiter != nil {
+		c.rateLimiter.Reset()
+	}
+
 	// 发送检查点事件
 	c.logger.Event("CHECK_POINT|POOL=0|PING=0ms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
 		atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
