@@ -44,6 +44,8 @@ type Common struct {
 	tunnelPool       *pool.Pool         // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
+	rateLimit        int                // 速率限制
+	rateLimiter      *conn.RateLimiter  // 全局限速器
 	readTimeout      time.Duration      // 读取超时
 	semaphore        chan struct{}      // 信号量通道
 	bufReader        *bufio.Reader      // 缓冲读取器
@@ -190,6 +192,17 @@ func (c *Common) getRunMode(parsedURL *url.URL) {
 	}
 }
 
+// getRateLimit 获取速率限制
+func (c *Common) getRateLimit(parsedURL *url.URL) {
+	if limit := parsedURL.Query().Get("rate"); limit != "" {
+		if value, err := strconv.Atoi(limit); err == nil && value > 0 {
+			c.rateLimit = value
+		}
+	} else {
+		c.rateLimit = 0
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getTunnelKey(parsedURL)
@@ -197,6 +210,14 @@ func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getPoolCapacity(parsedURL)
 	c.getReadTimeout(parsedURL)
 	c.getRunMode(parsedURL)
+	c.getRateLimit(parsedURL)
+}
+
+// initRateLimiter 初始化全局限速器
+func (c *Common) initRateLimiter() {
+	if c.rateLimit > 0 {
+		c.rateLimiter = conn.NewRateLimiter(int64(c.rateLimit)<<20, int64(c.rateLimit)<<20)
+	}
 }
 
 // initContext 初始化上下文
