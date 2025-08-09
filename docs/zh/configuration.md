@@ -129,6 +129,34 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=60s"
 ```
 
+## 速率限制
+NodePass支持通过`rate`参数进行带宽速率限制，用于流量控制。此功能有助于防止网络拥塞，确保多个连接间的公平资源分配。
+
+- `rate`: 最大带宽限制，单位为Mbps（兆比特每秒）
+  - 值为0或省略：无速率限制（无限带宽）
+  - 正整数：以Mbps为单位的速率限制（例如，10表示10 Mbps）
+  - 同时应用于上传和下载流量
+  - 使用令牌桶算法进行平滑流量整形
+
+示例：
+```bash
+# 限制带宽为50 Mbps
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?rate=50"
+
+# 客户端100 Mbps速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?rate=100"
+
+# 与其他参数组合使用
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=error&tls=1&rate=50"
+```
+
+**速率限制使用场景：**
+- **带宽控制**：防止NodePass消耗所有可用带宽
+- **公平共享**：确保多个应用程序可以共享网络资源
+- **成本管理**：在按流量计费的网络环境中控制数据使用
+- **QoS合规**：满足带宽使用的服务级别协议
+- **测试**：模拟低带宽环境进行应用程序测试
+
 ## URL查询参数配置及作用范围
 
 NodePass支持通过URL查询参数进行灵活配置，不同参数在 server、client、master 模式下的适用性如下表：
@@ -139,10 +167,12 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `tls`     | TLS加密模式          |   O    |   X    |   O    |
 | `crt`     | 自定义证书路径       |   O    |   X    |   O    |
 | `key`     | 自定义密钥路径       |   O    |   X    |   O    |
-| `mode`    | 运行模式控制         |   O    |   O    |   X    |
 | `min`     | 最小连接池容量       |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       |   O    |   O    |   X    |
-| `read`    | 数据读取超时时间     |   O    |   O    |   X    |
+| `mode`    | 运行模式控制         |   O    |   O    |   X    |
+| `read`    | 读取超时时间         |   O    |   O    |   X    |
+| `rate`    | 带宽速率限制         |   O    |   O    |   X    |
+
 
 
 - O：参数有效，推荐根据实际场景配置
@@ -150,8 +180,9 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 **最佳实践：**
 - server/master 模式建议配置安全相关参数（如 tls、crt、key），提升数据通道安全性。
-- client 模式建议根据流量和资源情况调整连接池容量（min/max），优化性能。
+- client/server 模式建议根据流量和资源情况调整连接池容量（min/max），优化性能。
 - 当自动检测不符合部署需求时或需要跨环境一致行为时，使用运行模式控制（mode）。
+- 配置速率限制（rate）以控制带宽使用，防止共享环境中的网络拥塞。
 - 日志级别（log）可在所有模式下灵活调整，便于运维和排查。
 
 ## 环境变量
@@ -254,7 +285,11 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192"
+# 高吞吐量服务器，1 Gbps速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000"
+
+# 高吞吐量客户端，500 Mbps速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192&rate=500"
 ```
 
 环境变量：
@@ -272,7 +307,11 @@ export NP_REPORT_INTERVAL=10s
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
+# 低延迟服务器，适度速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200"
+
+# 低延迟客户端，适度速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096&rate=200"
 ```
 
 环境变量：
@@ -289,7 +328,11 @@ export NP_REPORT_INTERVAL=1s
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512"
+# 资源受限服务器，保守速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50"
+
+# 资源受限客户端，保守速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&rate=50"
 ```
 
 环境变量：

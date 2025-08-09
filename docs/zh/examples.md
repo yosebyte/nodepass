@@ -119,7 +119,7 @@ nodepass client://server.example.com:10101/127.0.0.1:5432
 
 ## 安全的微服务通信
 
-### 示例7：服务间通信
+### 示例8：服务间通信
 
 启用微服务之间的安全通信：
 
@@ -137,9 +137,64 @@ nodepass client://service-a:10101/127.0.0.1:8082
 - 将日志限制为仅警告和错误
 - 使服务A的API在服务B上显示为本地服务
 
+## 带宽速率限制
+
+### 示例9：带速率限制的文件传输服务器
+
+控制文件传输服务的带宽使用：
+
+```bash
+# 服务端：限制文件传输带宽为100 Mbps
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=info&tls=1&rate=100"
+
+# 客户端：连接时限制为50 Mbps
+nodepass "client://fileserver.example.com:10101/127.0.0.1:3000?log=info&rate=50"
+```
+
+此配置：
+- 限制服务器带宽为100 Mbps以防止网络拥塞
+- 客户端进一步限制下载速度为50 Mbps以实现公平共享
+- 允许文件传输的同时为其他服务保留带宽
+- 使用TLS加密确保文件传输安全
+
+### 示例10：物联网传感器数据收集的保守限制
+
+对于带宽有限或按流量计费的物联网设备：
+
+```bash
+# 服务器：接受物联网数据，限制为5 Mbps
+nodepass "server://0.0.0.0:10101/127.0.0.1:1883?log=warn&rate=5"
+
+# 物联网设备客户端：发送传感器数据，限制为2 Mbps
+nodepass "client://iot-gateway.example.com:10101/127.0.0.1:1883?log=error&rate=2"
+```
+
+此设置：
+- 限制服务器为5 Mbps用于从多个物联网设备收集传感器数据
+- 单个物联网客户端限制为2 Mbps以防止单一设备消耗所有带宽
+- 最小日志记录（warn/error）以减少物联网设备的资源使用
+- 高效适用于MQTT或其他物联网协议
+
+### 示例11：开发环境速率控制
+
+在带宽约束下测试应用程序：
+
+```bash
+# 模拟慢速网络条件进行测试
+nodepass "client://api.example.com:443/127.0.0.1:8080?log=debug&rate=1"
+
+# 带监控的高速开发服务器
+nodepass "server://0.0.0.0:10101/127.0.0.1:3000?log=debug&rate=500"
+```
+
+此配置：
+- 客户端模拟1 Mbps连接用于测试慢速网络场景
+- 开发服务器限制为500 Mbps并提供详细日志记录用于调试
+- 帮助识别不同带宽约束下的性能问题
+
 ## 物联网设备管理
 
-### 示例8：物联网网关
+### 示例12：物联网网关
 
 创建物联网设备的中央访问点：
 
@@ -159,7 +214,7 @@ nodepass client://mgmt.example.com:10101/127.0.0.1:80
 
 ## 多环境开发
 
-### 示例9：开发环境访问
+### 示例13：开发环境访问
 
 通过隧道访问不同的开发环境：
 
@@ -182,7 +237,7 @@ nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 
 ## 容器部署
 
-### 示例10：容器化NodePass
+### 示例14：容器化NodePass
 
 在Docker环境中部署NodePass：
 
@@ -217,7 +272,7 @@ docker run -d --name nodepass-client \
 
 ## 主控API管理
 
-### 示例11：集中管理
+### 示例15：集中管理
 
 为多个NodePass实例设置中央控制器：
 
@@ -254,7 +309,7 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 - 提供用于自动化和集成的RESTful API
 - 包含内置的Swagger UI，位于http://localhost:9090/api/v1/docs
 
-### 示例12：自定义API前缀
+### 示例16：自定义API前缀
 
 为主控模式使用自定义API前缀：
 

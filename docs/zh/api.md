@@ -87,18 +87,19 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 服务端：`server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<参数>`
 - 客户端：`client://<server_host>:<server_port>/<local_host>:<local_port>?<参数>`
-- 支持参数：`tls`、`log`、`crt`、`key`、`mode`、`min`、`max`、`read`
+- 支持参数：`log`、`tls`、`crt`、`key`、`min`、`max`、`mode`、`read`、`rate`
 
 ### URL 查询参数
 
 - `log`：日志级别（`none`、`debug`、`info`、`warn`、`error`、`event`）
+- `tls`：TLS加密模式（`0`、`1`、`2`）- 仅服务端/主控模式
+- `crt`/`key`：证书/密钥文件路径（当`tls=2`时）
+- `min`/`max`：连接池容量（`min`不适用服务端）
 - `mode`：运行模式控制（`0`、`1`、`2`）- 控制操作行为
   - 对于服务端：`0`=自动，`1`=反向模式，`2`=正向模式
   - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
-- `tls`：TLS加密模式（`0`、`1`、`2`）- 仅服务端/主控模式
-- `crt`/`key`：证书/密钥文件路径（当`tls=2`时）
-- `min`/`max`：连接池容量（仅客户端模式）
-- `read`：数据读取超时时间
+- `read`：数据读取超时时长（如1h、30m、15s）
+- `rate`：带宽速率限制，单位Mbps（0=无限制）
 
 ### 实时事件流（SSE）
 
@@ -1049,3 +1050,4 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端 |
 | `max` | 最大连接池容量 | 整数 > 0 | `1024` | 两者 |
 | `read` | 读取超时时间 | 时间长度 (如 `300s`, `5m`) | `300s` | 两者 |
+| `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |

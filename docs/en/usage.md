@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass ""<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
 ```
 
 Where:
@@ -19,10 +19,11 @@ Where:
 
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
-- `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
+- `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
 - `read=<timeout>`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
+- `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
 
 TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
@@ -38,7 +39,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&mode=<run_mode>&read=<timeout>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
 ```
 
 #### Parameters
@@ -46,16 +47,17 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`: Address for the TCP tunnel endpoint (control channel) that clients will connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
-- `mode`: Run mode control for data flow direction
-  - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
-  - `1`: Force reverse mode - server binds to target address locally and receives traffic
-  - `2`: Force forward mode - server connects to remote target address
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
   - `1`: Self-signed certificate (automatically generated)
   - `2`: Custom certificate (requires `crt` and `key` parameters)
 - `crt`: Path to certificate file (required when `tls=2`)
 - `key`: Path to private key file (required when `tls=2`)
+- `max`: Maximum connection pool capacity (default: 1024)
+- `mode`: Run mode control for data flow direction
+  - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
+  - `1`: Force reverse mode - server binds to target address locally and receives traffic
+  - `2`: Force forward mode - server connects to remote target address
 
 #### How Server Mode Works
 
@@ -95,7 +97,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&mode=<run_mode>&min=<min_pool>&max=<max_pool>&read=<timeout>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
 ```
 
 #### Parameters
@@ -103,13 +105,14 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&mode=<run_mode>&min=<
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `min`: Minimum connection pool capacity (default: 64)
+- `max`: Maximum connection pool capacity (default: 1024)
 - `mode`: Run mode control for client behavior
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
   - `2`: Force dual-end handshake mode - requires server coordination
-- `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 1024)
 - `read`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
+- `rate`: Bandwidth rate limit (default: 0 means no limit)
 
 #### How Client Mode Works
 

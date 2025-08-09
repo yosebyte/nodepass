@@ -88,18 +88,19 @@ API Key authentication is enabled by default. The key is auto-generated and stor
 
 - Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<params>`
 - Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<params>`
-- Supported params: `tls`, `log`, `crt`, `key`, `mode`, `min`, `max`, `read`
+- Supported params: `log`, `tls`, `crt`, `key`, `min`, `max`, `mode`, `read`, `rate`
 
 ### URL Query Parameters
 
 - `log`: Log level (`none`, `debug`, `info`, `warn`, `error`, `event`)
+- `tls`: TLS encryption mode (`0`, `1`, `2`) - server/master modes only
+- `crt`/`key`: Certificate/key file paths (when `tls=2`)
+- `min`/`max`: Connection pool capacity (min not applicable to server)
 - `mode`: Run mode control (`0`, `1`, `2`) - controls operational behavior
   - For servers: `0`=auto, `1`=reverse mode, `2`=forward mode
   - For clients: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
-- `tls`: TLS encryption mode (`0`, `1`, `2`) - server/master modes only
-- `crt`/`key`: Certificate/key file paths (when `tls=2`)
-- `min`/`max`: Connection pool capacity (client mode only)
-- `read`: Data read timeout duration
+- `read`: Data read timeout duration (e.g. 1h, 30m, 15s)
+- `rate`: Bandwidth rate limit in Mbps (0=unlimited)
 
 ### Real-time Events (SSE)
 
@@ -673,3 +674,4 @@ Examples:
 | `min` | Min pool capacity | Integer > 0 | `64` | Client only |
 | `max` | Max pool capacity | Integer > 0 | `1024` | Both |
 | `read` | Read timeout | Duration (e.g., `300s`, `5m`) | `300s` | Both |
+| `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |

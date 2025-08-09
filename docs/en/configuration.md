@@ -129,6 +129,34 @@ Example:
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=60s"
 ```
 
+## Rate Limiting
+NodePass supports bandwidth rate limiting for traffic control through the `rate` parameter. This feature helps prevent network congestion and ensures fair resource allocation across multiple connections.
+
+- `rate`: Maximum bandwidth limit in Mbps (Megabits per second)
+  - Value 0 or omitted: No rate limiting (unlimited bandwidth)
+  - Positive integer: Rate limit in Mbps (e.g., 10 means 10 Mbps)
+  - Applied to both upload and download traffic
+  - Uses token bucket algorithm for smooth traffic shaping
+
+Example:
+```bash
+# Limit bandwidth to 50 Mbps
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?rate=50"
+
+# Client with 100 Mbps rate limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?rate=100"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=error&tls=1&rate=50"
+```
+
+**Rate Limiting Use Cases:**
+- **Bandwidth Control**: Prevent NodePass from consuming all available bandwidth
+- **Fair Sharing**: Ensure multiple applications can share network resources
+- **Cost Management**: Control data usage in metered network environments
+- **QoS Compliance**: Meet service level agreements for bandwidth usage
+- **Testing**: Simulate low-bandwidth environments for application testing
+
 ## URL Query Parameter Scope and Applicability
 
 NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
@@ -139,18 +167,20 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `tls`     | TLS encryption mode   |   O    |   X    |   O    |
 | `crt`     | Custom certificate path|  O    |   X    |   O    |
 | `key`     | Custom key path       |   O    |   X    |   O    |
-| `mode`    | Run mode control      |   O    |   O    |   X    |
 | `min`     | Minimum pool capacity |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity |   O    |   O    |   X    |
+| `mode`    | Run mode control      |   O    |   O    |   X    |
 | `read`    | Data read timeout     |   O    |   O    |   X    |
+| `rate`    | Bandwidth rate limit  |   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored
 
 **Best Practices:**
 - For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
-- For client/master modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
+- For client/server modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
+- Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables
@@ -253,7 +283,11 @@ For applications requiring maximum throughput (e.g., media streaming, file trans
 
 URL parameters:
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192"
+# High-throughput server with 1 Gbps rate limit
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000"
+
+# High-throughput client with 500 Mbps rate limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192&rate=500"
 ```
 
 Environment variables:
@@ -271,7 +305,11 @@ For applications requiring minimal latency (e.g., gaming, financial trading):
 
 URL parameters:
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
+# Low-latency server with moderate rate limit
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200"
+
+# Low-latency client with moderate rate limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096&rate=200"
 ```
 
 Environment variables:
@@ -288,7 +326,11 @@ For deployment on systems with limited resources (e.g., IoT devices, small VPS):
 
 URL parameters:
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512"
+# Resource-constrained server with conservative rate limit
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50"
+
+# Resource-constrained client with conservative rate limit  
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&rate=50"
 ```
 
 Environment variables:

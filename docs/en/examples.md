@@ -137,9 +137,64 @@ This setup:
 - Limits logging to warnings and errors only
 - Maps service A's API to appear as a local service on service B
 
+## Bandwidth Rate Limiting
+
+### Example 9: File Transfer Server with Rate Limit
+
+Control bandwidth usage for file transfer services:
+
+```bash
+# Server side: Limit bandwidth to 100 Mbps for file transfers
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=info&tls=1&rate=100"
+
+# Client side: Connect with 50 Mbps rate limit
+nodepass "client://fileserver.example.com:10101/127.0.0.1:3000?log=info&rate=50"
+```
+
+This configuration:
+- Limits server bandwidth to 100 Mbps to prevent network congestion
+- Client further limits download speed to 50 Mbps for fair sharing
+- Allows file transfers while preserving bandwidth for other services
+- Uses TLS encryption for secure file transfer
+
+### Example 10: IoT Sensor Data Collection with Conservative Limits
+
+For IoT devices with limited bandwidth or metered connections:
+
+```bash
+# Server: Accept IoT data with 5 Mbps limit
+nodepass "server://0.0.0.0:10101/127.0.0.1:1883?log=warn&rate=5"
+
+# IoT device client: Send sensor data with 2 Mbps limit  
+nodepass "client://iot-gateway.example.com:10101/127.0.0.1:1883?log=error&rate=2"
+```
+
+This setup:
+- Limits server to 5 Mbps for collecting sensor data from multiple IoT devices
+- Individual IoT clients limited to 2 Mbps to prevent single device consuming all bandwidth
+- Minimal logging (warn/error) to reduce resource usage on IoT devices
+- Efficient for MQTT or other IoT protocols
+
+### Example 11: Development Environment Rate Control
+
+Testing applications under bandwidth constraints:
+
+```bash
+# Simulate slow network conditions for testing
+nodepass "client://api.example.com:443/127.0.0.1:8080?log=debug&rate=1"
+
+# High-speed development server with monitoring
+nodepass "server://0.0.0.0:10101/127.0.0.1:3000?log=debug&rate=500"
+```
+
+This configuration:
+- Client simulation of 1 Mbps connection for testing slow network scenarios
+- Development server with 500 Mbps limit and detailed logging for debugging
+- Helps identify performance issues under different bandwidth constraints
+
 ## IoT Device Management
 
-### Example 9: IoT Gateway
+### Example 12: IoT Gateway
 
 Create a central access point for IoT devices:
 
@@ -159,7 +214,7 @@ This configuration:
 
 ## Multi-environment Development
 
-### Example 10: Development Environment Access
+### Example 13: Development Environment Access
 
 Access different development environments through tunnels:
 
@@ -182,7 +237,7 @@ This setup:
 
 ## Container Deployment
 
-### Example 10: Containerized NodePass
+### Example 14: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -217,7 +272,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 11: Centralized Management
+### Example 15: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -254,7 +309,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 12: Custom API Prefix
+### Example 16: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
