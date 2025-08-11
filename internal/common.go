@@ -73,6 +73,25 @@ var (
 	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
 )
 
+// UDP缓冲区池
+var udpBufferPool = sync.Pool{
+	New: func() any {
+		return make([]byte, udpDataBufSize)
+	},
+}
+
+// getUDPBuffer 从池中获取UDP缓冲区
+func getUDPBuffer() []byte {
+	return udpBufferPool.Get().([]byte)
+}
+
+// putUDPBuffer 将UDP缓冲区归还到池中
+func putUDPBuffer(buf []byte) {
+	if buf != nil {
+		udpBufferPool.Put(buf)
+	}
+}
+
 // getEnvAsInt 从环境变量获取整数值，如果不存在则使用默认值
 func getEnvAsInt(name string, defaultValue int) int {
 	if valueStr, exists := os.LookupEnv(name); exists {
@@ -570,12 +589,13 @@ func (c *Common) commonUDPLoop() {
 		case <-c.ctx.Done():
 			return
 		default:
-			buffer := make([]byte, udpDataBufSize)
+			buffer := getUDPBuffer()
 
 			// 读取来自目标的UDP数据
 			x, clientAddr, err := c.targetUDPConn.ReadFromUDP(buffer)
 			if err != nil {
 				c.logger.Error("Read failed: %v", err)
+				putUDPBuffer(buffer)
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
@@ -625,7 +645,8 @@ func (c *Common) commonUDPLoop() {
 						}
 					}()
 
-					buffer := make([]byte, udpDataBufSize)
+					buffer := getUDPBuffer()
+					defer putUDPBuffer(buffer)
 					reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 
 					for {
@@ -681,11 +702,13 @@ func (c *Common) commonUDPLoop() {
 				c.logger.Error("Write failed: %v", err)
 				c.targetUDPSession.Delete(sessionKey)
 				remoteConn.Close()
+				putUDPBuffer(buffer)
 				continue
 			}
 
 			// 传输完成
 			c.logger.Debug("Transfer complete: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
+			putUDPBuffer(buffer)
 		}
 	}
 }
@@ -840,7 +863,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			}
 		}()
 
-		buffer := make([]byte, udpDataBufSize)
+		buffer := getUDPBuffer()
+		defer putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 		for {
 			select {
@@ -882,7 +906,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			}
 		}()
 
-		buffer := make([]byte, udpDataBufSize)
+		buffer := getUDPBuffer()
+		defer putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 		for {
 			select {
@@ -1062,12 +1087,13 @@ func (c *Common) singleUDPLoop() error {
 		case <-c.ctx.Done():
 			return context.Canceled
 		default:
-			buffer := make([]byte, udpDataBufSize)
+			buffer := getUDPBuffer()
 
 			// 读取来自隧道的UDP数据
 			x, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
 			if err != nil {
 				c.logger.Error("Read failed: %v", err)
+				putUDPBuffer(buffer)
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
@@ -1114,7 +1140,8 @@ func (c *Common) singleUDPLoop() error {
 						}
 					}()
 
-					buffer := make([]byte, udpDataBufSize)
+					buffer := getUDPBuffer()
+					defer putUDPBuffer(buffer)
 					reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 
 					for {
@@ -1163,11 +1190,13 @@ func (c *Common) singleUDPLoop() error {
 				if targetConn != nil {
 					targetConn.Close()
 				}
+				putUDPBuffer(buffer)
 				return err
 			}
 
 			// 传输完成
 			c.logger.Debug("Transfer complete: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
+			putUDPBuffer(buffer)
 		}
 	}
 }
