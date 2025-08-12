@@ -536,7 +536,7 @@ func (c *Common) commonTCPLoop() {
 				}()
 
 				// 从连接池获取连接
-				id, remoteConn := c.tunnelPool.ServerGet()
+				id, remoteConn := c.tunnelPool.ServerGet(poolGetTimeout)
 				if remoteConn == nil {
 					c.logger.Error("Get failed: %v", id)
 					return
@@ -618,7 +618,7 @@ func (c *Common) commonUDPLoop() {
 				c.logger.Debug("Using UDP session: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 			} else {
 				// 获取池连接
-				id, remoteConn = c.tunnelPool.ServerGet()
+				id, remoteConn = c.tunnelPool.ServerGet(poolGetTimeout)
 				if remoteConn == nil {
 					c.logger.Error("Get failed: %v", id)
 					continue
