@@ -63,8 +63,9 @@ type Common struct {
 var (
 	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
 	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP缓冲区大小
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 20*time.Second) // UDP拨号超时
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 20*time.Second) // TCP拨号超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second) // UDP拨号超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 10*time.Second) // TCP拨号超时
+	poolGetTimeout  = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 10*time.Second) // 池连接获取超时
 	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
 	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
 	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
