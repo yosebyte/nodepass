@@ -82,7 +82,11 @@ var udpBufferPool = sync.Pool{
 
 // getUDPBuffer 从池中获取UDP缓冲区
 func getUDPBuffer() []byte {
-	return udpBufferPool.Get().([]byte)
+	buf := udpBufferPool.Get().([]byte)
+	if cap(buf) < udpDataBufSize {
+		return make([]byte, udpDataBufSize)
+	}
+	return buf[:udpDataBufSize]
 }
 
 // putUDPBuffer 将UDP缓冲区归还到池中
