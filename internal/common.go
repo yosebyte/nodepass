@@ -969,7 +969,7 @@ func (c *Common) singleControl() error {
 
 	select {
 	case <-c.ctx.Done():
-		return context.Canceled
+		return c.ctx.Err()
 	case err := <-errChan:
 		return err
 	}
@@ -982,7 +982,7 @@ func (c *Common) singleEventLoop() error {
 	for {
 		select {
 		case <-c.ctx.Done():
-			return context.Canceled
+			return c.ctx.Err()
 		default:
 			ping := 0
 			now := time.Now()
@@ -1024,7 +1024,7 @@ func (c *Common) singleTCPLoop() error {
 	for {
 		select {
 		case <-c.ctx.Done():
-			return context.Canceled
+			return c.ctx.Err()
 		default:
 			// 接受来自隧道的TCP连接
 			tunnelConn, err := c.tunnelListener.Accept()
@@ -1090,7 +1090,7 @@ func (c *Common) singleUDPLoop() error {
 	for {
 		select {
 		case <-c.ctx.Done():
-			return context.Canceled
+			return c.ctx.Err()
 		default:
 			buffer := getUDPBuffer()
 
