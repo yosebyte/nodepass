@@ -142,7 +142,7 @@ func (s *Server) tunnelHandshake() error {
 			continue
 		}
 
-		tunnelTCPConn.SetReadDeadline(time.Now().Add(s.readTimeout))
+		tunnelTCPConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 
 		bufReader := bufio.NewReader(tunnelTCPConn)
 		rawTunnelKey, err := bufReader.ReadString('\n')
@@ -161,16 +161,16 @@ func (s *Server) tunnelHandshake() error {
 			tunnelTCPConn.Close()
 			time.Sleep(serviceCooldown)
 			continue
-		} else {
-			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: s.readTimeout})
-			s.tunnelTCPConn.SetKeepAlive(true)
-			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
-
-			// 记录客户端IP
-			s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
-			break
 		}
+
+		s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
+		s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: s.readTimeout})
+		s.tunnelTCPConn.SetKeepAlive(true)
+		s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+
+		// 记录客户端IP
+		s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
+		break
 	}
 
 	// 构建并发送隧道URL到客户端
