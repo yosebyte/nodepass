@@ -5,7 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
+	"encoding/hex"
+	"hash/fnv"
 	"net"
 	"net/url"
 	"os"
@@ -120,9 +121,20 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 // xor 对数据进行异或处理
 func (c *Common) xor(data []byte) []byte {
 	for i := range data {
-		data[i] ^= byte(len(c.tunnelKey) % 256)
+		data[i] ^= c.tunnelKey[i%len(c.tunnelKey)]
 	}
 	return data
+}
+
+// getTunnelKey 从URL中获取隧道密钥
+func (c *Common) getTunnelKey(parsedURL *url.URL) {
+	if key := parsedURL.User.Username(); key != "" {
+		c.tunnelKey = key
+	} else {
+		hash := fnv.New32a()
+		hash.Write([]byte(parsedURL.Port()))
+		c.tunnelKey = hex.EncodeToString(hash.Sum(nil))
+	}
 }
 
 // getAddress 解析和设置地址信息
@@ -160,20 +172,6 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 		c.targetUDPAddr = targetUDPAddr
 	} else {
 		c.logger.Error("Resolve failed: %v", err)
-	}
-}
-
-// getTunnelKey 从URL中获取隧道密钥
-func (c *Common) getTunnelKey(parsedURL *url.URL) {
-	if key := parsedURL.User.Username(); key != "" {
-		c.tunnelKey = key
-	} else {
-		portStr := parsedURL.Port()
-		if portNum, err := strconv.Atoi(portStr); err == nil {
-			c.tunnelKey = fmt.Sprintf("%x", portNum)
-		} else {
-			c.tunnelKey = fmt.Sprintf("%x", portStr)
-		}
 	}
 }
 
