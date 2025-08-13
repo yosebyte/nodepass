@@ -41,8 +41,8 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%s: %v@%v/%v?log=%v&min=%v&max=%v&mode=%v&read=%v&rate=%v",
-			prefix, c.tunnelKey, c.tunnelAddr, c.targetTCPAddr, c.logger.GetLogLevel(),
+		c.logger.Info("%v: %v@%v/%v?min=%v&max=%v&mode=%v&read=%v&rate=%v",
+			prefix, c.tunnelKey, c.tunnelAddr, c.targetTCPAddr,
 			c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
 	}
 	logInfo("Client started")
