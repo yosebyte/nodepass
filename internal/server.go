@@ -43,20 +43,21 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 // Run 管理服务端生命周期
 func (s *Server) Run() {
-	s.logger.Info("Server started: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
-		s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
-		s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
+	logInfo := func(prefix string) {
+		s.logger.Info("%s: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
+			prefix, s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
+			s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
+	}
+	logInfo("Server started")
 
 	// 启动服务端并处理重启
 	go func() {
 		for {
-			time.Sleep(serviceCooldown)
 			if err := s.start(); err != nil {
 				s.logger.Error("Server error: %v", err)
+				time.Sleep(serviceCooldown)
 				s.stop()
-				s.logger.Info("Server restarted: %v@%v/%v?log=%v&tls=%v&max=%v&mode=%v&read=%v&rate=%v",
-					s.tunnelKey, s.tunnelAddr, s.targetTCPAddr, s.logger.GetLogLevel(),
-					s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
+				logInfo("Server restarted")
 			}
 		}
 	}()
