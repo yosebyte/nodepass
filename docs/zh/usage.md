@@ -22,7 +22,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `min=<min_pool>`：最小连接池容量（默认：64，仅适用于client模式）
 - `max=<max_pool>`：最大连接池容量（默认：1024，仅适用于client模式）
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
-- `read=<timeout>`：数据读取超时时间（默认：300s，支持时间单位如5s、30s、5m等）
+- `read=<timeout>`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
 
 TLS相关参数（仅适用于server/master模式）：
@@ -111,7 +111,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
   - `1`：强制单端转发模式 - 带连接池的本地代理
   - `2`：强制双端握手模式 - 需要服务器协调
-- `read`：数据读取超时时间（默认：300s，支持时间单位如5s、30s、5m等）
+- `read`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
 
 #### 客户端模式工作原理

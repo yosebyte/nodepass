@@ -122,11 +122,18 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 
 ## Data Read Timeout
 Data read timeout can be set using the URL query parameter `read`, with units in seconds or minutes:
-- `read`: Data read timeout (default: 300 seconds)
+- `read`: Data read timeout (default: 10 minutes)
+
 Example:
 ```bash
-# Set data read timeout to 60 seconds
-nodepass "client://server.example.com:10101/127.0.0.1:8080?read=60s"
+# Set data read timeout to 5 minutes
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
+
+# Set data read timeout to 30 seconds for fast-response applications
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
+
+# Set data read timeout to 30 minutes for long-running transfers
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30m"
 ```
 
 ## Rate Limiting
@@ -191,10 +198,11 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Maximum number of concurrent connections | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 20s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 20s | `export NP_TCP_DIAL_TIMEOUT=30s` |
-| `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
-| `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
+| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 10s | `export NP_TCP_DIAL_TIMEOUT=30s` |
+| `NP_POOL_GET_TIMEOUT` | Timeout for getting connections from pool | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
+| `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | Cooldown period before restart attempts | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
@@ -220,11 +228,11 @@ The connection pool parameters are important settings for performance tuning:
 
 - `NP_MIN_POOL_INTERVAL`: Controls the minimum time between connection creation attempts
   - Too low: May overwhelm network with connection attempts
-  - Recommended range: 500ms-2s depending on network latency
+  - Recommended range: 100ms-500ms depending on network latency and expected load
 
 - `NP_MAX_POOL_INTERVAL`: Controls the maximum time between connection creation attempts
   - Too high: May result in pool depletion during traffic spikes
-  - Recommended range: 3s-10s depending on expected traffic patterns
+  - Recommended range: 1s-5s depending on expected traffic patterns
 
 #### Connection Management
 
@@ -243,6 +251,7 @@ For applications relying heavily on UDP traffic:
   - Consider increasing to 16384 or higher for media streaming or game servers
 
 - `NP_UDP_DIAL_TIMEOUT`: Timeout for establishing UDP connections
+  - Default (10s) provides good balance for most applications
   - Increase for high-latency networks or applications with slow response times
   - Decrease for low-latency applications requiring quick failover
 
@@ -251,9 +260,17 @@ For applications relying heavily on UDP traffic:
 For optimizing TCP connections:
 
 - `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
+  - Default (10s) is suitable for most network conditions
   - Increase for unstable network conditions
   - Decrease for applications that need quick connection success/failure determination
   - Affects initial connection establishment phase
+
+### Pool Management Settings
+
+- `NP_POOL_GET_TIMEOUT`: Maximum time to wait when getting connections from pool
+  - Default (30s) provides sufficient time for connection establishment
+  - Increase for high-latency environments or when using large pool sizes
+  - Decrease for applications requiring fast failure detection
 
 ### Service Management Settings
 
@@ -292,10 +309,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192&rate
 
 Environment variables:
 ```bash
-export NP_MIN_POOL_INTERVAL=500ms
-export NP_MAX_POOL_INTERVAL=3s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
 export NP_UDP_DATA_BUF_SIZE=32768
+export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s
 ```
 
@@ -314,9 +332,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096&rate
 
 Environment variables:
 ```bash
-export NP_MIN_POOL_INTERVAL=100ms
-export NP_MAX_POOL_INTERVAL=1s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=4096
+export NP_TCP_DIAL_TIMEOUT=5s
+export NP_UDP_DIAL_TIMEOUT=5s
+export NP_POOL_GET_TIMEOUT=15s
 export NP_REPORT_INTERVAL=1s
 ```
 
@@ -335,9 +356,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&rate=5
 
 Environment variables:
 ```bash
-export NP_MIN_POOL_INTERVAL=2s
-export NP_MAX_POOL_INTERVAL=10s
+export NP_MIN_POOL_INTERVAL=200ms
+export NP_MAX_POOL_INTERVAL=2s
 export NP_SEMAPHORE_LIMIT=512
+export NP_TCP_DIAL_TIMEOUT=20s
+export NP_UDP_DIAL_TIMEOUT=20s
+export NP_POOL_GET_TIMEOUT=45s
 export NP_REPORT_INTERVAL=30s
 export NP_SHUTDOWN_TIMEOUT=3s
 ```

@@ -69,12 +69,13 @@
    - 在Linux/macOS上使用`ulimit -n`检查文件描述符限制
 
 3. **超时配置**
-   - 如果使用具有慢响应时间的UDP，调整`UDP_READ_TIMEOUT`
-   - 考虑在操作系统级别调整TCP keepalive设置以支持长寿命连接
+   - 如果使用具有慢响应时间的UDP，调整`NP_UDP_DIAL_TIMEOUT`
+   - 增加URL中的`read`参数用于长时间传输（默认：10m）
+   - 考虑为不稳定网络条件调整`NP_TCP_DIAL_TIMEOUT`
 
 4. **服务器过载**
    - 检查服务器日志中的连接过载迹象
-   - 调整`MAX_POOL_CAPACITY`和`SEMAPHORE_LIMIT`以处理负载
+   - 调整`max`参数和`NP_SEMAPHORE_LIMIT`以处理负载
    - 考虑用多个NodePass实例水平扩展
 
 ## 证书问题
@@ -135,9 +136,9 @@
 **可能的原因和解决方案**：
 
 1. **池配置**
-   - 增加`MIN_POOL_CAPACITY`以准备更多连接
+   - 增加`min`参数以准备更多连接
    - 减少`MIN_POOL_INTERVAL`以更快创建连接
-   - 如果连接队列堆积，调整`SEMAPHORE_LIMIT`
+   - 如果连接队列堆积，调整`NP_SEMAPHORE_LIMIT`
 
 2. **网络路径**
    - 检查网络拥塞或高延迟链路
@@ -162,7 +163,7 @@
 1. **池抖动**
    - 如果池不断创建和销毁连接，调整时间
    - 增加`MIN_POOL_INTERVAL`以减少连接创建频率
-   - 为`MIN_POOL_CAPACITY`和`MAX_POOL_CAPACITY`找到良好平衡
+   - 为`min`和`max`连接池参数找到良好平衡
 
 2. **过度日志记录**
    - 在生产环境中将日志级别从debug降低到info或warn
@@ -184,12 +185,12 @@
 **可能的原因和解决方案**：
 
 1. **连接泄漏**
-   - 确保`SHUTDOWN_TIMEOUT`足够长以正确关闭连接
+   - 确保`NP_SHUTDOWN_TIMEOUT`足够长以正确关闭连接
    - 检查自定义脚本或管理代码中的错误处理
    - 使用系统工具如`netstat`监控连接数量
 
 2. **池大小问题**
-   - 如果`MAX_POOL_CAPACITY`非常大，内存使用会更高
+   - 如果`max`参数非常大，内存使用会更高
    - 监控实际池使用情况与配置容量
    - 根据实际并发连接需求调整容量
 
@@ -210,7 +211,8 @@
    - 默认8192字节对某些应用程序可能太小
 
 2. **超时问题**
-   - 如果响应较慢，增加`UDP_READ_TIMEOUT`
+   - 如果响应较慢，增加`NP_UDP_DIAL_TIMEOUT`
+   - 调整`read`参数以获得更长的会话超时
    - 对于响应时间变化的应用程序，找到最佳平衡点
 
 3. **高数据包率**

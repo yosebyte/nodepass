@@ -122,11 +122,18 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
 
 ## 数据读取超时
 数据读取超时可以通过URL查询参数`read`设置，单位为秒或分钟：
-- `read`: 数据读取超时时间（默认: 300秒）
+- `read`: 数据读取超时时间（默认: 10分钟）
+
 示例：
 ```bash
-# 设置数据读取超时为60秒
-nodepass "client://server.example.com:10101/127.0.0.1:8080?read=60s"
+# 设置数据读取超时为5分钟
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
+
+# 设置数据读取超时为30秒，适用于快速响应应用
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
+
+# 设置数据读取超时为30分钟，适用于长时间传输
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30m"
 ```
 
 ## 速率限制
@@ -193,10 +200,11 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 20s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 20s | `export NP_TCP_DIAL_TIMEOUT=30s` |
-| `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
-| `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 10s | `export NP_TCP_DIAL_TIMEOUT=30s` |
+| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
+| `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
@@ -222,11 +230,11 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 - `NP_MIN_POOL_INTERVAL`：控制连接创建尝试之间的最小时间
   - 太低：可能以连接尝试压垮网络
-  - 推荐范围：根据网络延迟，500ms-2s
+  - 推荐范围：根据网络延迟和预期负载，100ms-500ms
 
 - `NP_MAX_POOL_INTERVAL`：控制连接创建尝试之间的最大时间
   - 太高：流量高峰期可能导致池耗尽
-  - 推荐范围：根据预期流量模式，3s-10s
+  - 推荐范围：根据预期流量模式，1s-5s
 
 #### 连接管理
 
@@ -244,18 +252,27 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 默认值(8192)适用于大多数情况
   - 考虑为媒体流或游戏服务器增加到16384或更高
 
-- `NP_UDP_DIAL_TIMEOUT`：UDP拨号超时
-  - 对于高延迟网络增加此值
-  - 对于需要快速连接的应用减少此值
+- `NP_UDP_DIAL_TIMEOUT`：UDP连接建立超时
+  - 默认值(10s)为大多数应用提供良好平衡
+  - 对于高延迟网络或响应缓慢的应用增加此值
+  - 对于需要快速故障切换的低延迟应用减少此值
 
 ### TCP设置
 
 对于TCP连接的优化：
 
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
+  - 默认值(10s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
   - 对于需要快速判断连接成功与否的应用减少此值
   - 影响初始连接建立阶段
+
+### 连接池管理设置
+
+- `NP_POOL_GET_TIMEOUT`：从连接池获取连接时的最大等待时间
+  - 默认值(30s)为连接建立提供充足时间
+  - 对于高延迟环境或使用大型连接池时增加此值
+  - 对于需要快速故障检测的应用减少此值
 
 ### 服务管理设置
 
@@ -294,10 +311,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192&rate
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=500ms
-export NP_MAX_POOL_INTERVAL=3s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
 export NP_UDP_DATA_BUF_SIZE=32768
+export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s
 ```
 
@@ -316,9 +334,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096&rate
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=100ms
-export NP_MAX_POOL_INTERVAL=1s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=4096
+export NP_TCP_DIAL_TIMEOUT=5s
+export NP_UDP_DIAL_TIMEOUT=5s
+export NP_POOL_GET_TIMEOUT=15s
 export NP_REPORT_INTERVAL=1s
 ```
 
@@ -337,9 +358,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&rate=5
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=2s
-export NP_MAX_POOL_INTERVAL=10s
+export NP_MIN_POOL_INTERVAL=200ms
+export NP_MAX_POOL_INTERVAL=2s
 export NP_SEMAPHORE_LIMIT=512
+export NP_TCP_DIAL_TIMEOUT=20s
+export NP_UDP_DIAL_TIMEOUT=20s
+export NP_POOL_GET_TIMEOUT=45s
 export NP_REPORT_INTERVAL=30s
 export NP_SHUTDOWN_TIMEOUT=3s
 ```

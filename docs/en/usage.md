@@ -22,7 +22,7 @@ Common query parameters:
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
-- `read=<timeout>`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
+- `read=<timeout>`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
 
 TLS-related parameters (server/master modes only):
@@ -111,7 +111,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
   - `2`: Force dual-end handshake mode - requires server coordination
-- `read`: Data read timeout duration (default: 300s, supports time units like 5s, 30s, 5m, etc.)
+- `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 
 #### How Client Mode Works

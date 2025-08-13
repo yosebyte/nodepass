@@ -673,5 +673,5 @@ Examples:
 | `mode` | Run mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `min` | Min pool capacity | Integer > 0 | `64` | Client only |
 | `max` | Max pool capacity | Integer > 0 | `1024` | Both |
-| `read` | Read timeout | Duration (e.g., `300s`, `5m`) | `300s` | Both |
+| `read` | Read timeout | Duration (e.g., `10m`, `30s`, `1h`) | `10m` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |

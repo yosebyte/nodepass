@@ -153,7 +153,7 @@ The data flow mode is automatically determined based on tunnel address and targe
 
 - **UDP Exchange**:
   - One-time datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
-  - Read timeout control for response waiting (`UDP_READ_TIMEOUT`)
+  - Read timeout control for response waiting (`read` parameter or default 10m)
   - Optimized for low-latency, stateless communications
   - **Client Single-End Forwarding Optimization**: Direct forwarding mechanism without connection pool, achieving minimal latency
 
