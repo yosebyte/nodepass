@@ -61,17 +61,17 @@ type Common struct {
 
 // 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                 // 信号量限制
-	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)               // UDP缓冲区大小
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second) // UDP拨号超时
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 10*time.Second) // TCP拨号超时
-	poolGetTimeout  = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 10*time.Second) // 池连接获取超时
-	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 1*time.Second) // 最小池间隔
-	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 5*time.Second) // 最大池间隔
-	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)   // 报告间隔
-	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)  // 服务冷却时间
-	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)  // 关闭超时
-	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)     // 重载间隔
+	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                        // 信号量限制
+	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)                      // UDP缓冲区大小
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second)        // UDP拨号超时
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 10*time.Second)        // TCP拨号超时
+	poolGetTimeout  = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 30*time.Second)        // 池连接获取超时
+	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
+	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
+	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)          // 报告间隔
+	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)         // 服务冷却时间
+	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)         // 关闭超时
+	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
 // UDP缓冲区池
@@ -203,7 +203,7 @@ func (c *Common) getReadTimeout(parsedURL *url.URL) {
 			c.readTimeout = value
 		}
 	} else {
-		c.readTimeout = 300 * time.Second
+		c.readTimeout = 10 * time.Minute
 	}
 }
 
