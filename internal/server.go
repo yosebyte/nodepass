@@ -45,9 +45,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: %v@%v/%v?tls=%v&max=%v&mode=%v&read=%v&rate=%v",
+		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v",
 			prefix, s.tunnelKey, s.tunnelAddr, s.targetTCPAddr,
-			s.tlsCode, s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
+			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
 	}
 	logInfo("Server started")
 
@@ -122,13 +122,11 @@ func (s *Server) start() error {
 		s.tlsConfig,
 		s.tunnelListener,
 		reportInterval)
-
 	go s.tunnelPool.ServerManager()
 
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}
-
 	return s.commonControl()
 }
 
@@ -176,8 +174,9 @@ func (s *Server) tunnelHandshake() error {
 
 	// 发送客户端配置
 	tunnelURL := &url.URL{
-		Scheme:   s.dataFlow,
 		Host:     strconv.Itoa(s.maxPoolCapacity),
+		Path:     generateID(),
+		RawQuery: s.dataFlow,
 		Fragment: s.tlsCode,
 	}
 

@@ -42,9 +42,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: %v@%v/%v?min=%v&max=%v&mode=%v&read=%v&rate=%v",
+		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v",
 			prefix, c.tunnelKey, c.tunnelAddr, c.targetTCPAddr,
-			c.minPoolCapacity, c.maxPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
+			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
 	}
 	logInfo("Client started")
 
@@ -122,7 +122,6 @@ func (c *Client) commonStart() error {
 		func() (net.Conn, error) {
 			return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
 		})
-
 	go c.tunnelPool.ClientManager()
 
 	if c.dataFlow == "+" {
@@ -132,7 +131,6 @@ func (c *Client) commonStart() error {
 		}
 		go c.commonLoop()
 	}
-
 	return c.commonControl()
 }
 
@@ -161,28 +159,26 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 
-	tunnelSignal := string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
-
 	// 解析隧道URL
-	tunnelURL, err := url.Parse(tunnelSignal)
+	tunnelURL, err := url.Parse(string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'}))))
 	if err != nil {
 		return err
 	}
 
 	// 更新客户端配置
-	if tunnelURL.Scheme != "" {
-		c.dataFlow = tunnelURL.Scheme
-	}
 	if tunnelURL.Host != "" {
 		if max, err := strconv.Atoi(tunnelURL.Host); err == nil {
 			c.maxPoolCapacity = max
 		}
 	}
+	if tunnelURL.RawQuery != "" {
+		c.dataFlow = tunnelURL.RawQuery
+	}
 	if tunnelURL.Fragment != "" {
 		c.tlsCode = tunnelURL.Fragment
 	}
 
-	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
 	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 	return nil
 }
