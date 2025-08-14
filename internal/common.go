@@ -32,7 +32,6 @@ type Common struct {
 	tunnelAddr       string             // 隧道地址字符串
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
-	targetAddr       string             // 目标地址字符串
 	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
 	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
 	targetListener   *net.TCPListener   // 目标监听器
@@ -79,23 +78,25 @@ var (
 // UDP缓冲区池
 var udpBufferPool = sync.Pool{
 	New: func() any {
-		return make([]byte, udpDataBufSize)
+		b := make([]byte, udpDataBufSize)
+		return &b
 	},
 }
 
 // getUDPBuffer 从池中获取UDP缓冲区
 func getUDPBuffer() []byte {
-	buf := udpBufferPool.Get().([]byte)
-	if cap(buf) < udpDataBufSize {
-		return make([]byte, udpDataBufSize)
+	buf := udpBufferPool.Get().(*[]byte)
+	if cap(*buf) < udpDataBufSize {
+		b := make([]byte, udpDataBufSize)
+		return b
 	}
-	return buf[:udpDataBufSize]
+	return (*buf)[:udpDataBufSize]
 }
 
 // putUDPBuffer 将UDP缓冲区归还到池中
 func putUDPBuffer(buf []byte) {
 	if buf != nil {
-		udpBufferPool.Put(buf)
+		udpBufferPool.Put(&buf)
 	}
 }
 
@@ -159,7 +160,6 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 
 	// 处理目标地址
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
-	c.targetAddr = targetAddr
 
 	// 解析目标TCP地址
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
@@ -987,7 +987,7 @@ func (c *Common) singleEventLoop() error {
 			now := time.Now()
 
 			// 尝试连接到目标地址
-			if conn, err := net.DialTimeout("tcp", c.targetAddr, reportInterval); err == nil {
+			if conn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), reportInterval); err == nil {
 				ping = int(time.Since(now).Milliseconds())
 				conn.Close()
 			}
