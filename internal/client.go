@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -166,17 +167,16 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	// 更新客户端配置
-	if tunnelURL.Host != "" {
-		if max, err := strconv.Atoi(tunnelURL.Host); err == nil {
-			c.maxPoolCapacity = max
-		}
+	if tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
+		return net.UnknownNetworkError(tunnelURL.String())
 	}
-	if tunnelURL.RawQuery != "" {
-		c.dataFlow = tunnelURL.RawQuery
+	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
+		return err
+	} else {
+		c.maxPoolCapacity = max
 	}
-	if tunnelURL.Fragment != "" {
-		c.tlsCode = tunnelURL.Fragment
-	}
+	c.dataFlow = strings.TrimPrefix(tunnelURL.Path, "/")
+	c.tlsCode = tunnelURL.Fragment
 
 	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
 	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())

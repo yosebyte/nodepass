@@ -174,9 +174,9 @@ func (s *Server) tunnelHandshake() error {
 
 	// 发送客户端配置
 	tunnelURL := &url.URL{
+		Scheme:   "np",
 		Host:     strconv.Itoa(s.maxPoolCapacity),
-		Path:     generateID(),
-		RawQuery: s.dataFlow,
+		Path:     s.dataFlow,
 		Fragment: s.tlsCode,
 	}
 
