@@ -99,22 +99,6 @@ func (c *Client) start() error {
 
 // singleStart 启动单端转发模式
 func (c *Client) singleStart() error {
-	// 初始化连接池
-	c.tunnelPool = pool.NewClientPool(
-		c.minPoolCapacity,
-		c.maxPoolCapacity,
-		minPoolInterval,
-		maxPoolInterval,
-		reportInterval,
-		c.tlsCode,
-		true,
-		c.tunnelName,
-		func() (net.Conn, error) {
-			return net.DialTCP("tcp", nil, c.targetTCPAddr)
-		})
-
-	go c.tunnelPool.ClientManager()
-
 	return c.singleControl()
 }
 
@@ -133,10 +117,9 @@ func (c *Client) commonStart() error {
 		maxPoolInterval,
 		reportInterval,
 		c.tlsCode,
-		false,
 		c.tunnelName,
 		func() (net.Conn, error) {
-			return net.DialTCP("tcp", nil, c.tunnelTCPAddr)
+			return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
 		})
 
 	go c.tunnelPool.ClientManager()
