@@ -312,7 +312,7 @@ URL参数：
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000"
 
 # 高吞吐量客户端，500 Mbps速率限制
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192&rate=500"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500"
 ```
 
 环境变量：
@@ -335,7 +335,7 @@ URL参数：
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200"
 
 # 低延迟客户端，适度速率限制
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096&rate=200"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&rate=200"
 ```
 
 环境变量：
@@ -359,7 +359,7 @@ URL参数：
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50"
 
 # 资源受限客户端，保守速率限制
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&rate=50"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&rate=50"
 ```
 
 环境变量：
