@@ -1056,11 +1056,10 @@ func (c *Common) singleTCPLoop() error {
 					}
 				}()
 
-				// 从连接池中获取连接
-				targetConn := c.tunnelPool.ClientGet("")
-				if targetConn == nil {
-					c.logger.Error("Get failed: no target connection available")
-					time.Sleep(50 * time.Millisecond)
+				// 尝试建立目标连接
+				targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
+				if err != nil {
+					c.logger.Error("Dial failed: %v", err)
 					return
 				}
 
