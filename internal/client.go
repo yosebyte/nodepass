@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -167,8 +168,19 @@ func (c *Client) tunnelHandshake() error {
 	if err != nil {
 		return err
 	}
-	c.dataFlow = tunnelURL.Host
-	c.tlsCode = tunnelURL.Fragment
+
+	// 更新客户端配置
+	if tunnelURL.Scheme != "" {
+		c.dataFlow = tunnelURL.Scheme
+	}
+	if tunnelURL.Host != "" {
+		if max, err := strconv.Atoi(tunnelURL.Host); err == nil {
+			c.maxPoolCapacity = max
+		}
+	}
+	if tunnelURL.Fragment != "" {
+		c.tlsCode = tunnelURL.Fragment
+	}
 
 	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
 	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())

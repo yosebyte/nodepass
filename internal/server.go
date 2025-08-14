@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -173,9 +174,10 @@ func (s *Server) tunnelHandshake() error {
 		break
 	}
 
-	// 构建并发送隧道URL到客户端
+	// 发送客户端配置
 	tunnelURL := &url.URL{
-		Host:     s.dataFlow,
+		Scheme:   s.dataFlow,
+		Host:     strconv.Itoa(s.maxPoolCapacity),
 		Fragment: s.tlsCode,
 	}
 
