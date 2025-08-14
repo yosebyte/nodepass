@@ -85,7 +85,7 @@ Control the operational behavior with explicit mode settings:
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1&tls=1"
 
 # Force client to operate in single-end forwarding mode (high performance local proxy)
-nodepass "client://127.0.0.1:1080/remote.example.com:8080?mode=1&min=128&max=1024"
+nodepass "client://127.0.0.1:1080/remote.example.com:8080?mode=1"
 
 # Force client to operate in dual-end handshake mode (requires server coordination)
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&log=debug"
@@ -93,7 +93,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&log=debug"
 
 These configurations:
 - **Server mode=1**: Forces reverse mode where server binds to target address locally
-- **Client mode=1**: Forces single-end forwarding with connection pooling for maximum performance
+- **Client mode=1**: Forces single-end forwarding with direct connection establishment for high performance
 - **Client mode=2**: Forces dual-end handshake mode for scenarios requiring server coordination
 - Use mode control when automatic detection doesn't match your deployment requirements
 

@@ -85,7 +85,7 @@ nodepass client://server.example.com:10101/127.0.0.1:8080?log=debug
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1&tls=1"
 
 # 强制客户端以单端转发模式运行（高性能本地代理）
-nodepass "client://127.0.0.1:1080/remote.example.com:8080?mode=1&min=128&max=1024"
+nodepass "client://127.0.0.1:1080/remote.example.com:8080?mode=1"
 
 # 强制客户端以双端握手模式运行（需要服务器协调）
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&log=debug"
@@ -93,7 +93,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&log=debug"
 
 这些配置：
 - **服务器 mode=1**：强制反向模式，服务器本地绑定目标地址
-- **客户端 mode=1**：强制单端转发模式，使用连接池实现最大性能
+- **客户端 mode=1**：强制单端转发模式，使用直接连接实现高性能
 - **客户端 mode=2**：强制双端握手模式，适用于需要服务器协调的场景
 - 当自动检测不符合部署需求时使用模式控制
 

@@ -95,7 +95,7 @@ API Key authentication is enabled by default. The key is auto-generated and stor
 - `log`: Log level (`none`, `debug`, `info`, `warn`, `error`, `event`)
 - `tls`: TLS encryption mode (`0`, `1`, `2`) - server/master modes only
 - `crt`/`key`: Certificate/key file paths (when `tls=2`)
-- `min`/`max`: Connection pool capacity (min not applicable to server)
+- `min`/`max`: Connection pool capacity (min not applicable to server, only used in dual-end handshake mode)
 - `mode`: Run mode control (`0`, `1`, `2`) - controls operational behavior
   - For servers: `0`=auto, `1`=reverse mode, `2`=forward mode
   - For clients: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
@@ -671,7 +671,7 @@ Examples:
 | `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None | Server only |
 | `mode` | Run mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
-| `min` | Min pool capacity | Integer > 0 | `64` | Client only |
-| `max` | Max pool capacity | Integer > 0 | `1024` | Both |
+| `min` | Min pool capacity | Integer > 0 | `64` | Client dual-end handshake only |
+| `max` | Max pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
 | `read` | Read timeout | Duration (e.g., `10m`, `30s`, `1h`) | `10m` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |

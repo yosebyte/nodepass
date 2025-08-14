@@ -62,7 +62,7 @@ For client instances, the `mode` parameter controls the connection strategy:
   
 - **Mode 1**: Force single-end forwarding mode
   - Binds to tunnel address locally and forwards traffic directly to target
-  - Uses connection pooling for high performance
+  - Uses direct connection establishment for high performance
   - No handshake with server required
   
 - **Mode 2**: Force dual-end handshake mode
@@ -109,10 +109,12 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 
 ## Connection Pool Capacity Parameters
 
-Connection pool capacity can be configured via URL query parameters:
+Connection pool capacity parameters only apply to dual-end handshake mode and can be configured via URL query parameters:
 
-- `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 1024)
+- `min`: Minimum connection pool capacity (default: 64) - Only used in dual-end handshake mode
+- `max`: Maximum connection pool capacity (default: 1024) - Only used in dual-end handshake mode
+
+Note: In client single-end forwarding mode, connection pools are not used and these parameters are ignored.
 
 Example:
 ```bash
@@ -185,7 +187,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 
 **Best Practices:**
 - For server/master modes, configure security-related parameters (`tls`, `crt`, `key`) to enhance data channel security.
-- For client/server modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
+- For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
@@ -211,7 +213,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 
 ### Connection Pool Tuning
 
-The connection pool parameters are important settings for performance tuning:
+The connection pool parameters are important settings for performance tuning in dual-end handshake mode and do not apply to client single-end forwarding mode:
 
 #### Pool Capacity Settings
 
@@ -272,6 +274,7 @@ For optimizing TCP connections:
   - Default (30s) provides sufficient time for connection establishment
   - Increase for high-latency environments or when using large pool sizes
   - Decrease for applications requiring fast failure detection
+  - In client single-end forwarding mode, connection pools are not used and this parameter is ignored
 
 ### Service Management Settings
 

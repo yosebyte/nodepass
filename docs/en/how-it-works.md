@@ -35,12 +35,12 @@ NodePass creates a network architecture with separate channels for control and d
 5. **Client Single-End Forwarding Mode**:
    - Automatically enabled when tunnel address is a local address (e.g., 127.0.0.1)
    - Client directly listens on local port without server control channel coordination
-   - Uses connection pooling technology for TCP connections to significantly improve forwarding performance
+   - Uses direct connection establishment for both TCP and UDP protocols
    - Suitable for pure local forwarding scenarios, reducing network overhead and latency
-   - Supports high-performance single-end forwarding for both TCP and UDP protocols
+   - Supports high-performance single-end forwarding with optimized connection handling
 
 5. **Protocol Support**:
-   - **TCP**: Full bidirectional streaming with persistent connections, supports connection pool optimization in client single-end forwarding mode
+   - **TCP**: Full bidirectional streaming with persistent connections, optimized for direct connection establishment in client single-end forwarding mode
    - **UDP**: Datagram forwarding with configurable buffer sizes and timeouts
 
 ## Data Transmission Flow
@@ -50,7 +50,7 @@ NodePass establishes a bidirectional data flow through its tunnel architecture, 
 ### Data Flow Mode Explanation
 - **Server Receives Mode**: Server listens on target address, client listens locally, data flows from target address to client local
 - **Server Sends Mode**: Server connects to remote target address, client listens locally, data flows from client local to remote target
-- **Client Single-End Forwarding Mode**: Client directly listens locally and forwards to target address without server coordination, using connection pooling technology for high-performance forwarding
+- **Client Single-End Forwarding Mode**: Client directly listens locally and forwards to target address without server coordination, using direct connection establishment for optimized forwarding
 
 The data flow mode is automatically determined based on tunnel address and target address:
 - If tunnel address is a local address (localhost, 127.0.0.1, etc.), enables Client Single-End Forwarding Mode
@@ -128,34 +128,33 @@ The data flow mode is automatically determined based on tunnel address and targe
    - Directly starts TCP or UDP listener on specified tunnel port
    - No need to connect to remote server, achieving zero-latency startup
 
-3. **Connection Pool Initialization** (TCP Only):
+3. **Direct Connection Establishment**:
    ```
-   [Client] → [Initialize Target Connection Pool] → [Pre-establish Connections to Target Address]
+   [Client] → [Create Direct Connection to Target Address] → [Establish Target Connection]
    ```
-   - Creates high-performance connection pool for TCP forwarding
-   - Pre-establishes multiple connections to target address, significantly reducing connection establishment latency
-   - Connection pool size can be dynamically adjusted based on concurrent demand
+   - For TCP: Directly establishes TCP connection to target address for each tunnel connection
+   - For UDP: Creates UDP socket for datagram exchange with target address
+   - Eliminates connection pool overhead, providing simpler and more direct forwarding path
 
-4. **High-Performance Forwarding**:
+4. **Optimized Forwarding**:
    ```
-   [Local Connection] → [Get Target Connection from Pool] → [Direct Data Exchange] → [Connection Reuse or Release]
+   [Local Connection] → [Direct Target Connection] → [Data Exchange] → [Connection Cleanup]
    ```
-   - For TCP: Quickly gets pre-established target connection from pool for efficient data exchange
-   - For UDP: Directly forwards datagrams to target address without connection pool
-   - Optimized data path minimizing forwarding overhead and latency
+   - For TCP: Direct connection establishment followed by efficient data exchange
+   - For UDP: Direct datagram forwarding to target address with minimal latency
+   - Simplified data path ensuring reliable and efficient forwarding
 
-### Protocol-Specific Characteristics
 - **TCP Exchange**: 
   - Persistent connections for full-duplex communication
   - Continuous data streaming until connection termination
-  - Error handling with automatic reconnection
-  - **Client Single-End Forwarding Optimization**: Pre-established connections through connection pooling technology, significantly reducing connection establishment latency
+  - Automatic error handling with reconnection capability
+  - **Client Single-End Forwarding Optimization**: Direct connection establishment for each tunnel connection, ensuring reliable and efficient forwarding
 
 - **UDP Exchange**:
-  - One-time datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
+  - One-shot datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
   - Read timeout control for response waiting (`read` parameter or default 10m)
-  - Optimized for low-latency, stateless communications
-  - **Client Single-End Forwarding Optimization**: Direct forwarding mechanism without connection pool, achieving minimal latency
+  - Optimized for low-latency, stateless communication
+  - **Client Single-End Forwarding Optimization**: Direct forwarding mechanism with minimal latency
 
 ## Signal Communication Mechanism
 
