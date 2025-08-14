@@ -468,7 +468,13 @@ func (c *Common) healthCheck() error {
 				}
 				c.tunnelPool.Flush()
 				c.tunnelPool.ResetError()
-				time.Sleep(reportInterval) // 等待连接池刷新完成
+
+				select {
+				case <-c.ctx.Done():
+					return c.ctx.Err()
+				case <-time.After(reportInterval):
+				}
+
 				c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 			}
 
@@ -481,7 +487,11 @@ func (c *Common) healthCheck() error {
 			}
 
 			c.mu.Unlock()
-			time.Sleep(reportInterval)
+			select {
+			case <-c.ctx.Done():
+				return c.ctx.Err()
+			case <-time.After(reportInterval):
+			}
 		}
 	}
 }
@@ -743,7 +753,13 @@ func (c *Common) commonOnce() error {
 				go func() {
 					c.tunnelPool.Flush()
 					c.tunnelPool.ResetError()
-					time.Sleep(reportInterval) // 等待连接池刷新完成
+
+					select {
+					case <-c.ctx.Done():
+						return
+					case <-time.After(reportInterval):
+					}
+
 					c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 				}()
 			case "1": // TCP
@@ -996,7 +1012,11 @@ func (c *Common) singleEventLoop() error {
 				atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 
 			// 等待下一个报告间隔
-			time.Sleep(reportInterval)
+			select {
+			case <-c.ctx.Done():
+				return c.ctx.Err()
+			case <-time.After(reportInterval):
+			}
 		}
 	}
 }
