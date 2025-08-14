@@ -40,7 +40,7 @@ English | [简体中文](README_zh.md)
 - **⚙️ Minimal Configuration**
   - No config files required, ready to use via CLI.
   - Optimized for CI/CD and containers.
-  - Flexible tuning via environment variables.
+  - Advanced parameters like timeouts and rate limits.
 
 - **📈 Performance**
   - Intelligent scheduling, auto-tuning, ultra-low resource usage.

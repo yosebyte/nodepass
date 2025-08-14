@@ -58,6 +58,8 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
   - `1`: Force reverse mode - server binds to target address locally and receives traffic
   - `2`: Force forward mode - server connects to remote target address
+- `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
+- `rate`: Bandwidth rate limit (default: 0 means no limit)
 
 #### How Server Mode Works
 
