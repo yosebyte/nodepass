@@ -27,6 +27,10 @@ NodePass creates a network architecture with separate channels for control and d
 
 4. **Client Mode Operation**:
    - Connects to the server's control channel
+   - **Handshake Phase**: After server validates the tunnel key, it delivers configuration to client:
+     - Data flow direction mode (determines whether client receives or sends traffic)
+     - Maximum connection pool capacity (centrally managed and allocated by server)
+     - TLS security level (ensures client uses correct encryption mode)
    - Listens for signals indicating incoming connections
    - Creates data connections using the TLS security level specified by the server
    - Forwards data between the secure channel and local target
@@ -219,6 +223,8 @@ The connection pool design follows the principle of "warm-up over cold start," e
    - **Connection Storage**: Thread-safe map of connection IDs to net.Conn objects, supporting high-concurrency access
    - **ID Channel**: Buffered channel for available connection IDs, enabling lock-free rapid allocation
    - **Capacity Management**: Dynamic adjustment based on usage patterns, implementing intelligent scaling
+     - Minimum capacity set by client, ensuring basic connection guarantee for client
+     - Maximum capacity delivered by server during handshake, enabling global resource coordination
    - **Interval Control**: Time-based throttling between connection creations, preventing network resource overload
    - **Connection Factory**: Customizable connection creation function, supporting different TLS modes and network configurations
 

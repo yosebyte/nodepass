@@ -94,7 +94,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `log`：日志级别（`none`、`debug`、`info`、`warn`、`error`、`event`）
 - `tls`：TLS加密模式（`0`、`1`、`2`）- 仅服务端/主控模式
 - `crt`/`key`：证书/密钥文件路径（当`tls=2`时）
-- `min`/`max`：连接池容量（`min`不适用服务端，仅双端握手模式使用）
+- `min`/`max`：连接池容量（`min`由客户端设置，`max`由服务端设置并在握手时传递给客户端）
 - `mode`：运行模式控制（`0`、`1`、`2`）- 控制操作行为
   - 对于服务端：`0`=自动，`1`=反向模式，`2`=正向模式
   - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
@@ -1036,7 +1036,7 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 示例：
 - `client://example.com:8080/localhost:3000` - 连接到远程服务器，本地监听3000端口
-- `client://vpn.example.com:443/localhost:22?mode=2&min=32&max=512` - 通过VPN连接，强制双端模式
+- `client://remote.example.com:443/localhost:22?mode=2&min=32` - 通过远程服务器，强制双端模式
 
 #### 支持的参数
 

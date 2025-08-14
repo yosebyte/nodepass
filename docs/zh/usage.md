@@ -19,8 +19,8 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 通用查询参数：
 - `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
-- `min=<min_pool>`：最小连接池容量（默认：64，仅适用于client模式）
-- `max=<max_pool>`：最大连接池容量（默认：1024，仅适用于client模式）
+- `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
+- `max=<max_pool>`：最大连接池容量（默认：1024，服务端设置并传递给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
 - `read=<timeout>`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
@@ -97,7 +97,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
 ```
 
 #### 参数
@@ -106,7 +106,6 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
 - `min`：最小连接池容量（默认：64）
-- `max`：最大连接池容量（默认：1024）
 - `mode`：客户端行为的运行模式控制
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
   - `1`：强制单端转发模式 - 带连接池的本地代理
@@ -155,13 +154,13 @@ nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
 # 使用调试日志和自定义连接池容量连接
-nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128&max=4096"
+nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128"
 
 # 强制模式的资源受限配置
-nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&max=512&log=info"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=info"
 
 # 资源受限配置 - 小型连接池
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512&log=info"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 ```
 
 ### 主控模式 (API)
@@ -322,10 +321,13 @@ NodePass使用隧道密钥来验证客户端和服务端之间的连接。密钥
 1. **客户端连接**：客户端连接到服务端的隧道地址
 2. **密钥验证**：客户端发送XOR加密的隧道密钥
 3. **服务端验证**：服务端解密并验证密钥是否匹配
-4. **配置同步**：验证成功后，服务端发送隧道配置信息（包括TLS模式）
+4. **配置同步**：验证成功后，服务端发送隧道配置信息，包括：
+   - 数据流向模式
+   - 最大连接池容量
+   - TLS安全模式
 5. **连接确立**：握手完成，开始数据传输
 
-这种设计确保了只有拥有正确密钥的客户端才能建立隧道连接。
+这种设计确保了只有拥有正确密钥的客户端才能建立隧道连接，同时允许服务端统一管理连接池容量。
 
 ## 下一步
 

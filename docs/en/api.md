@@ -95,7 +95,7 @@ API Key authentication is enabled by default. The key is auto-generated and stor
 - `log`: Log level (`none`, `debug`, `info`, `warn`, `error`, `event`)
 - `tls`: TLS encryption mode (`0`, `1`, `2`) - server/master modes only
 - `crt`/`key`: Certificate/key file paths (when `tls=2`)
-- `min`/`max`: Connection pool capacity (min not applicable to server, only used in dual-end handshake mode)
+- `min`/`max`: Connection pool capacity (`min` set by client, `max` set by server and delivered to client during handshake)
 - `mode`: Run mode control (`0`, `1`, `2`) - controls operational behavior
   - For servers: `0`=auto, `1`=reverse mode, `2`=forward mode
   - For clients: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
@@ -660,7 +660,7 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 Examples:
 - `client://example.com:8080/localhost:3000` - Connect to remote server, listen locally on port 3000
-- `client://vpn.example.com:443/localhost:22?mode=2&min=32&max=512` - Connect to VPN server, forced dual-end mode
+- `client://remote.example.com:443/localhost:22?mode=2&min=32` - Connect to remote server, forced dual-end mode
 
 #### Supported Parameters
 

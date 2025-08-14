@@ -109,17 +109,20 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 
 ## Connection Pool Capacity Parameters
 
-Connection pool capacity parameters only apply to dual-end handshake mode and can be configured via URL query parameters:
+Connection pool capacity parameters only apply to dual-end handshake mode and are configured through different approaches:
 
-- `min`: Minimum connection pool capacity (default: 64) - Only used in dual-end handshake mode
-- `max`: Maximum connection pool capacity (default: 1024) - Only used in dual-end handshake mode
+- `min`: Minimum connection pool capacity (default: 64) - Set by client via URL query parameters
+- `max`: Maximum connection pool capacity (default: 1024) - Determined by server and delivered to client during handshake
 
-Note: In client single-end forwarding mode, connection pools are not used and these parameters are ignored.
+**Important Notes**:
+- The `max` parameter set by client will be overridden by the value delivered from server during handshake
+- The `min` parameter is fully controlled by client and will not be modified by server
+- In client single-end forwarding mode, connection pools are not used and these parameters are ignored
 
 Example:
 ```bash
-# Set minimum pool to 32 and maximum to 4096
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
+# Client sets minimum pool to 32, maximum pool will be determined by server
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 ```
 
 ## Data Read Timeout
@@ -177,7 +180,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `crt`     | Custom certificate path|  O    |   X    |   O    |
 | `key`     | Custom key path       |   O    |   X    |   O    |
 | `min`     | Minimum pool capacity |   X    |   O    |   X    |
-| `max`     | Maximum pool capacity |   O    |   O    |   X    |
+| `max`     | Maximum pool capacity |   O    |   X    |   X    |
 | `mode`    | Run mode control      |   O    |   O    |   X    |
 | `read`    | Data read timeout     |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit  |   O    |   O    |   X    |

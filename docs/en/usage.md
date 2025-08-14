@@ -19,8 +19,8 @@ Where:
 
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
-- `min=<min_pool>`: Minimum connection pool capacity (default: 64, client mode only)
-- `max=<max_pool>`: Maximum connection pool capacity (default: 1024, client mode only)
+- `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
+- `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
 - `read=<timeout>`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
@@ -97,7 +97,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
 ```
 
 #### Parameters
@@ -106,7 +106,6 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&max=<m
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
 - `min`: Minimum connection pool capacity (default: 64)
-- `max`: Maximum connection pool capacity (default: 1024)
 - `mode`: Run mode control for client behavior
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
@@ -155,10 +154,10 @@ nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
 # Connect with debug logging and custom connection pool capacity
-nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128&max=4096"
+nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128"
 
 # Resource-constrained configuration with forced mode
-nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&max=512&log=info"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=info"
 ```
 
 ### Master Mode (API)
@@ -325,10 +324,13 @@ The handshake process between client and server is as follows:
 1. **Client Connection**: Client connects to the server's tunnel address
 2. **Key Authentication**: Client sends XOR-encrypted tunnel key
 3. **Server Verification**: Server decrypts and verifies if the key matches
-4. **Configuration Sync**: Upon successful verification, server sends tunnel configuration (including TLS mode)
+4. **Configuration Sync**: Upon successful verification, server sends tunnel configuration including:
+   - Data flow direction
+   - Maximum connection pool capacity
+   - TLS security mode
 5. **Connection Established**: Handshake complete, data transmission begins
 
-This design ensures that only clients with the correct key can establish tunnel connections.
+This design ensures that only clients with the correct key can establish tunnel connections, while allowing the server to centrally manage connection pool capacity.
 
 ## Next Steps
 
