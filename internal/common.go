@@ -993,8 +993,7 @@ func (c *Common) singleEventLoop() error {
 			}
 
 			// 发送检查点事件
-			c.logger.Event("CHECK_POINT|POOL=%v|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
-				c.tunnelPool.Active(), ping,
+			c.logger.Event("CHECK_POINT|POOL=0|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", ping,
 				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
 				atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 
