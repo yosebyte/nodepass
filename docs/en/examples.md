@@ -328,6 +328,44 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
+### Example 17: Real-time Connection and Traffic Monitoring
+
+Monitor instance connection counts and traffic statistics through the master API:
+
+```bash
+# Get detailed instance information including connection count statistics
+curl -H "X-API-Key: your-api-key" http://localhost:9090/api/v1/instances/{id}
+
+# Example response (including TCPS and UDPS fields)
+{
+  "id": "a1b2c3d4",
+  "alias": "web-proxy",
+  "type": "server",
+  "status": "running", 
+  "url": "server://0.0.0.0:10101/127.0.0.1:8080",
+  "restart": true,
+  "pool": 64,
+  "ping": 25,
+  "tcps": 12,
+  "udps": 5,
+  "tcprx": 1048576,
+  "tcptx": 2097152,
+  "udprx": 512000,
+  "udptx": 256000
+}
+
+# Use SSE to monitor real-time status changes for all instances
+curl -H "X-API-Key: your-api-key" \
+  -H "Accept: text/event-stream" \
+  http://localhost:9090/api/v1/events
+```
+
+This monitoring setup provides:
+- **Real-time connection tracking**: TCPS and UDPS fields show current active connection counts
+- **Performance analysis**: Evaluate system load through connection and traffic data
+- **Capacity planning**: Resource planning based on historical connection data
+- **Troubleshooting**: Abnormal connection count changes may indicate network issues
+
 ## Next Steps
 
 Now that you've seen various usage examples, you might want to:

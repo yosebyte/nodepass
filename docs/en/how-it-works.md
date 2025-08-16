@@ -360,6 +360,7 @@ NodePass's data exchange mechanisms embody modern network programming best pract
    - Real-time byte-level traffic statistics, supporting precise bandwidth control
    - Protocol-specific traffic analysis, facilitating performance tuning
    - Connection-level performance metrics, supporting fine-grained monitoring
+   - Real-time tracking of active TCP and UDP connection counts for capacity planning and performance analysis
 
 ### Protocol Optimization
 1. **TCP Optimization**:

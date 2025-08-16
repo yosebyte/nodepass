@@ -328,6 +328,44 @@ curl -X POST http://localhost:9090/admin/v1/instances \
 - 用于安全或组织目的的自定义URL路径
 - 在http://localhost:9090/admin/v1/docs访问Swagger UI
 
+### 示例17：实时监控连接数和流量
+
+通过主控API监控实例的连接数和流量统计：
+
+```bash
+# 获取实例详细信息，包括连接数统计
+curl -H "X-API-Key: your-api-key" http://localhost:9090/api/v1/instances/{id}
+
+# 响应示例（包含TCPS和UDPS字段）
+{
+  "id": "a1b2c3d4",
+  "alias": "网站代理",
+  "type": "server",
+  "status": "running", 
+  "url": "server://0.0.0.0:10101/127.0.0.1:8080",
+  "restart": true,
+  "pool": 64,
+  "ping": 25,
+  "tcps": 12,
+  "udps": 5,
+  "tcprx": 1048576,
+  "tcptx": 2097152,
+  "udprx": 512000,
+  "udptx": 256000
+}
+
+# 使用SSE实时监控所有实例状态变化
+curl -H "X-API-Key: your-api-key" \
+  -H "Accept: text/event-stream" \
+  http://localhost:9090/api/v1/events
+```
+
+此监控设置提供：
+- **实时连接数跟踪**：TCPS和UDPS字段显示当前活动连接数
+- **性能分析**：通过连接数和流量数据评估系统负载
+- **容量规划**：基于历史连接数据进行资源规划
+- **故障诊断**：异常的连接数变化可能指示网络问题
+
 ## 下一步
 
 现在您已经了解了各种使用示例，您可能想要：

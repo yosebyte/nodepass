@@ -184,6 +184,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `mode`    | Run mode control      |   O    |   O    |   X    |
 | `read`    | Data read timeout     |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit  |   O    |   O    |   X    |
+| `slot`    | Maximum connection limit  |   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored
@@ -201,7 +202,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
-| `NP_SEMAPHORE_LIMIT` | Maximum number of concurrent connections | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -242,10 +243,10 @@ The connection pool parameters are important settings for performance tuning in 
 
 #### Connection Management
 
-- `NP_SEMAPHORE_LIMIT`: Controls the maximum number of concurrent tunnel operations
-  - Too low: Rejected connections during traffic spikes
-  - Too high: Potential memory pressure from too many concurrent goroutines
-  - Recommended range: 1000-5000 for most applications, higher for high-throughput scenarios
+- `NP_SEMAPHORE_LIMIT`: Controls signal channel buffer size
+  - Too small: May cause signal loss
+  - Too large: Increased memory usage
+  - Recommended range: 1000-5000
 
 ### UDP Settings
 
@@ -266,10 +267,9 @@ For applications relying heavily on UDP traffic:
 For optimizing TCP connections:
 
 - `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
-  - Default (10s) is suitable for most network conditions
+  - Default (30s) is suitable for most network conditions
   - Increase for unstable network conditions
   - Decrease for applications that need quick connection success/failure determination
-  - Affects initial connection establishment phase
 
 ### Pool Management Settings
 

@@ -184,6 +184,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `mode`    | 运行模式控制         |   O    |   O    |   X    |
 | `read`    | 读取超时时间         |   O    |   O    |   X    |
 | `rate`    | 带宽速率限制         |   O    |   O    |   X    |
+| `slot`    | 最大连接数限制       |   O    |   O    |   X    |
 
 
 - O：参数有效，推荐根据实际场景配置
@@ -202,7 +203,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
-| `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -243,10 +244,10 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 #### 连接管理
 
-- `NP_SEMAPHORE_LIMIT`：控制最大并发隧道操作数
-  - 太低：流量高峰期拒绝连接
-  - 太高：太多并发goroutine可能导致内存压力
-  - 推荐范围：大多数应用1000-5000，高吞吐量场景更高
+- `NP_SEMAPHORE_LIMIT`：控制信号缓冲区大小
+  - 太小：容易导致信号丢失
+  - 太大：内存使用增加
+  - 推荐范围：1000-5000
 
 ### UDP设置
 
@@ -267,10 +268,9 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 对于TCP连接的优化：
 
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
-  - 默认值(10s)适用于大多数网络条件
+  - 默认值(30s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
   - 对于需要快速判断连接成功与否的应用减少此值
-  - 影响初始连接建立阶段
 
 ### 连接池管理设置
 
