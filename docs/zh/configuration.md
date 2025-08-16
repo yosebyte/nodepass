@@ -205,7 +205,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 10s | `export NP_TCP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
 | `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
