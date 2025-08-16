@@ -30,11 +30,11 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
-			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
+	client.semaphore = make(chan struct{}, client.slotLimit)
 	client.initConfig(parsedURL)
 	client.initRateLimiter()
 	return client
@@ -43,9 +43,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v",
+		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v",
 			prefix, c.tunnelKey, c.tunnelAddr, c.targetTCPAddr,
-			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000)
+			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit)
 	}
 	logInfo("Client started")
 

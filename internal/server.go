@@ -32,11 +32,11 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		Common: Common{
 			tlsCode:    tlsCode,
 			logger:     logger,
-			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tlsConfig: tlsConfig,
 	}
+	server.semaphore = make(chan struct{}, server.slotLimit)
 	server.initConfig(parsedURL)
 	server.initRateLimiter()
 	return server
@@ -45,9 +45,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v",
+		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v",
 			prefix, s.tunnelKey, s.tunnelAddr, s.targetTCPAddr,
-			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000)
+			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit)
 	}
 	logInfo("Server started")
 
