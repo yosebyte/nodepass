@@ -34,7 +34,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	client.semaphore = make(chan struct{}, client.slotLimit)
 	client.initConfig(parsedURL)
 	client.initRateLimiter()
 	return client
