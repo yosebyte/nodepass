@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -53,7 +54,7 @@ func (s *Server) Run() {
 	// 启动服务端并处理重启
 	go func() {
 		for {
-			if err := s.start(); err != nil {
+			if err := s.start(); err != nil && err != io.EOF {
 				s.logger.Error("Server error: %v", err)
 				time.Sleep(serviceCooldown)
 				s.stop()

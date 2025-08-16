@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -51,7 +52,7 @@ func (c *Client) Run() {
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
-			if err := c.start(); err != nil {
+			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)
 				time.Sleep(serviceCooldown)
 				c.stop()
