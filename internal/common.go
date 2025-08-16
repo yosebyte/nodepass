@@ -47,7 +47,6 @@ type Common struct {
 	rateLimit        int                // 速率限制
 	rateLimiter      *conn.RateLimiter  // 全局限速器
 	readTimeout      time.Duration      // 读取超时
-	semaphore        chan struct{}      // 信号量通道
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
 	checkPoint       time.Time          // 检查点时间
@@ -422,7 +421,6 @@ func (c *Common) stop() {
 	}
 
 	// 清空通道
-	drain(c.semaphore)
 	drain(c.signalChan)
 
 	// 重置全局限速器
@@ -585,15 +583,21 @@ func (c *Common) commonTCPLoop() {
 			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.TCPRX, TX: &c.TCPTX, Rate: c.rateLimiter}
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
-			// 使用信号量限制并发数
-			c.semaphore <- struct{}{}
-
 			go func(targetConn net.Conn) {
+				// 尝试获取TCP连接槽位
+				if !c.tryAcquireSlot(false) {
+					c.logger.Error("TCP slot limit reached: %v/%v", c.TCPSlot, c.slotLimit)
+					if targetConn != nil {
+						targetConn.Close()
+					}
+					return
+				}
+
 				defer func() {
 					if targetConn != nil {
 						targetConn.Close()
 					}
-					<-c.semaphore
+					c.releaseSlot(false)
 				}()
 
 				// 从连接池获取连接
@@ -678,18 +682,23 @@ func (c *Common) commonUDPLoop() {
 				remoteConn = session.(net.Conn)
 				c.logger.Debug("Using UDP session: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 			} else {
+				// 尝试获取UDP连接槽位
+				if !c.tryAcquireSlot(true) {
+					c.logger.Error("UDP slot limit reached: %v/%v", c.UDPSlot, c.slotLimit)
+					putUDPBuffer(buffer)
+					continue
+				}
+
 				// 获取池连接
 				id, remoteConn = c.tunnelPool.ServerGet(poolGetTimeout)
 				if remoteConn == nil {
 					c.logger.Error("Get failed: %v", id)
+					c.releaseSlot(true)
 					continue
 				}
 				c.targetUDPSession.Store(sessionKey, remoteConn)
 				c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 				c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
-
-				// 使用信号量限制并发数
-				c.semaphore <- struct{}{}
 
 				go func(remoteConn net.Conn, clientAddr *net.UDPAddr, sessionKey, id string) {
 					defer func() {
@@ -700,7 +709,7 @@ func (c *Common) commonUDPLoop() {
 
 						// 清理UDP会话
 						c.targetUDPSession.Delete(sessionKey)
-						<-c.semaphore
+						c.releaseSlot(true)
 					}()
 
 					// 监听上下文，避免泄漏
@@ -1108,9 +1117,6 @@ func (c *Common) singleTCPLoop() error {
 			tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.TCPRX, TX: &c.TCPTX, Rate: c.rateLimiter}
 			c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
 
-			// 使用信号量限制并发数
-			c.semaphore <- struct{}{}
-
 			go func(tunnelConn net.Conn) {
 				// 尝试获取TCP连接槽位
 				if !c.tryAcquireSlot(false) {
@@ -1118,7 +1124,6 @@ func (c *Common) singleTCPLoop() error {
 					if tunnelConn != nil {
 						tunnelConn.Close()
 					}
-					<-c.semaphore
 					return
 				}
 
@@ -1127,7 +1132,6 @@ func (c *Common) singleTCPLoop() error {
 					if tunnelConn != nil {
 						tunnelConn.Close()
 					}
-					<-c.semaphore
 				}()
 
 				// 监听上下文，避免泄漏
@@ -1215,16 +1219,12 @@ func (c *Common) singleUDPLoop() error {
 				targetConn = &conn.StatConn{Conn: targetConn, RX: &c.UDPRX, TX: &c.UDPTX, Rate: c.rateLimiter}
 				c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
-				// 使用信号量限制并发数
-				c.semaphore <- struct{}{}
-
 				go func(targetConn net.Conn, clientAddr *net.UDPAddr, sessionKey string) {
 					defer func() {
 						if targetConn != nil {
 							targetConn.Close()
 						}
-						c.releaseSlot(true) // 释放UDP槽位
-						<-c.semaphore
+						c.releaseSlot(true)
 					}()
 
 					// 监听上下文，避免泄漏
