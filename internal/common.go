@@ -51,6 +51,9 @@ type Common struct {
 	bufReader        *bufio.Reader      // 缓冲读取器
 	signalChan       chan string        // 信号通道
 	checkPoint       time.Time          // 检查点时间
+	slotLimit        int32              // 槽位限制
+	TCPSlot          int32              // TCP连接数
+	UDPSlot          int32              // UDP连接数
 	TCPRX            uint64             // TCP接收字节数
 	TCPTX            uint64             // TCP发送字节数
 	UDPRX            uint64             // UDP接收字节数
@@ -97,6 +100,42 @@ func getUDPBuffer() []byte {
 func putUDPBuffer(buf []byte) {
 	if buf != nil {
 		udpBufferPool.Put(&buf)
+	}
+}
+
+// tryAcquireSlot 尝试获取一个连接槽位
+func (c *Common) tryAcquireSlot(isUDP bool) bool {
+	if c.slotLimit == 0 {
+		return true
+	}
+
+	currentTotal := atomic.LoadInt32(&c.TCPSlot) + atomic.LoadInt32(&c.UDPSlot)
+	if currentTotal >= c.slotLimit {
+		return false
+	}
+
+	if isUDP {
+		atomic.AddInt32(&c.UDPSlot, 1)
+	} else {
+		atomic.AddInt32(&c.TCPSlot, 1)
+	}
+	return true
+}
+
+// releaseSlot 释放一个连接槽位
+func (c *Common) releaseSlot(isUDP bool) {
+	if c.slotLimit == 0 {
+		return
+	}
+
+	if isUDP {
+		if current := atomic.LoadInt32(&c.UDPSlot); current > 0 {
+			atomic.AddInt32(&c.UDPSlot, -1)
+		}
+	} else {
+		if current := atomic.LoadInt32(&c.TCPSlot); current > 0 {
+			atomic.AddInt32(&c.TCPSlot, -1)
+		}
 	}
 }
 
@@ -226,6 +265,17 @@ func (c *Common) getRateLimit(parsedURL *url.URL) {
 	}
 }
 
+// getSlotLimit 获取连接槽位限制
+func (c *Common) getSlotLimit(parsedURL *url.URL) {
+	if slot := parsedURL.Query().Get("slot"); slot != "" {
+		if value, err := strconv.Atoi(slot); err == nil && value > 0 {
+			c.slotLimit = int32(value)
+		}
+	} else {
+		c.slotLimit = 1024
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getTunnelKey(parsedURL)
@@ -234,6 +284,7 @@ func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getReadTimeout(parsedURL)
 	c.getRunMode(parsedURL)
 	c.getRateLimit(parsedURL)
+	c.getSlotLimit(parsedURL)
 }
 
 // initRateLimiter 初始化全局限速器
@@ -380,7 +431,8 @@ func (c *Common) stop() {
 	}
 
 	// 发送检查点事件
-	c.logger.Event("CHECK_POINT|POOL=0|PING=0ms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+	c.logger.Event("CHECK_POINT|POOL=0|PING=0ms|TCPS=%v|UDPS=%v|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+		atomic.LoadInt32(&c.TCPSlot), atomic.LoadInt32(&c.UDPSlot),
 		atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
 		atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 }
@@ -436,7 +488,7 @@ func (c *Common) commonQueue() error {
 			select {
 			case c.signalChan <- signal:
 			default:
-				c.logger.Debug("Queue limit reached: %v", semaphoreLimit)
+				c.logger.Error("Queue limit reached: %v", semaphoreLimit)
 				time.Sleep(50 * time.Millisecond)
 			}
 		}
@@ -775,8 +827,9 @@ func (c *Common) commonOnce() error {
 				}
 			case "o": // PONG
 				// 发送检查点事件
-				c.logger.Event("CHECK_POINT|POOL=%v|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
+				c.logger.Event("CHECK_POINT|POOL=%v|PING=%vms|TCPS=%v|UDPS=%v|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v",
 					c.tunnelPool.Active(), time.Since(c.checkPoint).Milliseconds(),
+					atomic.LoadInt32(&c.TCPSlot), atomic.LoadInt32(&c.UDPSlot),
 					atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
 					atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 			default:
@@ -789,6 +842,13 @@ func (c *Common) commonOnce() error {
 // commonTCPOnce 共用处理单个TCP请求
 func (c *Common) commonTCPOnce(id string) {
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	// 尝试获取TCP连接槽位
+	if !c.tryAcquireSlot(false) {
+		c.logger.Error("TCP slot limit reached: %v/%v", c.TCPSlot, c.slotLimit)
+		return
+	}
+	defer c.releaseSlot(false)
 
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
@@ -836,6 +896,13 @@ func (c *Common) commonTCPOnce(id string) {
 func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	id := strings.TrimPrefix(signalURL.Path, "/")
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	// 尝试获取UDP连接槽位
+	if !c.tryAcquireSlot(true) {
+		c.logger.Error("UDP slot limit reached: %v/%v", c.UDPSlot, c.slotLimit)
+		return
+	}
+	defer c.releaseSlot(true)
 
 	// 获取池连接
 	remoteConn := c.tunnelPool.ClientGet(id)
@@ -1007,7 +1074,8 @@ func (c *Common) singleEventLoop() error {
 			}
 
 			// 发送检查点事件
-			c.logger.Event("CHECK_POINT|POOL=0|PING=%vms|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", ping,
+			c.logger.Event("CHECK_POINT|POOL=0|PING=%vms|TCPS=%v|UDPS=%v|TCP_RX=%v|TCP_TX=%v|UDP_RX=%v|UDP_TX=%v", ping,
+				atomic.LoadInt32(&c.TCPSlot), atomic.LoadInt32(&c.UDPSlot),
 				atomic.LoadUint64(&c.TCPRX), atomic.LoadUint64(&c.TCPTX),
 				atomic.LoadUint64(&c.UDPRX), atomic.LoadUint64(&c.UDPTX))
 
@@ -1044,7 +1112,18 @@ func (c *Common) singleTCPLoop() error {
 			c.semaphore <- struct{}{}
 
 			go func(tunnelConn net.Conn) {
+				// 尝试获取TCP连接槽位
+				if !c.tryAcquireSlot(false) {
+					c.logger.Error("TCP slot limit reached: %v/%v", c.TCPSlot, c.slotLimit)
+					if tunnelConn != nil {
+						tunnelConn.Close()
+					}
+					<-c.semaphore
+					return
+				}
+
 				defer func() {
+					c.releaseSlot(false)
 					if tunnelConn != nil {
 						tunnelConn.Close()
 					}
@@ -1115,10 +1194,19 @@ func (c *Common) singleUDPLoop() error {
 				targetConn = session.(*net.UDPConn)
 				c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 			} else {
+				// 尝试获取UDP连接槽位
+				if !c.tryAcquireSlot(true) {
+					c.logger.Error("UDP slot limit reached: %v/%v", c.UDPSlot, c.slotLimit)
+					putUDPBuffer(buffer)
+					continue
+				}
+
 				// 创建新的会话
 				session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 				if err != nil {
 					c.logger.Error("Dial failed: %v", err)
+					c.releaseSlot(true)
+					putUDPBuffer(buffer)
 					continue
 				}
 				c.targetUDPSession.Store(sessionKey, session)
@@ -1135,6 +1223,7 @@ func (c *Common) singleUDPLoop() error {
 						if targetConn != nil {
 							targetConn.Close()
 						}
+						c.releaseSlot(true) // 释放UDP槽位
 						<-c.semaphore
 					}()
 
