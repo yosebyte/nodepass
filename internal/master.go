@@ -87,8 +87,8 @@ type Instance struct {
 	Status     string             `json:"status"`    // 实例状态
 	URL        string             `json:"url"`       // 实例URL
 	Restart    bool               `json:"restart"`   // 是否自启动
-	Pool       int32              `json:"pool"`      // 健康检查池连接数
-	Ping       int32              `json:"ping"`      // 健康检查端内延迟
+	Ping       int32              `json:"ping"`      // 端内延迟
+	Pool       int32              `json:"pool"`      // 池连接数
 	TCPS       int32              `json:"tcps"`      // TCP连接数
 	UDPS       int32              `json:"udps"`      // UDP连接数
 	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
@@ -128,7 +128,7 @@ func NewInstanceLogWriter(instanceID string, instance *Instance, target io.Write
 		instance:   instance,
 		target:     target,
 		master:     master,
-		checkPoint: regexp.MustCompile(`CHECK_POINT\|POOL=(\d+)\|PING=(\d+)ms\|TCPS=(\d+)\|UDPS=(\d+)\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
+		checkPoint: regexp.MustCompile(`CHECK_POINT\|PING=(\d+)ms\|POOL=(\d+)\|TCPS=(\d+)\|UDPS=(\d+)\|TCPRX=(\d+)\|TCPTX=(\d+)\|UDPRX=(\d+)\|UDPTX=(\d+)`),
 	}
 }
 
@@ -141,12 +141,12 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		line := scanner.Text()
 		// 解析并处理检查点信息
 		if matches := w.checkPoint.FindStringSubmatch(line); len(matches) == 9 {
-			// matches[1] = POOL, matches[2] = PING, matches[3] = TCPS, matches[4] = UDPS, matches[5] = TCP_RX, matches[6] = TCP_TX, matches[7] = UDP_RX, matches[8] = UDP_TX
-			if pool, err := strconv.ParseInt(matches[1], 10, 32); err == nil {
-				w.instance.Pool = int32(pool)
-			}
-			if ping, err := strconv.ParseInt(matches[2], 10, 32); err == nil {
+			// matches[1] = PING, matches[2] = POOL, matches[3] = TCPS, matches[4] = UDPS, matches[5] = TCPRX, matches[6] = TCPTX, matches[7] = UDPRX, matches[8] = UDPTX
+			if ping, err := strconv.ParseInt(matches[1], 10, 32); err == nil {
 				w.instance.Ping = int32(ping)
+			}
+			if pool, err := strconv.ParseInt(matches[2], 10, 32); err == nil {
+				w.instance.Pool = int32(pool)
 			}
 			if tcps, err := strconv.ParseInt(matches[3], 10, 32); err == nil {
 				w.instance.TCPS = int32(tcps)
@@ -1364,14 +1364,14 @@ func generateOpenAPISpec() string {
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "ping": {"type": "integer", "description": "Health check ping latency"},
+	  "pool": {"type": "integer", "description": "Health check pool active"},
+	  "tcps": {"type": "integer", "description": "TCP connection count"},
+	  "udps": {"type": "integer", "description": "UDP connection count"},
 	  "tcprx": {"type": "integer", "description": "TCP received bytes"},
 	  "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
 	  "udprx": {"type": "integer", "description": "UDP received bytes"},
-	  "udptx": {"type": "integer", "description": "UDP transmitted bytes"},
-	  "pool": {"type": "integer", "description": "Health check pool active"},
-	  "ping": {"type": "integer", "description": "Health check one-way latency"},
-	  "tcps": {"type": "integer", "description": "TCP connection count"},
-	  "udps": {"type": "integer", "description": "UDP connection count"}
+	  "udptx": {"type": "integer", "description": "UDP transmitted bytes"}
 	}
 	 },
 	  "CreateInstanceRequest": {
