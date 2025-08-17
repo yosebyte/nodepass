@@ -651,6 +651,8 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 	info := map[string]any{
 		"os":     runtime.GOOS,
 		"arch":   runtime.GOARCH,
+		"cpu":    -1,
+		"ram":    -1,
 		"ver":    m.version,
 		"name":   m.hostname,
 		"uptime": uint64(time.Since(m.startTime).Seconds()),
@@ -660,7 +662,47 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"key":    m.keyPath,
 	}
 
+	if runtime.GOOS == "linux" {
+		cpu, ram := getLinuxSysInfo()
+		info["cpu"] = cpu
+		info["ram"] = ram
+	}
+
 	writeJSON(w, http.StatusOK, info)
+}
+
+// getLinuxSysInfo 获取Linux系统信息
+func getLinuxSysInfo() (cpu, ram int) {
+	if runtime.GOOS != "linux" {
+		return 0, 0
+	}
+
+	// CPU使用率：解析/proc/loadavg
+	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
+		if fields := strings.Fields(string(data)); len(fields) > 0 {
+			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				cpu = min(int(load*100), 100)
+			}
+		}
+	}
+
+	// RAM使用率：解析/proc/meminfo
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		var memTotal, memFree uint64
+		for line := range strings.FieldsSeq(string(data)) {
+			switch {
+			case strings.HasPrefix(line, "MemTotal:"):
+				memTotal, _ = strconv.ParseUint(strings.TrimSuffix(line[9:], "kB"), 10, 64)
+			case strings.HasPrefix(line, "MemFree:"):
+				memFree, _ = strconv.ParseUint(strings.TrimSuffix(line[8:], "kB"), 10, 64)
+			}
+		}
+		if memTotal > 0 {
+			ram = min(int((memTotal-memFree)*100/memTotal), 100)
+		}
+	}
+
+	return cpu, ram
 }
 
 // handleInstances 处理实例集合请求
@@ -1481,6 +1523,8 @@ func generateOpenAPISpec() string {
 		"properties": {
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
+		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
+		  "ram": {"type": "integer", "description": "RAM usage percentage"},
 		  "ver": {"type": "string", "description": "NodePass version"},
 		  "name": {"type": "string", "description": "Hostname"},
 		  "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
