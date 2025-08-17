@@ -691,12 +691,16 @@ func getLinuxSysInfo() (cpu, ram int) {
 	// RAM使用率：解析/proc/meminfo
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
 		var memTotal, memFree uint64
-		for line := range strings.FieldsSeq(string(data)) {
-			switch {
-			case strings.HasPrefix(line, "MemTotal:"):
-				memTotal, _ = strconv.ParseUint(strings.TrimSuffix(line[9:], "kB"), 10, 64)
-			case strings.HasPrefix(line, "MemFree:"):
-				memFree, _ = strconv.ParseUint(strings.TrimSuffix(line[8:], "kB"), 10, 64)
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if fields := strings.Fields(line); len(fields) >= 2 {
+				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					switch fields[0] {
+					case "MemTotal:":
+						memTotal = val
+					case "MemFree:":
+						memFree = val
+					}
+				}
 			}
 		}
 		if memTotal > 0 {
