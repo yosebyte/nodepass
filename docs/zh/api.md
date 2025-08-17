@@ -48,6 +48,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | 删除实例             |
 | `/events`          | GET    | SSE 实时事件流       |
 | `/info`            | GET    | 获取主控服务信息     |
+| `/tcping`          | GET    | TCP连接测试          |
 | `/openapi.json`    | GET    | OpenAPI 规范         |
 | `/docs`            | GET    | Swagger UI 文档      |
 
@@ -55,7 +56,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`。
 
-- 受保护接口：`/instances`、`/instances/{id}`、`/events`、`/info`
+- 受保护接口：`/instances`、`/instances/{id}`、`/events`、`/info`、`/tcping`
 - 公共接口：`/openapi.json`、`/docs`
 - 认证方式：请求头加 `X-API-Key: <key>`
 - 重置 Key：PATCH `/instances/********`，body `{ "action": "restart" }`
@@ -1008,6 +1009,22 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **描述**：获取主控服务信息
 - **认证**：需要API Key
 - **响应**：包含系统信息、版本、运行时间等
+
+#### GET /tcping
+- **描述**：TCP连接测试，检测目标地址的连通性和延迟
+- **认证**：需要API Key
+- **参数**：
+  - `target`（必需）：目标地址，格式为 `host:port`
+- **响应**：
+  ```json
+  {
+    "target": "example.com:80",
+    "connected": true,
+    "latency": 45,
+    "error": null
+  }
+  ```
+- **示例**：`GET /api/tcping?target=fast.com:443`
 
 #### GET /openapi.json
 - **描述**：获取OpenAPI 3.1.1规范

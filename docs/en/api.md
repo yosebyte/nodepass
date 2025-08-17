@@ -49,6 +49,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | Delete instance      |
 | `/events`          | GET    | SSE event stream     |
 | `/info`            | GET    | Master info          |
+| `/tcping`          | GET    | TCP connectivity test |
 | `/openapi.json`    | GET    | OpenAPI spec         |
 | `/docs`            | GET    | Swagger UI           |
 
@@ -56,7 +57,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 API Key authentication is enabled by default. The key is auto-generated and stored in `nodepass.gob`.
 
-- Protected: `/instances`, `/instances/{id}`, `/events`, `/info`
+- Protected: `/instances`, `/instances/{id}`, `/events`, `/info`, `/tcping`
 - Public: `/openapi.json`, `/docs`
 - Use header: `X-API-Key: <key>`
 - Regenerate: PATCH `/instances/********` with `{ "action": "restart" }`
@@ -632,6 +633,22 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **Description**: Get master service information
 - **Authentication**: API Key required
 - **Response**: Contains system info, version, uptime, etc.
+
+#### GET /tcping
+- **Description**: TCP connectivity test to check target reachability and latency
+- **Authentication**: API Key required
+- **Parameters**:
+  - `target` (required): Target address in format `host:port`
+- **Response**:
+  ```json
+  {
+    "target": "example.com:80",
+    "connected": true,
+    "latency": 45,
+    "error": null
+  }
+  ```
+- **Example**: `GET /api/tcping?target=fast.com:443`
 
 #### GET /openapi.json
 - **Description**: Get OpenAPI 3.1.1 specification
