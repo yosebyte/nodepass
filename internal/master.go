@@ -674,7 +674,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 // getLinuxSysInfo 获取Linux系统信息
 func getLinuxSysInfo() (cpu, ram int) {
 	if runtime.GOOS != "linux" {
-		return 0, 0
+		return -1, -1
 	}
 
 	// CPU使用率：解析/proc/loadavg
@@ -682,6 +682,8 @@ func getLinuxSysInfo() (cpu, ram int) {
 		if fields := strings.Fields(string(data)); len(fields) > 0 {
 			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
 				cpu = min(int(load*100), 100)
+			} else {
+				cpu = -1
 			}
 		}
 	}
@@ -699,6 +701,8 @@ func getLinuxSysInfo() (cpu, ram int) {
 		}
 		if memTotal > 0 {
 			ram = min(int((memTotal-memFree)*100/memTotal), 100)
+		} else {
+			ram = -1
 		}
 	}
 
