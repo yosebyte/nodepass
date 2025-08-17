@@ -809,6 +809,8 @@ GET /info
 {
   "os": "linux",          // 操作系统类型
   "arch": "amd64",        // 系统架构
+  "cpu": 45,              // CPU使用率百分比（仅Linux系统）
+  "ram": 67,              // RAM使用率百分比（仅Linux系统）
   "ver": "1.2.0",         // NodePass版本
   "name": "example.com",  // 隧道主机名
   "uptime": 11525,         // API运行时间（秒）
@@ -834,15 +836,28 @@ async function getSystemInfo() {
   return await response.json();
 }
 
-// 显示服务运行时间
-function displayServiceUptime() {
+// 显示服务运行时间和系统资源使用情况
+function displaySystemStatus() {
   getSystemInfo().then(info => {
     console.log(`服务已运行: ${info.uptime} 秒`);
-    // 也可以格式化为更友好的显示
+    
+    // 格式化运行时间为更友好的显示
     const hours = Math.floor(info.uptime / 3600);
     const minutes = Math.floor((info.uptime % 3600) / 60);
     const seconds = info.uptime % 60;
     console.log(`服务已运行: ${hours}小时${minutes}分${seconds}秒`);
+    
+    // 显示系统资源使用情况（仅Linux系统）
+    if (info.os === 'linux') {
+      if (info.cpu !== -1) {
+        console.log(`CPU使用率: ${info.cpu}%`);
+      }
+      if (info.ram !== -1) {
+        console.log(`RAM使用率: ${info.ram}%`);
+      }
+    } else {
+      console.log('CPU和RAM监控功能仅在Linux系统上可用');
+    }
   });
 }
 ```
@@ -853,6 +868,10 @@ function displayServiceUptime() {
 - **版本验证**：在部署更新后检查版本号
 - **运行时间监控**：监控运行时间以检测意外重启
 - **日志级别验证**：确认当前日志级别符合预期
+- **资源监控**：在Linux系统上，监控CPU和RAM使用率以确保最佳性能
+  - CPU使用率通过解析`/proc/loadavg`计算（1分钟负载平均值）
+  - RAM使用率通过解析`/proc/meminfo`计算（已用内存百分比）
+  - 值为-1表示系统信息不可用（非Linux系统）
 
 ## API端点文档
 
@@ -1008,7 +1027,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 #### GET /info
 - **描述**：获取主控服务信息
 - **认证**：需要API Key
-- **响应**：包含系统信息、版本、运行时间等
+- **响应**：包含系统信息、版本、运行时间、CPU和RAM使用率等
 
 #### GET /tcping
 - **描述**：TCP连接测试，检测目标地址的连通性和延迟

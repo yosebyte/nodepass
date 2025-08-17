@@ -433,6 +433,8 @@ The response contains the following system information fields:
 {
   "os": "linux",          // Operating system type
   "arch": "amd64",        // System architecture
+  "cpu": 45,              // CPU usage percentage (Linux only)
+  "ram": 67,              // RAM usage percentage (Linux only)
   "ver": "1.2.0",         // NodePass version
   "name": "example.com",  // Tunnel hostname
   "uptime": 11525,         // API uptime in seconds
@@ -458,15 +460,28 @@ async function getSystemInfo() {
   return await response.json();
 }
 
-// Display service uptime
-function displayServiceUptime() {
+// Display service uptime and system resource usage
+function displaySystemStatus() {
   getSystemInfo().then(info => {
     console.log(`Service uptime: ${info.uptime} seconds`);
-    // You can also format it for better readability
+    
+    // Format uptime for better readability
     const hours = Math.floor(info.uptime / 3600);
     const minutes = Math.floor((info.uptime % 3600) / 60);
     const seconds = info.uptime % 60;
     console.log(`Service uptime: ${hours}h ${minutes}m ${seconds}s`);
+    
+    // Display system resource usage (Linux only)
+    if (info.os === 'linux') {
+      if (info.cpu !== -1) {
+        console.log(`CPU usage: ${info.cpu}%`);
+      }
+      if (info.ram !== -1) {
+        console.log(`RAM usage: ${info.ram}%`);
+      }
+    } else {
+      console.log('CPU and RAM monitoring is only available on Linux systems');
+    }
   });
 }
 ```
@@ -477,6 +492,10 @@ function displayServiceUptime() {
 - **Version Verification**: Check version number after deploying updates
 - **Uptime Monitoring**: Monitor uptime to detect unexpected restarts
 - **Log Level Verification**: Confirm that the current log level matches expectations
+- **Resource Monitoring**: On Linux systems, monitor CPU and RAM usage to ensure optimal performance
+  - CPU usage is calculated from `/proc/loadavg` (1-minute load average)
+  - RAM usage is calculated from `/proc/meminfo` (used memory percentage)
+  - Values of -1 indicate that the system information is unavailable (non-Linux systems)
 
 ## API Endpoint Documentation
 
@@ -632,7 +651,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 #### GET /info
 - **Description**: Get master service information
 - **Authentication**: API Key required
-- **Response**: Contains system info, version, uptime, etc.
+- **Response**: Contains system info, version, uptime, CPU and RAM usage, etc.
 
 #### GET /tcping
 - **Description**: TCP connectivity test to check target reachability and latency
