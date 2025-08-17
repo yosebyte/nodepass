@@ -70,8 +70,8 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
-  "pool": 0,
   "ping": 0,
+  "pool": 0,
   "tcps": 0,
   "udps": 0,
   "tcprx": 0,
@@ -81,8 +81,8 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 }
 ```
 
-- `pool`/`ping`：健康检查数据，仅 debug 模式下统计
-- `tcps`/`udps`：当前活动连接数统计（TCP和UDP）
+- `ping`/`pool`：健康检查数据
+- `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
 - `restart`：自启动策略
 

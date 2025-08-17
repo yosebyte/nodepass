@@ -71,8 +71,8 @@ API Key authentication is enabled by default. The key is auto-generated and stor
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
-  "pool": 0,
   "ping": 0,
+  "pool": 0,
   "tcps": 0,
   "udps": 0,
   "tcprx": 0,
@@ -82,8 +82,8 @@ API Key authentication is enabled by default. The key is auto-generated and stor
 }
 ```
 
-- `pool`/`ping`: health check data, only available in debug mode
-- `tcps`/`udps`: current active connection count (TCP and UDP)
+- `ping`/`pool`: health check data
+- `tcps`/`udps`: current active connection count
 - `tcprx`/`tcptx`/`udprx`/`udptx`: cumulative traffic stats
 - `restart`: auto-start policy
 
