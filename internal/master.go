@@ -36,6 +36,7 @@ const (
 	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
 	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
 	apiKeyID       = "********"     // API Key的特殊ID
+	tcpingSemLimit = 10             // TCPing最大并发数
 )
 
 // Swagger UI HTML模板
@@ -76,6 +77,7 @@ type Master struct {
 	stateMu       sync.Mutex          // 持久化文件写入互斥锁
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
+	tcpingSem     chan struct{}       // TCPing并发控制
 	startTime     time.Time           // 启动时间
 }
 
@@ -110,6 +112,65 @@ type InstanceEvent struct {
 	Time     time.Time `json:"time"`           // 事件时间
 	Instance *Instance `json:"instance"`       // 关联的实例
 	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
+}
+
+// TCPingResult TCPing结果结构体
+type TCPingResult struct {
+	Target    string  `json:"target"`
+	Connected bool    `json:"connected"`
+	Latency   int64   `json:"latency"`
+	Error     *string `json:"error"`
+}
+
+// handleTCPing 处理TCPing请求
+func (m *Master) handleTCPing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		httpError(w, "Target address required", http.StatusBadRequest)
+		return
+	}
+
+	// 执行TCPing
+	result := m.performTCPing(target)
+	writeJSON(w, http.StatusOK, result)
+}
+
+// performTCPing 执行单次TCPing
+func (m *Master) performTCPing(target string) *TCPingResult {
+	result := &TCPingResult{
+		Target:    target,
+		Connected: false,
+		Latency:   0,
+		Error:     nil,
+	}
+
+	// 并发控制
+	select {
+	case m.tcpingSem <- struct{}{}:
+		defer func() { <-m.tcpingSem }()
+	case <-time.After(time.Second):
+		errMsg := "too many requests"
+		result.Error = &errMsg
+		return result
+	}
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", target, reportInterval)
+	if err != nil {
+		errMsg := err.Error()
+		result.Error = &errMsg
+		return result
+	}
+
+	result.Connected = true
+	result.Latency = time.Since(start).Milliseconds()
+	conn.Close()
+	return result
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -233,7 +294,8 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
-		notifyChannel: make(chan *InstanceEvent, 1024),
+		notifyChannel: make(chan *InstanceEvent, semaphoreLimit),
+		tcpingSem:     make(chan struct{}, tcpingSemLimit),
 		startTime:     time.Now(),
 	}
 	master.tunnelTCPAddr = host
@@ -275,6 +337,7 @@ func (m *Master) Run() {
 		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
 		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
 		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
+		fmt.Sprintf("%s/tcping", m.prefix):     m.handleTCPing,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -1328,6 +1391,27 @@ func generateOpenAPISpec() string {
 		}
 	  }
 	},
+	"/tcping": {
+	  "get": {
+		"summary": "TCP connectivity test",
+		"security": [{"ApiKeyAuth": []}],
+		"parameters": [
+		  {
+			"name": "target",
+			"in": "query",
+			"required": true,
+			"schema": {"type": "string"},
+			"description": "Target address in format host:port"
+		  }
+		],
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TCPingResult"}}}},
+		  "400": {"description": "Target address required"},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  }
+	},
 	"/openapi.json": {
 	  "get": {
 		"summary": "Get OpenAPI specification",
@@ -1404,6 +1488,15 @@ func generateOpenAPISpec() string {
 		  "tls": {"type": "string", "description": "TLS code"},
 		  "crt": {"type": "string", "description": "Certificate path"},
 		  "key": {"type": "string", "description": "Private key path"}
+		}
+	  },
+	  "TCPingResult": {
+		"type": "object",
+		"properties": {
+		  "target": {"type": "string", "description": "Target address"},
+		  "connected": {"type": "boolean", "description": "Is connected"},
+		  "latency": {"type": "integer", "format": "int64", "description": "Latency in milliseconds"},
+		  "error": {"type": "string", "nullable": true, "description": "Error message"}
 		}
 	  }
 	}
