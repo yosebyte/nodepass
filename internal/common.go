@@ -603,7 +603,7 @@ func (c *Common) commonTCPLoop() {
 				// 从连接池获取连接
 				id, remoteConn := c.tunnelPool.ServerGet(poolGetTimeout)
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v", id)
+					c.logger.Warn("Request timeout: %v", id)
 					return
 				}
 
@@ -692,7 +692,7 @@ func (c *Common) commonUDPLoop() {
 				// 获取池连接
 				id, remoteConn = c.tunnelPool.ServerGet(poolGetTimeout)
 				if remoteConn == nil {
-					c.logger.Error("Get failed: %v", id)
+					c.logger.Warn("Request timeout: %v", id)
 					c.releaseSlot(true)
 					continue
 				}
