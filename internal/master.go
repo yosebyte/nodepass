@@ -114,6 +114,17 @@ type InstanceEvent struct {
 	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
 }
 
+// SystemInfo 系统信息结构体
+type SystemInfo struct {
+	CPU   int    `json:"cpu"`   // CPU使用率 (%)
+	RAM   int    `json:"ram"`   // 内存使用率 (%)
+	NetRX uint64 `json:"netrx"` // 网络接收字节数
+	NetTX uint64 `json:"nettx"` // 网络发送字节数
+	DiskR uint64 `json:"diskr"` // 磁盘读取字节数
+	DiskW uint64 `json:"diskw"` // 磁盘写入字节数
+	SysUp uint64 `json:"sysup"` // 系统运行时间（秒）
+}
+
 // TCPingResult TCPing结果结构体
 type TCPingResult struct {
 	Target    string  `json:"target"`
@@ -653,6 +664,11 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"arch":   runtime.GOARCH,
 		"cpu":    -1,
 		"ram":    -1,
+		"netrx":  uint64(0),
+		"nettx":  uint64(0),
+		"diskr":  uint64(0),
+		"diskw":  uint64(0),
+		"sysup":  uint64(0),
 		"ver":    m.version,
 		"name":   m.hostname,
 		"uptime": uint64(time.Since(m.startTime).Seconds()),
@@ -663,27 +679,40 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if runtime.GOOS == "linux" {
-		cpu, ram := getLinuxSysInfo()
-		info["cpu"] = cpu
-		info["ram"] = ram
+		sysInfo := getLinuxSysInfo()
+		info["cpu"] = sysInfo.CPU
+		info["ram"] = sysInfo.RAM
+		info["netrx"] = sysInfo.NetRX
+		info["nettx"] = sysInfo.NetTX
+		info["diskr"] = sysInfo.DiskR
+		info["diskw"] = sysInfo.DiskW
+		info["sysup"] = sysInfo.SysUp
 	}
 
 	writeJSON(w, http.StatusOK, info)
 }
 
 // getLinuxSysInfo 获取Linux系统信息
-func getLinuxSysInfo() (cpu, ram int) {
+func getLinuxSysInfo() SystemInfo {
+	info := SystemInfo{
+		CPU:   -1,
+		RAM:   -1,
+		NetRX: 0,
+		NetTX: 0,
+		DiskR: 0,
+		DiskW: 0,
+		SysUp: 0,
+	}
+
 	if runtime.GOOS != "linux" {
-		return -1, -1
+		return info
 	}
 
 	// CPU使用率：解析/proc/loadavg
 	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
 		if fields := strings.Fields(string(data)); len(fields) > 0 {
 			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
-				cpu = min(int(load*100), 100)
-			} else {
-				cpu = -1
+				info.CPU = min(int(load*100), 100)
 			}
 		}
 	}
@@ -704,13 +733,64 @@ func getLinuxSysInfo() (cpu, ram int) {
 			}
 		}
 		if memTotal > 0 {
-			ram = min(int((memTotal-memFree)*100/memTotal), 100)
-		} else {
-			ram = -1
+			info.RAM = min(int((memTotal-memFree)*100/memTotal), 100)
 		}
 	}
 
-	return cpu, ram
+	// 网络I/O：解析/proc/net/dev
+	if data, err := os.ReadFile("/proc/net/dev"); err == nil {
+		for _, line := range strings.Split(string(data), "\n")[2:] {
+			if fields := strings.Fields(line); len(fields) >= 10 {
+				ifname := strings.TrimSuffix(fields[0], ":")
+				// 排除项
+				if strings.HasPrefix(ifname, "lo") || strings.HasPrefix(ifname, "veth") ||
+					strings.HasPrefix(ifname, "docker") || strings.HasPrefix(ifname, "podman") ||
+					strings.HasPrefix(ifname, "br-") || strings.HasPrefix(ifname, "virbr") {
+					continue
+				}
+				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					info.NetRX += val
+				}
+				if val, err := strconv.ParseUint(fields[9], 10, 64); err == nil {
+					info.NetTX += val
+				}
+			}
+		}
+	}
+
+	// 磁盘I/O：解析/proc/diskstats
+	if data, err := os.ReadFile("/proc/diskstats"); err == nil {
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if fields := strings.Fields(line); len(fields) >= 14 {
+				deviceName := fields[2]
+				// 排除项
+				if strings.Contains(deviceName, "loop") || strings.Contains(deviceName, "ram") ||
+					strings.HasPrefix(deviceName, "dm-") || strings.HasPrefix(deviceName, "md") {
+					continue
+				}
+				if matched, _ := regexp.MatchString(`\d+$`, deviceName); matched {
+					continue
+				}
+				if val, err := strconv.ParseUint(fields[5], 10, 64); err == nil {
+					info.DiskR += val * 512
+				}
+				if val, err := strconv.ParseUint(fields[9], 10, 64); err == nil {
+					info.DiskW += val * 512
+				}
+			}
+		}
+	}
+
+	// 系统运行时间：解析/proc/uptime
+	if data, err := os.ReadFile("/proc/uptime"); err == nil {
+		if fields := strings.Fields(string(data)); len(fields) > 0 {
+			if uptime, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				info.SysUp = uint64(uptime)
+			}
+		}
+	}
+
+	return info
 }
 
 // handleInstances 处理实例集合请求
@@ -1533,9 +1613,14 @@ func generateOpenAPISpec() string {
 		  "arch": {"type": "string", "description": "System architecture"},
 		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
 		  "ram": {"type": "integer", "description": "RAM usage percentage"},
+		  "netrx": {"type": "integer", "format": "int64", "description": "Network received bytes"},
+		  "nettx": {"type": "integer", "format": "int64", "description": "Network transmitted bytes"},
+		  "diskr": {"type": "integer", "format": "int64", "description": "Disk read bytes"},
+		  "diskw": {"type": "integer", "format": "int64", "description": "Disk write bytes"},
+		  "sysup": {"type": "integer", "format": "int64", "description": "System uptime in seconds"},
 		  "ver": {"type": "string", "description": "NodePass version"},
 		  "name": {"type": "string", "description": "Hostname"},
-		  "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
+		  "uptime": {"type": "integer", "format": "int64", "description": "API uptime in seconds"},
 		  "log": {"type": "string", "description": "Log level"},
 		  "tls": {"type": "string", "description": "TLS code"},
 		  "crt": {"type": "string", "description": "Certificate path"},
