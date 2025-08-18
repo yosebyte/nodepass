@@ -2,13 +2,6 @@
 
 ## Overview
 
-NodePass offers a RESTful API in Master Mode that enables programmatic control and integration with frontend applications. This section provides comprehensive d     // Configure auto-start policy for new instance based on type
-     if (data.success) {
-
-# NodePass API Reference
-
-## Overview
-
 NodePass provides a RESTful API in Master Mode for programmatic control and frontend integration. This document covers all endpoints, data structures, and best practices.
 
 ## Master Mode API
@@ -315,6 +308,262 @@ When implementing SSE in your frontend:
 2. **Process Events Efficiently**: Keep event processing fast to avoid UI blocking
 3. **Implement Fallback**: For environments where SSE is not supported, implement a polling fallback
 4. **Handle Errors**: Properly handle connection errors and disconnects
+5. **Log Management**: Maintain log buffers for each instance, avoiding unlimited growth
+
+## Frontend Integration Guide
+
+When integrating NodePass with frontend applications, consider the following important aspects:
+
+### Instance Persistence
+
+NodePass Master mode now supports instance persistence using gob serialization format. Instances and their states are saved to a `nodepass.gob` file in the same directory as the executable and automatically restored when the master restarts.
+
+Key persistence features:
+- Instance configurations are automatically saved to disk
+- Instance states (running/stopped) are preserved
+- Auto-start policies persist across master restarts
+- Traffic statistics data is maintained between restarts
+- Instances with auto-start enabled automatically start when master restarts
+- No need to manually re-register after restart
+
+**Note:** While instance configurations are now persistent, frontend applications should still maintain their own instance configuration records as a backup strategy.
+
+### Instance Lifecycle Management
+
+For proper lifecycle management:
+
+1. **Creation**: Store instance configuration and URL
+   ```javascript
+   async function createNodePassInstance(config) {
+     const response = await fetch(`${API_URL}/instances`, {
+       method: 'POST',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled
+       },
+       body: JSON.stringify({
+         url: `server://0.0.0.0:${config.port}/${config.target}?tls=${config.tls}`
+       })
+     });
+     
+     const data = await response.json();
+     
+     // Configure auto-start policy for new instance based on type
+     if (data.success) {
+       const shouldAutoRestart = config.type === 'server' || config.critical === true;
+       await setAutoStartPolicy(data.data.id, shouldAutoRestart);
+     }
+     
+     // Store in frontend persistent storage
+     saveInstanceConfig({
+       id: data.data.id,
+       originalConfig: config,
+       url: data.data.url
+     });
+     
+     return data;
+   }
+   ```
+
+2. **Status Monitoring**: Monitor instance status changes
+   
+   NodePass provides two methods for monitoring instance status:
+   
+   A. **Using SSE (Recommended)**: Receive real-time events through persistent connection
+   ```javascript
+   function connectToEventSource() {
+     const eventSource = new EventSource(`${API_URL}/events`, {
+       // If authentication is needed, use custom implementation
+     });
+     
+     // Or use custom implementation with API Key
+     // connectToEventSourceWithApiKey(apiKey);
+     
+     eventSource.addEventListener('instance', (event) => {
+       const data = JSON.parse(event.data);
+       // Handle different event types: initial, create, update, delete, log
+       // ...processing logic see "Real-time Event Monitoring with SSE" section above
+     });
+     
+     // Error handling and reconnection logic
+     // ...see previous examples for details
+   }
+   ```
+   
+   B. **Periodic Polling**: Query instance status at regular intervals
+   ```javascript
+   function pollInstanceStatus() {
+     setInterval(async () => {
+       try {
+         const instances = await fetch(`${API_URL}/instances`, {
+           headers: { 'X-API-Key': apiKey }
+         });
+         const data = await instances.json();
+         
+         // Update UI with current instance status
+         updateInstancesUI(data);
+       } catch (error) {
+         console.error('Polling error:', error);
+       }
+     }, 5000); // Poll every 5 seconds
+   }
+   ```
+
+3. **Configuration Management**: Handle URL updates and parameter changes
+   ```javascript
+   async function updateInstanceURL(instanceId, newConfig) {
+     const newURL = `${newConfig.type}://${newConfig.bind}/${newConfig.target}?${buildQueryParams(newConfig)}`;
+     
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PUT',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey 
+       },
+       body: JSON.stringify({ url: newURL })
+     });
+     
+     if (response.ok) {
+       // Update local storage
+       updateStoredInstanceConfig(instanceId, newConfig);
+     }
+     
+     return response.json();
+   }
+   ```
+
+4. **Control Operations**: Start, stop, restart instances
+   ```javascript
+   async function controlInstance(instanceId, action) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey 
+       },
+       body: JSON.stringify({ action: action }) // 'start', 'stop', 'restart', 'reset'
+     });
+     
+     return response.json();
+   }
+   ```
+
+### Error Handling and Recovery
+
+Implement robust error handling for various scenarios:
+
+```javascript
+class NodePassClient {
+  constructor(apiUrl, apiKey) {
+    this.apiUrl = apiUrl;
+    this.apiKey = apiKey;
+    this.retryCount = 0;
+    this.maxRetries = 3;
+  }
+  
+  async request(endpoint, options = {}) {
+    const url = `${this.apiUrl}${endpoint}`;
+    const config = {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': this.apiKey,
+        ...options.headers
+      }
+    };
+    
+    try {
+      const response = await fetch(url, config);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      this.retryCount = 0; // Reset on success
+      return await response.json();
+    } catch (error) {
+      if (this.retryCount < this.maxRetries) {
+        this.retryCount++;
+        console.warn(`Request failed, retrying (${this.retryCount}/${this.maxRetries}):`, error.message);
+        await this.delay(1000 * this.retryCount); // Exponential backoff
+        return this.request(endpoint, options);
+      }
+      
+      throw error;
+    }
+  }
+  
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+```
+
+### State Synchronization
+
+Keep frontend state synchronized with backend:
+
+```javascript
+class InstanceManager {
+  constructor(apiClient) {
+    this.apiClient = apiClient;
+    this.instances = new Map();
+    this.eventSource = null;
+  }
+  
+  async initialize() {
+    // Load initial state
+    const instances = await this.apiClient.request('/instances');
+    instances.forEach(instance => {
+      this.instances.set(instance.id, instance);
+    });
+    
+    // Setup real-time updates
+    this.setupEventSource();
+  }
+  
+  setupEventSource() {
+    // Implementation similar to previous SSE examples
+    // Handle events: initial, create, update, delete, log
+  }
+  
+  syncWithBackend() {
+    // Periodically sync state in case of SSE disconnection
+    setInterval(async () => {
+      if (!this.eventSource || this.eventSource.readyState !== EventSource.OPEN) {
+        await this.fullSync();
+      }
+    }, 30000); // Every 30 seconds
+  }
+  
+  async fullSync() {
+    try {
+      const backendInstances = await this.apiClient.request('/instances');
+      const backendMap = new Map(backendInstances.map(inst => [inst.id, inst]));
+      
+      // Update existing instances
+      for (const [id, instance] of backendMap) {
+        if (this.instances.has(id)) {
+          this.instances.set(id, { ...this.instances.get(id), ...instance });
+        } else {
+          this.instances.set(id, instance);
+        }
+      }
+      
+      // Remove deleted instances
+      for (const id of this.instances.keys()) {
+        if (!backendMap.has(id)) {
+          this.instances.delete(id);
+        }
+      }
+      
+      this.notifyStateChange();
+    } catch (error) {
+      console.error('Full sync failed:', error);
+    }
+  }
+}
+```
 
 ### Traffic Statistics
 
@@ -435,9 +684,14 @@ The response contains the following system information fields:
   "arch": "amd64",        // System architecture
   "cpu": 45,              // CPU usage percentage (Linux only)
   "ram": 67,              // RAM usage percentage (Linux only)
+  "netrx": 1048576000,    // Network received bytes (cumulative, Linux only)
+  "nettx": 2097152000,    // Network transmitted bytes (cumulative, Linux only)
+  "diskr": 4194304000,    // Disk read bytes (cumulative, Linux only)
+  "diskw": 8388608000,    // Disk write bytes (cumulative, Linux only)
+  "sysup": 86400,         // System uptime in seconds (Linux only)
   "ver": "1.2.0",         // NodePass version
   "name": "example.com",  // Tunnel hostname
-  "uptime": 11525,         // API uptime in seconds
+  "uptime": 11525,        // API uptime in seconds
   "log": "info",          // Log level
   "tls": "1",             // TLS status
   "crt": "/path/to/cert", // Certificate path
@@ -480,7 +734,16 @@ function displaySystemStatus() {
         console.log(`RAM usage: ${info.ram}%`);
       }
     } else {
-      console.log('CPU and RAM monitoring is only available on Linux systems');
+      console.log('CPU, RAM, Network I/O, Disk I/O, and system uptime monitoring is only available on Linux systems');
+    }
+    
+    // Display network and disk I/O statistics (cumulative values)
+    if (info.os === 'linux') {
+      console.log(`Network RX: ${(info.netrx / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Network TX: ${(info.nettx / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Disk Read: ${(info.diskr / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Disk Write: ${(info.diskw / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`System uptime: ${Math.floor(info.sysup / 3600)} hours`);
     }
   });
 }
@@ -492,10 +755,14 @@ function displaySystemStatus() {
 - **Version Verification**: Check version number after deploying updates
 - **Uptime Monitoring**: Monitor uptime to detect unexpected restarts
 - **Log Level Verification**: Confirm that the current log level matches expectations
-- **Resource Monitoring**: On Linux systems, monitor CPU and RAM usage to ensure optimal performance
+- **Resource Monitoring**: On Linux systems, monitor CPU, RAM, Network I/O, and Disk I/O usage to ensure optimal performance
   - CPU usage is calculated from `/proc/loadavg` (1-minute load average)
   - RAM usage is calculated from `/proc/meminfo` (used memory percentage)
-  - Values of -1 indicate that the system information is unavailable (non-Linux systems)
+  - Network I/O is calculated from `/proc/net/dev` (cumulative bytes, excluding virtual interfaces)
+  - Disk I/O is calculated from `/proc/diskstats` (cumulative bytes, main devices only)
+  - System uptime is obtained from `/proc/uptime`
+  - Values of -1 or 0 indicate that the system information is unavailable (non-Linux systems)
+- **I/O Rate Calculation**: Network and Disk I/O fields provide cumulative values. Frontend applications should store historical data and calculate differences to derive real-time rates (bytes/second)
 
 ## API Endpoint Documentation
 
@@ -651,7 +918,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 #### GET /info
 - **Description**: Get master service information
 - **Authentication**: API Key required
-- **Response**: Contains system info, version, uptime, CPU and RAM usage, etc.
+- **Response**: Contains system info, version, uptime, CPU and RAM usage, network I/O, disk I/O, system uptime, etc.
 
 #### GET /tcping
 - **Description**: TCP connectivity test to check target reachability and latency

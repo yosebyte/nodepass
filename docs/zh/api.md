@@ -1,9 +1,3 @@
-# NodePass API参考
-
-## 概述
-
-NodePass在主控模式（Master Mode）下提供了RESTful API，使前端应用能够以编程方式进行控制和集成。本节提供API端点、集成模式和最佳实践的全面文档。
-
 # NodePass API 参考
 
 ## 概述
@@ -811,9 +805,14 @@ GET /info
   "arch": "amd64",        // 系统架构
   "cpu": 45,              // CPU使用率百分比（仅Linux系统）
   "ram": 67,              // RAM使用率百分比（仅Linux系统）
+  "netrx": 1048576000,    // 网络接收字节数（累计值，仅Linux）
+  "nettx": 2097152000,    // 网络发送字节数（累计值，仅Linux）
+  "diskr": 4194304000,    // 磁盘读取字节数（累计值，仅Linux）
+  "diskw": 8388608000,    // 磁盘写入字节数（累计值，仅Linux）
+  "sysup": 86400,         // 系统运行时间（秒，仅Linux）
   "ver": "1.2.0",         // NodePass版本
   "name": "example.com",  // 隧道主机名
-  "uptime": 11525,         // API运行时间（秒）
+  "uptime": 11525,        // API运行时间（秒）
   "log": "info",          // 日志级别
   "tls": "1",             // TLS启用状态
   "crt": "/path/to/cert", // 证书路径
@@ -856,7 +855,16 @@ function displaySystemStatus() {
         console.log(`RAM使用率: ${info.ram}%`);
       }
     } else {
-      console.log('CPU和RAM监控功能仅在Linux系统上可用');
+      console.log('CPU、RAM、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
+    }
+    
+    // 显示网络I/O统计（累计值）
+    if (info.os === 'linux') {
+      console.log(`网络接收: ${(info.netrx / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`网络发送: ${(info.nettx / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`磁盘读取: ${(info.diskr / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`磁盘写入: ${(info.diskw / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`系统运行时间: ${Math.floor(info.sysup / 3600)}小时`);
     }
   });
 }
@@ -868,10 +876,14 @@ function displaySystemStatus() {
 - **版本验证**：在部署更新后检查版本号
 - **运行时间监控**：监控运行时间以检测意外重启
 - **日志级别验证**：确认当前日志级别符合预期
-- **资源监控**：在Linux系统上，监控CPU和RAM使用率以确保最佳性能
+- **资源监控**：在Linux系统上，监控CPU、RAM、网络I/O、磁盘I/O使用情况以确保最佳性能
   - CPU使用率通过解析`/proc/loadavg`计算（1分钟负载平均值）
   - RAM使用率通过解析`/proc/meminfo`计算（已用内存百分比）
-  - 值为-1表示系统信息不可用（非Linux系统）
+  - 网络I/O通过解析`/proc/net/dev`计算（累计字节数，排除虚拟接口）
+  - 磁盘I/O通过解析`/proc/diskstats`计算（累计字节数，仅统计主设备）
+  - 系统运行时间通过解析`/proc/uptime`获取
+  - 值为-1或0表示系统信息不可用（非Linux系统）
+  - 网络和磁盘I/O字段提供的是累计值，前端应用需要存储历史数据并计算差值来得到实时速率（字节/秒）
 
 ## API端点文档
 
