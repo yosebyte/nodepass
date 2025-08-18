@@ -144,7 +144,7 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: c.readTimeout})
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 2 * reportInterval})
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
