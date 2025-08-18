@@ -271,6 +271,12 @@ curl -X PATCH http://localhost:9090/api/v1/instances/{id} \
   -d '{"action":"restart"}'
 ```
 
+#### 公共端点
+
+以下端点不需要API Key身份验证：
+- `GET {prefix}/v1/openapi.json` - OpenAPI规范
+- `GET {prefix}/v1/docs` - Swagger UI文档
+
 ## 双向数据流说明
 
 NodePass支持灵活的双向数据流配置：
