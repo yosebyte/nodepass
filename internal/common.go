@@ -746,10 +746,8 @@ func (c *Common) commonUDPLoop() {
 				reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 
 				for {
-					select {
-					case <-c.ctx.Done():
+					if c.ctx.Err() != nil {
 						return
-					default:
 					}
 
 					// 从池连接读取数据
