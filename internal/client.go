@@ -49,12 +49,23 @@ func (c *Client) Run() {
 	}
 	logInfo("Client started")
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
+			if ctx.Err() != nil {
+				return
+			}
+			// 启动客户端
 			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)
-				time.Sleep(serviceCooldown)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(serviceCooldown):
+				}
+				// 重启客户端
 				c.stop()
 				logInfo("Client restarted")
 			}
@@ -62,7 +73,6 @@ func (c *Client) Run() {
 	}()
 
 	// 监听系统信号以优雅关闭
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
 	stop()
 

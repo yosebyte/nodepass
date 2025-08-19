@@ -51,12 +51,23 @@ func (s *Server) Run() {
 	}
 	logInfo("Server started")
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+
 	// 启动服务端并处理重启
 	go func() {
 		for {
+			if ctx.Err() != nil {
+				return
+			}
+			// 启动服务端
 			if err := s.start(); err != nil && err != io.EOF {
 				s.logger.Error("Server error: %v", err)
-				time.Sleep(serviceCooldown)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(serviceCooldown):
+				}
+				// 重启服务端
 				s.stop()
 				logInfo("Server restarted")
 			}
@@ -64,7 +75,6 @@ func (s *Server) Run() {
 	}()
 
 	// 监听系统信号以优雅关闭
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
 	stop()
 
@@ -134,10 +144,20 @@ func (s *Server) start() error {
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
 	for {
+		select {
+		case <-s.ctx.Done():
+			return s.ctx.Err()
+		default:
+		}
+
 		tunnelTCPConn, err := s.tunnelListener.Accept()
 		if err != nil {
 			s.logger.Error("Accept error: %v", err)
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
 		}
 
@@ -148,7 +168,11 @@ func (s *Server) tunnelHandshake() error {
 		if err != nil {
 			s.logger.Warn("Handshake timeout: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
 		}
 
@@ -158,7 +182,11 @@ func (s *Server) tunnelHandshake() error {
 		if tunnelKey != s.tunnelKey {
 			s.logger.Warn("Access denied: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
 		}
 
