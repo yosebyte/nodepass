@@ -187,14 +187,14 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", c.tunnelAddr); err == nil {
 		c.tunnelTCPAddr = tunnelTCPAddr
 	} else {
-		c.logger.Error("Resolve failed: %v", err)
+		c.logger.Error("ResolveTCPAddr failed: %v", err)
 	}
 
 	// 解析隧道UDP地址
 	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", c.tunnelAddr); err == nil {
 		c.tunnelUDPAddr = tunnelUDPAddr
 	} else {
-		c.logger.Error("Resolve failed: %v", err)
+		c.logger.Error("ResolveUDPAddr failed: %v", err)
 	}
 
 	// 处理目标地址
@@ -204,14 +204,14 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
 		c.targetTCPAddr = targetTCPAddr
 	} else {
-		c.logger.Error("Resolve failed: %v", err)
+		c.logger.Error("ResolveTCPAddr failed: %v", err)
 	}
 
 	// 解析目标UDP地址
 	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
 		c.targetUDPAddr = targetUDPAddr
 	} else {
-		c.logger.Error("Resolve failed: %v", err)
+		c.logger.Error("ResolveUDPAddr failed: %v", err)
 	}
 }
 
@@ -680,7 +680,7 @@ func (c *Common) commonUDPLoop() {
 				putUDPBuffer(buffer)
 				return
 			}
-			c.logger.Error("Read failed: %v", err)
+			c.logger.Error("ReadFromUDP failed: %v", err)
 			putUDPBuffer(buffer)
 
 			select {
@@ -764,7 +764,7 @@ func (c *Common) commonUDPLoop() {
 					// 将数据写入目标UDP连接
 					_, err = c.targetUDPConn.WriteToUDP(buffer[:x], clientAddr)
 					if err != nil {
-						c.logger.Error("Write failed: %v", err)
+						c.logger.Error("WriteToUDP failed: %v", err)
 						return
 					}
 					// 传输完成
@@ -885,7 +885,7 @@ func (c *Common) commonTCPOnce(id string) {
 	// 从连接池获取连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v not found", id)
+		c.logger.Error("ClientGet failed: %v not found", id)
 		c.tunnelPool.AddError()
 		return
 	}
@@ -902,7 +902,7 @@ func (c *Common) commonTCPOnce(id string) {
 	// 连接到目标TCP地址
 	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
-		c.logger.Error("Dial failed: %v", err)
+		c.logger.Error("DialTimeout failed: %v", err)
 		return
 	}
 
@@ -939,7 +939,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	// 获取池连接
 	remoteConn := c.tunnelPool.ClientGet(id)
 	if remoteConn == nil {
-		c.logger.Error("Get failed: %v not found", id)
+		c.logger.Error("ClientGet failed: %v not found", id)
 		c.tunnelPool.AddError()
 		return
 	}
@@ -958,7 +958,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		// 创建新的会话
 		session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 		if err != nil {
-			c.logger.Error("Dial failed: %v", err)
+			c.logger.Error("DialTimeout failed: %v", err)
 			return
 		}
 		c.targetUDPSession.Store(sessionKey, session)
@@ -1173,7 +1173,7 @@ func (c *Common) singleTCPLoop() error {
 			// 尝试建立目标连接
 			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 			if err != nil {
-				c.logger.Error("Dial failed: %v", err)
+				c.logger.Error("DialTimeout failed: %v", err)
 				return
 			}
 
@@ -1212,7 +1212,7 @@ func (c *Common) singleUDPLoop() error {
 				putUDPBuffer(buffer)
 				return c.ctx.Err()
 			}
-			c.logger.Error("Read failed: %v", err)
+			c.logger.Error("ReadFromUDP failed: %v", err)
 
 			putUDPBuffer(buffer)
 			select {
@@ -1244,7 +1244,7 @@ func (c *Common) singleUDPLoop() error {
 			// 创建新的会话
 			session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 			if err != nil {
-				c.logger.Error("Dial failed: %v", err)
+				c.logger.Error("DialTimeout failed: %v", err)
 				c.releaseSlot(true)
 				putUDPBuffer(buffer)
 				continue
@@ -1298,7 +1298,7 @@ func (c *Common) singleUDPLoop() error {
 					// 将响应写回隧道UDP连接
 					_, err = c.tunnelUDPConn.WriteToUDP(buffer[:x], clientAddr)
 					if err != nil {
-						c.logger.Error("Write failed: %v", err)
+						c.logger.Error("WriteToUDP failed: %v", err)
 						c.targetUDPSession.Delete(sessionKey)
 						if targetConn != nil {
 							targetConn.Close()
