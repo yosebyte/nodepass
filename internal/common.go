@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"hash/fnv"
 	"net"
 	"net/url"
@@ -579,7 +578,7 @@ func (c *Common) commonTCPLoop() {
 		// 接受来自目标的TCP连接
 		targetConn, err := c.targetListener.Accept()
 		if err != nil {
-			if c.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			if c.ctx.Err() != nil || err == net.ErrClosed {
 				return
 			}
 			c.logger.Error("Accept failed: %v", err)
@@ -676,7 +675,7 @@ func (c *Common) commonUDPLoop() {
 		// 读取来自目标的UDP数据
 		x, clientAddr, err := c.targetUDPConn.ReadFromUDP(buffer)
 		if err != nil {
-			if c.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			if c.ctx.Err() != nil || err == net.ErrClosed {
 				putUDPBuffer(buffer)
 				return
 			}
@@ -1128,7 +1127,7 @@ func (c *Common) singleTCPLoop() error {
 		// 接受来自隧道的TCP连接
 		tunnelConn, err := c.tunnelListener.Accept()
 		if err != nil {
-			if c.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			if c.ctx.Err() != nil || err == net.ErrClosed {
 				return c.ctx.Err()
 			}
 			c.logger.Error("Accept failed: %v", err)
@@ -1208,7 +1207,7 @@ func (c *Common) singleUDPLoop() error {
 		// 读取来自隧道的UDP数据
 		x, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
 		if err != nil {
-			if c.ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+			if c.ctx.Err() != nil || err == net.ErrClosed {
 				putUDPBuffer(buffer)
 				return c.ctx.Err()
 			}
