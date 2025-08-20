@@ -46,7 +46,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
 		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v",
-			prefix, s.tunnelKey, s.tunnelAddr, s.targetTCPAddr,
+			prefix, s.tunnelKey, s.tunnelTCPAddr, s.targetTCPAddr,
 			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit)
 	}
 	logInfo("Server started")

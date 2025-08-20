@@ -322,7 +322,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 // Run 管理主控生命周期
 func (m *Master) Run() {
-	m.logger.Info("Master started: %v%v", m.tunnelAddr, m.prefix)
+	m.logger.Info("Master started: %v%v", m.tunnelTCPAddr, m.prefix)
 
 	// 初始化API Key
 	apiKey, ok := m.findInstance(apiKeyID)

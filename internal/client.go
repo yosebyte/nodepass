@@ -44,7 +44,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
 		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v",
-			prefix, c.tunnelKey, c.tunnelAddr, c.targetTCPAddr,
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.targetTCPAddr,
 			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit)
 	}
 	logInfo("Client started")
