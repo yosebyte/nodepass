@@ -300,34 +300,6 @@ func (c *Common) initContext() {
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 }
 
-// initTargetListener 初始化目标监听器
-func (c *Common) initTargetListener() error {
-	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
-		return &net.AddrError{Err: "target address is nil"}
-	}
-
-	// 初始化目标TCP监听器
-	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
-	if err != nil {
-		if targetListener != nil {
-			targetListener.Close()
-		}
-		return err
-	}
-	c.targetListener = targetListener
-
-	// 初始化目标UDP监听器
-	var targetUDPConn net.Conn
-	targetUDPConn, err = net.ListenUDP("udp", c.targetUDPAddr)
-	if err != nil {
-		return err
-	}
-	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
-	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-
-	return nil
-}
-
 // initTunnelListener 初始化隧道监听器
 func (c *Common) initTunnelListener() error {
 	if c.tunnelTCPAddr == nil || c.tunnelUDPAddr == nil {
@@ -353,6 +325,34 @@ func (c *Common) initTunnelListener() error {
 		return err
 	}
 	c.tunnelUDPConn = tunnelUDPConn
+
+	return nil
+}
+
+// initTargetListener 初始化目标监听器
+func (c *Common) initTargetListener() error {
+	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
+		return &net.AddrError{Err: "target address is nil"}
+	}
+
+	// 初始化目标TCP监听器
+	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
+	if err != nil {
+		if targetListener != nil {
+			targetListener.Close()
+		}
+		return err
+	}
+	c.targetListener = targetListener
+
+	// 初始化目标UDP监听器
+	var targetUDPConn net.Conn
+	targetUDPConn, err = net.ListenUDP("udp", c.targetUDPAddr)
+	if err != nil {
+		return err
+	}
+	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
+	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 
 	return nil
 }
