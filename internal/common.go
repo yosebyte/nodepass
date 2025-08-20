@@ -29,7 +29,6 @@ type Common struct {
 	runMode          string             // 运行模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
-	tunnelAddr       string             // 隧道地址字符串
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
 	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
@@ -180,17 +179,17 @@ func (c *Common) getTunnelKey(parsedURL *url.URL) {
 // getAddress 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) {
 	// 解析隧道地址
-	c.tunnelAddr = parsedURL.Host
+	tunnelAddr := parsedURL.Host
 
 	// 解析隧道TCP地址
-	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", c.tunnelAddr); err == nil {
+	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
 		c.tunnelTCPAddr = tunnelTCPAddr
 	} else {
 		c.logger.Error("ResolveTCPAddr failed: %v", err)
 	}
 
 	// 解析隧道UDP地址
-	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", c.tunnelAddr); err == nil {
+	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", tunnelAddr); err == nil {
 		c.tunnelUDPAddr = tunnelUDPAddr
 	} else {
 		c.logger.Error("ResolveUDPAddr failed: %v", err)
@@ -303,6 +302,10 @@ func (c *Common) initContext() {
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
+	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
+		return &net.AddrError{Err: "target address is nil"}
+	}
+
 	// 初始化目标TCP监听器
 	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
 	if err != nil {
@@ -327,6 +330,10 @@ func (c *Common) initTargetListener() error {
 
 // initTunnelListener 初始化隧道监听器
 func (c *Common) initTunnelListener() error {
+	if c.tunnelTCPAddr == nil || c.tunnelUDPAddr == nil {
+		return &net.AddrError{Err: "tunnel address is nil"}
+	}
+
 	// 初始化隧道TCP监听器
 	tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
 	if err != nil {
