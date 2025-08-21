@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"hash/fnv"
 	"net"
 	"net/url"
@@ -43,6 +44,7 @@ type Common struct {
 	tunnelPool       *pool.Pool         // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
+	proxyProtocol    string             // 代理协议
 	rateLimit        int                // 速率限制
 	rateLimiter      *conn.RateLimiter  // 全局限速器
 	readTimeout      time.Duration      // 读取超时
@@ -274,6 +276,15 @@ func (c *Common) getSlotLimit(parsedURL *url.URL) {
 	}
 }
 
+// getProxyProtocol 获取代理协议设置
+func (c *Common) getProxyProtocol(parsedURL *url.URL) {
+	if protocol := parsedURL.Query().Get("proxy"); protocol != "" {
+		c.proxyProtocol = protocol
+	} else {
+		c.proxyProtocol = "0"
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getTunnelKey(parsedURL)
@@ -283,6 +294,48 @@ func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getRunMode(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
+	c.getProxyProtocol(parsedURL)
+}
+
+// sendProxyV1Header 发送 Proxy Protocol v1 header
+func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
+	if c.proxyProtocol != "1" {
+		return nil
+	}
+
+	clientAddr, err := net.ResolveTCPAddr("tcp", ip)
+	if err != nil {
+		return err
+	}
+	remoteAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		return fmt.Errorf("remote address is not TCPAddr")
+	}
+
+	var protocol string
+	switch {
+	case clientAddr.IP.To4() != nil && remoteAddr.IP.To4() != nil:
+		protocol = "TCP4"
+	case clientAddr.IP.To16() != nil && remoteAddr.IP.To16() != nil:
+		protocol = "TCP6"
+	default:
+		return fmt.Errorf("unsupported IP protocol for PROXY v1")
+	}
+
+	header := fmt.Sprintf("PROXY %s %s %s %d %d\r\n",
+		protocol,
+		clientAddr.IP.String(), // 用户真实IP
+		remoteAddr.IP.String(), // 目标服务IP
+		clientAddr.Port,        // 用户真实端口
+		remoteAddr.Port)        // 目标服务端口
+
+	// 发送 header
+	_, err = conn.Write([]byte(header))
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // initRateLimiter 初始化全局限速器
