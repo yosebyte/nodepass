@@ -709,13 +709,10 @@ func (c *Common) commonTCPLoop() {
 			}
 
 			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
-			c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 			// 交换数据
-			_, _, err := conn.DataExchange(remoteConn, targetConn, c.readTimeout)
-
-			// 交换完成
-			c.logger.Debug("Exchange complete: %v", err)
+			c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout))
 		}(targetConn)
 	}
 }
@@ -981,10 +978,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 
 	// 交换数据
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-	_, _, err = conn.DataExchange(remoteConn, targetConn, c.readTimeout)
-
-	// 交换完成
-	c.logger.Debug("Exchange complete: %v", err)
+	c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout))
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -1257,10 +1251,7 @@ func (c *Common) singleTCPLoop() error {
 
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
-			_, _, err = conn.DataExchange(tunnelConn, targetConn, c.readTimeout)
-
-			// 交换完成
-			c.logger.Debug("Exchange complete: %v", err)
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout))
 		}(tunnelConn)
 	}
 }
