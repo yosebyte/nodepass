@@ -324,14 +324,13 @@ func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
 
 	header := fmt.Sprintf("PROXY %s %s %s %d %d\r\n",
 		protocol,
-		clientAddr.IP.String(), // 用户真实IP
-		remoteAddr.IP.String(), // 目标服务IP
+		clientAddr.IP.String(), // 用户真实地址
+		remoteAddr.IP.String(), // 目标服务地址
 		clientAddr.Port,        // 用户真实端口
 		remoteAddr.Port)        // 目标服务端口
 
 	// 发送 header
-	_, err = conn.Write([]byte(header))
-	if err != nil {
+	if _, err = conn.Write([]byte(header)); err != nil {
 		return err
 	}
 
@@ -356,7 +355,7 @@ func (c *Common) initContext() {
 // initTunnelListener 初始化隧道监听器
 func (c *Common) initTunnelListener() error {
 	if c.tunnelTCPAddr == nil || c.tunnelUDPAddr == nil {
-		return &net.AddrError{Err: "tunnel address is nil"}
+		return fmt.Errorf("nil tunnel address")
 	}
 
 	// 初始化隧道TCP监听器
@@ -385,7 +384,7 @@ func (c *Common) initTunnelListener() error {
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
 	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
-		return &net.AddrError{Err: "target address is nil"}
+		return fmt.Errorf("nil target address")
 	}
 
 	// 初始化目标TCP监听器
