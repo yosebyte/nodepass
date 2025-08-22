@@ -235,9 +235,79 @@ nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 - 使开发人员能够访问环境而无需直接网络暴露
 - 将远程服务映射到不同的本地端口，便于识别
 
+## PROXY协议集成
+
+### 示例14：负载均衡器与PROXY协议集成
+
+启用PROXY协议支持，与负载均衡器和反向代理集成：
+
+```bash
+# 服务端：为HAProxy/Nginx集成启用PROXY协议v1
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=info&tls=1&proxy=1"
+
+# 客户端：启用PROXY协议以保留客户端连接信息
+nodepass "client://tunnel.example.com:10101/127.0.0.1:3000?log=info&proxy=1"
+```
+
+此配置：
+- 在数据传输开始前发送PROXY协议v1头部
+- 通过隧道保留原始客户端IP和端口信息
+- 使后端服务能够看到真实的客户端连接详情
+- 兼容HAProxy、Nginx和其他支持PROXY协议的服务
+- 有助于维护准确的访问日志和基于IP的访问控制
+
+### 示例15：Web应用的反向代理支持
+
+使NodePass后的Web应用能够接收原始客户端信息：
+
+```bash
+# 为Web应用启用PROXY协议的NodePass服务器
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=warn&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem&proxy=1"
+
+# 后端Web服务器（如Nginx）配置以处理PROXY协议
+# 在nginx.conf中：
+# server {
+#     listen 8080 proxy_protocol;
+#     real_ip_header proxy_protocol;
+#     set_real_ip_from 127.0.0.1;
+#     ...
+# }
+```
+
+此设置：
+- Web应用接收原始客户端IP地址而不是NodePass隧道IP
+- 启用正确的访问日志记录、分析和安全控制
+- 支持连接审计的合规性要求
+- 适用于支持PROXY协议的Web服务器（Nginx、HAProxy等）
+
+### 示例16：数据库访问与客户端IP保留
+
+为数据库访问日志记录和安全维护客户端IP信息：
+
+```bash
+# 启用PROXY协议的数据库代理服务器
+nodepass "server://0.0.0.0:10101/127.0.0.1:5432?log=error&proxy=1"
+
+# 通过隧道连接的应用客户端
+nodepass "client://dbproxy.example.com:10101/127.0.0.1:5432?proxy=1"
+```
+
+优势：
+- 数据库日志显示原始应用服务器IP而不是隧道IP
+- 启用基于IP的数据库访问控制正常工作
+- 维护安全和合规的审计轨迹
+- 兼容支持PROXY协议的数据库（适当配置的PostgreSQL）
+
+**PROXY协议重要说明：**
+- 目标服务必须支持PROXY协议v1才能正确处理头部
+- PROXY头部仅对TCP连接发送，不支持UDP流量
+- 头部包含：协议（TCP4/TCP6）、源IP、目标IP、源端口、目标端口
+- 如果目标服务不支持PROXY协议，连接可能失败或行为异常
+- 在生产环境部署前，请在非生产环境中充分测试启用PROXY协议的配置
+
 ## 容器部署
 
-### 示例14：容器化NodePass
+### 示例17：容器化NodePass
 
 在Docker环境中部署NodePass：
 
@@ -272,7 +342,7 @@ docker run -d --name nodepass-client \
 
 ## 主控API管理
 
-### 示例15：集中管理
+### 示例18：集中化管理
 
 为多个NodePass实例设置中央控制器：
 
@@ -309,7 +379,7 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 - 提供用于自动化和集成的RESTful API
 - 包含内置的Swagger UI，位于http://localhost:9090/api/v1/docs
 
-### 示例16：自定义API前缀
+### 示例19：自定义API前缀
 
 为主控模式使用自定义API前缀：
 
@@ -328,7 +398,7 @@ curl -X POST http://localhost:9090/admin/v1/instances \
 - 用于安全或组织目的的自定义URL路径
 - 在http://localhost:9090/admin/v1/docs访问Swagger UI
 
-### 示例17：实时监控连接数和流量
+### 示例20：实时连接和流量监控
 
 通过主控API监控实例的连接数和流量统计：
 

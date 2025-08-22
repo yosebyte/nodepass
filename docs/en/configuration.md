@@ -169,6 +169,43 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=error&tls=1&rate=50"
 - **QoS Compliance**: Meet service level agreements for bandwidth usage
 - **Testing**: Simulate low-bandwidth environments for application testing
 
+## PROXY Protocol Support
+
+NodePass supports PROXY protocol v1 for preserving client connection information when forwarding traffic through load balancers, reverse proxies, or other intermediary services.
+
+- `proxy`: PROXY protocol support (default: 0)
+  - Value 0: Disabled - no PROXY protocol header is sent
+  - Value 1: Enabled - sends PROXY protocol v1 header before data transfer
+  - Works with both TCP4 and TCP6 connections
+  - Compatible with HAProxy, Nginx, and other PROXY protocol aware services
+
+The PROXY protocol header includes original client IP, server IP, and port information, allowing downstream services to identify the real client connection details even when traffic passes through NodePass tunnels.
+
+Example:
+```bash
+# Enable PROXY protocol v1 for server mode
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?proxy=1"
+
+# Enable PROXY protocol v1 for client mode  
+nodepass "client://server.example.com:10101/127.0.0.1:8080?proxy=1"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
+```
+
+**PROXY Protocol Use Cases:**
+- **Load Balancer Integration**: Preserve client IP information when forwarding through load balancers
+- **Reverse Proxy Support**: Enable backend services to see original client connections
+- **Logging and Analytics**: Maintain accurate client connection logs for security and analysis
+- **Access Control**: Allow downstream services to apply IP-based access controls
+- **Compliance**: Meet regulatory requirements for connection logging and auditing
+
+**Important Notes:**
+- The target service must support PROXY protocol v1 to properly handle the header
+- PROXY headers are only sent for TCP connections, not UDP
+- The header format follows the HAProxy PROXY protocol v1 specification
+- If the target service doesn't support PROXY protocol, connections may fail or behave unexpectedly
+
 ## URL Query Parameter Scope and Applicability
 
 NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
@@ -185,6 +222,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `read`    | Data read timeout     |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit  |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit  |   O    |   O    |   X    |
+| `proxy`   | PROXY protocol support|   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored

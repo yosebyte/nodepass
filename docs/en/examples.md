@@ -235,9 +235,79 @@ This setup:
 - Enables developers to access environments without direct network exposure
 - Maps remote services to different local ports for easy identification
 
+## PROXY Protocol Integration
+
+### Example 14: Load Balancer Integration with PROXY Protocol
+
+Enable PROXY protocol support for integration with load balancers and reverse proxies:
+
+```bash
+# Server side: Enable PROXY protocol v1 for HAProxy/Nginx integration
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=info&tls=1&proxy=1"
+
+# Client side: Enable PROXY protocol to preserve client connection information
+nodepass "client://tunnel.example.com:10101/127.0.0.1:3000?log=info&proxy=1"
+```
+
+This configuration:
+- Sends PROXY protocol v1 headers before data transfer begins
+- Preserves original client IP and port information through the tunnel
+- Enables backend services to see real client connection details
+- Compatible with HAProxy, Nginx, and other PROXY protocol aware services
+- Useful for maintaining accurate access logs and IP-based access controls
+
+### Example 15: Reverse Proxy Support for Web Applications
+
+Enable web applications behind NodePass to receive original client information:
+
+```bash
+# NodePass server with PROXY protocol for web application
+nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=warn&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem&proxy=1"
+
+# Backend web server (e.g., Nginx) configuration to handle PROXY protocol
+# In nginx.conf:
+# server {
+#     listen 8080 proxy_protocol;
+#     real_ip_header proxy_protocol;
+#     set_real_ip_from 127.0.0.1;
+#     ...
+# }
+```
+
+This setup:
+- Web applications receive original client IP addresses instead of NodePass tunnel IP
+- Enables proper access logging, analytics, and security controls
+- Supports compliance requirements for connection auditing
+- Works with web servers that support PROXY protocol (Nginx, HAProxy, etc.)
+
+### Example 16: Database Access with Client IP Preservation
+
+Maintain client IP information for database access logging and security:
+
+```bash
+# Database proxy server with PROXY protocol
+nodepass "server://0.0.0.0:10101/127.0.0.1:5432?log=error&proxy=1"
+
+# Application client connecting through tunnel
+nodepass "client://dbproxy.example.com:10101/127.0.0.1:5432?proxy=1"
+```
+
+Benefits:
+- Database logs show original application server IPs instead of tunnel IPs
+- Enables IP-based database access controls to work properly
+- Maintains audit trails for security and compliance
+- Compatible with databases that support PROXY protocol (PostgreSQL with appropriate configuration)
+
+**Important Notes for PROXY Protocol:**
+- Target services must support PROXY protocol v1 to handle the headers correctly
+- PROXY headers are only sent for TCP connections, not UDP traffic
+- The header includes: protocol (TCP4/TCP6), source IP, destination IP, source port, destination port
+- If target service doesn't support PROXY protocol, connections may fail or behave unexpectedly
+- Test thoroughly in non-production environments before deploying with PROXY protocol enabled
+
 ## Container Deployment
 
-### Example 14: Containerized NodePass
+### Example 17: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -272,7 +342,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 15: Centralized Management
+### Example 18: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -309,7 +379,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 16: Custom API Prefix
+### Example 19: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
@@ -328,7 +398,7 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
-### Example 17: Real-time Connection and Traffic Monitoring
+### Example 20: Real-time Connection and Traffic Monitoring
 
 Monitor instance connection counts and traffic statistics through the master API:
 

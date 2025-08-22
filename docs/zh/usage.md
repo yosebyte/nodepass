@@ -7,7 +7,7 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 其中：
@@ -24,6 +24,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
 - `read=<timeout>`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `proxy=<mode>`：PROXY协议支持（默认：`0`，`1`启用PROXY协议v1头部传输）
 
 TLS相关参数（仅适用于server/master模式）：
 - `tls=<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）
@@ -39,7 +40,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### 参数
@@ -60,6 +61,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `2`：强制正向模式 - 服务器连接到远程目标地址
 - `read`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
 
 #### 服务端模式工作原理
 
@@ -99,7 +101,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### 参数
@@ -114,6 +116,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
   - `2`：强制双端握手模式 - 需要服务器协调
 - `read`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
 
 #### 客户端模式工作原理
 

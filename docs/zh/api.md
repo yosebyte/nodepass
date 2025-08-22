@@ -98,6 +98,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
 - `read`：数据读取超时时长（如1h、30m、15s）
 - `rate`：带宽速率限制，单位Mbps（0=无限制）
+- `proxy`：PROXY协议支持（`0`、`1`）- 启用后在数据传输前发送PROXY协议v1头部
 
 ### 实时事件流（SSE）
 
@@ -151,6 +152,44 @@ GET /events
 4. `delete` - 实例被删除时发送
 5. `shutdown` - 主控服务即将关闭时发送，通知前端应用关闭连接
 6. `log` - 实例产生新日志内容时发送，包含日志文本
+
+#### 处理实例日志
+
+在前端应用中，可以通过监听`log`事件来处理实例日志。以下是一个示例函数，用于将日志追加到特定实例的UI中：
+
+```javascript
+// 处理日志事件
+function appendLogToInstanceUI(instanceId, logText) {
+  // 找到或创建日志容器
+  let logContainer = document.getElementById(`logs-${instanceId}`);
+  if (!logContainer) {
+    logContainer = document.createElement('div');
+    logContainer.id = `logs-${instanceId}`;
+    document.getElementById('instance-container').appendChild(logContainer);
+  }
+
+  // 创建新的日志条目
+  const logEntry = document.createElement('div');
+  logEntry.className = 'log-entry';
+
+  // 可以在这里解析ANSI颜色代码或格式化日志
+  logEntry.textContent = logText;
+
+  // 添加到容器
+  logContainer.appendChild(logEntry);
+
+  // 滚动到最新日志
+  logContainer.scrollTop = logContainer.scrollHeight;
+}
+```
+
+日志集成最佳实践：
+
+1. **缓冲管理**：限制日志条目的数量，以防止内存问题
+2. **ANSI颜色解析**：解析日志中的ANSI颜色代码，以提高可读性
+3. **过滤选项**：提供按严重性或内容过滤日志的选项
+4. **搜索功能**：允许用户在实例日志中搜索
+5. **日志持久化**：可选地将日志保存到本地存储，以便在页面刷新后查看
 
 #### JavaScript客户端实现
 
@@ -268,36 +307,6 @@ function connectToEventSourceWithApiKey(apiKey) {
     // 尝试重新连接
     setTimeout(() => connectToEventSourceWithApiKey(apiKey), 5000);
   });
-}
-```
-
-#### 处理实例日志
-
-新增的`log`事件类型允许实时接收和显示实例的日志输出。这对于监控和调试非常有用：
-
-```javascript
-// 处理日志事件
-function appendLogToInstanceUI(instanceId, logText) {
-  // 找到或创建日志容器
-  let logContainer = document.getElementById(`logs-${instanceId}`);
-  if (!logContainer) {
-    logContainer = document.createElement('div');
-    logContainer.id = `logs-${instanceId}`;
-    document.getElementById('instance-container').appendChild(logContainer);
-  }
-  
-  // 创建新的日志条目
-  const logEntry = document.createElement('div');
-  logEntry.className = 'log-entry';
-  
-  // 可以在这里解析ANSI颜色代码或格式化日志
-  logEntry.textContent = logText;
-  
-  // 添加到容器
-  logContainer.appendChild(logEntry);
-  
-  // 滚动到最新日志
-  logContainer.scrollTop = logContainer.scrollHeight;
 }
 ```
 
@@ -512,7 +521,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ restart: enableAutoStart })
      });
@@ -521,13 +530,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      return data.success;
    }
    
-   // 组合操作：控制实例并更新自启动策略
    async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ 
          action: action,
@@ -539,13 +547,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      return data.success;
    }
    
-   // 组合操作：同时更新别名、控制实例和自启动策略
    async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ 
          alias: alias,
@@ -1102,3 +1109,4 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `max` | 最大连接池容量 | 整数 > 0 | `1024` | 双端握手模式 |
 | `read` | 读取超时时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `10m` | 两者 |
 | `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |
+| `proxy` | PROXY协议支持 | `0`(禁用), `1`(启用) | `0` | 两者 |

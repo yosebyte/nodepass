@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass ""<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 Where:
@@ -24,6 +24,7 @@ Common query parameters:
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
 - `read=<timeout>`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
+- `proxy=<mode>`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header transmission)
 
 TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
@@ -39,7 +40,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### Parameters
@@ -60,6 +61,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `2`: Force forward mode - server connects to remote target address
 - `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
+- `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
 
 #### How Server Mode Works
 
@@ -99,7 +101,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### Parameters
@@ -114,6 +116,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
   - `2`: Force dual-end handshake mode - requires server coordination
 - `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
+- `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
 
 #### How Client Mode Works
 
