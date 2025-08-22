@@ -297,7 +297,7 @@ func (c *Common) initConfig(parsedURL *url.URL) {
 	c.getProxyProtocol(parsedURL)
 }
 
-// sendProxyV1Header 发送 Proxy Protocol v1 header
+// sendProxyV1Header 发送PROXY v1
 func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
 	if c.proxyProtocol != "1" {
 		return nil
@@ -322,15 +322,12 @@ func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
 		return fmt.Errorf("unsupported IP protocol for PROXY v1")
 	}
 
-	header := fmt.Sprintf("PROXY %s %s %s %d %d\r\n",
+	if _, err = fmt.Fprintf(conn, "PROXY %s %s %s %d %d\r\n",
 		protocol,
-		clientAddr.IP.String(), // 用户真实地址
-		remoteAddr.IP.String(), // 目标服务地址
-		clientAddr.Port,        // 用户真实端口
-		remoteAddr.Port)        // 目标服务端口
-
-	// 发送 header
-	if _, err = conn.Write([]byte(header)); err != nil {
+		clientAddr.IP.String(),
+		remoteAddr.IP.String(),
+		clientAddr.Port,
+		remoteAddr.Port); err != nil {
 		return err
 	}
 
@@ -697,7 +694,8 @@ func (c *Common) commonTCPLoop() {
 
 			// 构建并发送启动URL到客户端
 			launchURL := &url.URL{
-				Host:     id,
+				Host:     targetConn.RemoteAddr().String(),
+				Path:     id,
 				Fragment: "1", // TCP模式
 			}
 
@@ -905,7 +903,7 @@ func (c *Common) commonOnce() error {
 					c.logger.Debug("Tunnel pool reset: %v active connections", c.tunnelPool.Active())
 				}()
 			case "1": // TCP
-				go c.commonTCPOnce(signalURL.Host)
+				go c.commonTCPOnce(signalURL)
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL)
 			case "i": // PING
@@ -930,7 +928,8 @@ func (c *Common) commonOnce() error {
 }
 
 // commonTCPOnce 共用处理单个TCP请求
-func (c *Common) commonTCPOnce(id string) {
+func (c *Common) commonTCPOnce(signalURL *url.URL) {
+	id := strings.TrimPrefix(signalURL.Path, "/")
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 尝试获取TCP连接槽位
@@ -973,9 +972,15 @@ func (c *Common) commonTCPOnce(id string) {
 	c.targetTCPConn = targetConn.(*net.TCPConn)
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
+
+	// 发送PROXY v1
+	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
+		c.logger.Error("sendProxyV1Header failed: %v", err)
+		return
+	}
 
 	// 交换数据
+	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 	_, _, err = conn.DataExchange(remoteConn, targetConn, c.readTimeout)
 
 	// 交换完成
@@ -1243,9 +1248,15 @@ func (c *Common) singleTCPLoop() error {
 
 			c.targetTCPConn = targetConn.(*net.TCPConn)
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
-			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
+
+			// 发送PROXY v1
+			if err := c.sendProxyV1Header(tunnelConn.RemoteAddr().String(), targetConn); err != nil {
+				c.logger.Error("sendProxyV1Header failed: %v", err)
+				return
+			}
 
 			// 交换数据
+			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 			_, _, err = conn.DataExchange(tunnelConn, targetConn, c.readTimeout)
 
 			// 交换完成
