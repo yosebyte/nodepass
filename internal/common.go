@@ -669,9 +669,9 @@ func (c *Common) commonTCPLoop() {
 			}()
 
 			// 从连接池获取连接
-			id, remoteConn := c.tunnelPool.ServerGet(poolGetTimeout)
-			if remoteConn == nil {
-				c.logger.Warn("Request timeout: %v", id)
+			id, remoteConn, err := c.tunnelPool.ServerGet(poolGetTimeout)
+			if err != nil {
+				c.logger.Warn("Request timeout: %v", err)
 				return
 			}
 
@@ -767,9 +767,9 @@ func (c *Common) commonUDPLoop() {
 			}
 
 			// 获取池连接
-			id, remoteConn = c.tunnelPool.ServerGet(poolGetTimeout)
-			if remoteConn == nil {
-				c.logger.Warn("Request timeout: %v", id)
+			id, remoteConn, err = c.tunnelPool.ServerGet(poolGetTimeout)
+			if err != nil {
+				c.logger.Warn("Request timeout: %v", err)
 				c.releaseSlot(true)
 				continue
 			}
@@ -940,9 +940,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	defer c.releaseSlot(false)
 
 	// 从连接池获取连接
-	remoteConn := c.tunnelPool.ClientGet(id)
-	if remoteConn == nil {
-		c.logger.Error("ClientGet failed: %v not found", id)
+	remoteConn, err := c.tunnelPool.ClientGet(id)
+	if err != nil {
+		c.logger.Error("ClientGet failed: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
@@ -1000,9 +1000,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	defer c.releaseSlot(true)
 
 	// 获取池连接
-	remoteConn := c.tunnelPool.ClientGet(id)
-	if remoteConn == nil {
-		c.logger.Error("ClientGet failed: %v not found", id)
+	remoteConn, err := c.tunnelPool.ClientGet(id)
+	if err != nil {
+		c.logger.Error("ClientGet failed: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
