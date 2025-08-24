@@ -62,13 +62,13 @@ func (s *Server) Run() {
 			// 启动服务端
 			if err := s.start(); err != nil && err != io.EOF {
 				s.logger.Error("Server error: %v", err)
+				// 重启服务端
+				s.stop()
 				select {
 				case <-ctx.Done():
 					return
 				case <-time.After(serviceCooldown):
 				}
-				// 重启服务端
-				s.stop()
 				logInfo("Server restarted")
 			}
 		}

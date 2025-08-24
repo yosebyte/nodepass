@@ -60,13 +60,13 @@ func (c *Client) Run() {
 			// 启动客户端
 			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)
+				// 重启客户端
+				c.stop()
 				select {
 				case <-ctx.Done():
 					return
 				case <-time.After(serviceCooldown):
 				}
-				// 重启客户端
-				c.stop()
 				logInfo("Client restarted")
 			}
 		}
