@@ -694,6 +694,7 @@ func (c *Common) commonTCPLoop() {
 
 			// 构建并发送启动URL到客户端
 			launchURL := &url.URL{
+				Scheme:   "np",
 				Host:     targetConn.RemoteAddr().String(),
 				Path:     id,
 				Fragment: "1", // TCP模式
@@ -827,6 +828,7 @@ func (c *Common) commonUDPLoop() {
 
 			// 构建并发送启动URL到客户端
 			launchURL := &url.URL{
+				Scheme:   "np",
 				Host:     clientAddr.String(),
 				Path:     id,
 				Fragment: "2", // UDP模式
