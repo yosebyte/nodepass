@@ -144,10 +144,8 @@ func (s *Server) start() error {
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
 	for {
-		select {
-		case <-s.ctx.Done():
+		if s.ctx.Err() != nil {
 			return s.ctx.Err()
-		default:
 		}
 
 		tunnelTCPConn, err := s.tunnelListener.Accept()
