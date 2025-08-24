@@ -1253,7 +1253,7 @@ func (c *Common) singleTCPLoop() error {
 
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
-			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout))
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, 0))
 		}(tunnelConn)
 	}
 }
@@ -1335,7 +1335,7 @@ func (c *Common) singleUDPLoop() error {
 
 				buffer := getUDPBuffer()
 				defer putUDPBuffer(buffer)
-				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
+				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: 0}
 
 				for {
 					if c.ctx.Err() != nil {
