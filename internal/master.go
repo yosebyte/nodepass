@@ -83,27 +83,28 @@ type Master struct {
 
 // Instance 实例信息
 type Instance struct {
-	ID         string             `json:"id"`        // 实例ID
-	Alias      string             `json:"alias"`     // 实例别名
-	Type       string             `json:"type"`      // 实例类型
-	Status     string             `json:"status"`    // 实例状态
-	URL        string             `json:"url"`       // 实例URL
-	Restart    bool               `json:"restart"`   // 是否自启动
-	Ping       int32              `json:"ping"`      // 端内延迟
-	Pool       int32              `json:"pool"`      // 池连接数
-	TCPS       int32              `json:"tcps"`      // TCP连接数
-	UDPS       int32              `json:"udps"`      // UDP连接数
-	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
-	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
-	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
-	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
-	TCPRXBase  uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
-	TCPTXBase  uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
-	UDPRXBase  uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
-	UDPTXBase  uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
-	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
-	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
-	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+	ID             string             `json:"id"`        // 实例ID
+	Alias          string             `json:"alias"`     // 实例别名
+	Type           string             `json:"type"`      // 实例类型
+	Status         string             `json:"status"`    // 实例状态
+	URL            string             `json:"url"`       // 实例URL
+	Restart        bool               `json:"restart"`   // 是否自启动
+	Ping           int32              `json:"ping"`      // 端内延迟
+	Pool           int32              `json:"pool"`      // 池连接数
+	TCPS           int32              `json:"tcps"`      // TCP连接数
+	UDPS           int32              `json:"udps"`      // UDP连接数
+	TCPRX          uint64             `json:"tcprx"`     // TCP接收字节数
+	TCPTX          uint64             `json:"tcptx"`     // TCP发送字节数
+	UDPRX          uint64             `json:"udprx"`     // UDP接收字节数
+	UDPTX          uint64             `json:"udptx"`     // UDP发送字节数
+	TCPRXBase      uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
+	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
+	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
+	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
+	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
 // InstanceEvent 实例事件信息
@@ -235,6 +236,7 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 				}
 			}
 
+			w.instance.lastCheckPoint = time.Now()
 			w.master.instances.Store(w.instanceID, w.instance)
 			// 发送检查点更新事件
 			w.master.sendSSEEvent("update", w.instance)
@@ -1231,6 +1233,7 @@ func (m *Master) startInstance(instance *Instance) {
 		m.logger.Error("Get path failed: %v [%v]", err, instance.ID)
 		instance.Status = "error"
 		m.instances.Store(instance.ID, instance)
+		m.sendSSEEvent("update", instance)
 		return
 	}
 
@@ -1246,15 +1249,22 @@ func (m *Master) startInstance(instance *Instance) {
 	m.logger.Info("Instance starting: %v [%v]", instance.URL, instance.ID)
 
 	// 启动实例
-	if err := cmd.Start(); err != nil {
-		m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+	if err := cmd.Start(); err != nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		if err != nil {
+			m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+		} else {
+			m.logger.Error("Instance start failed [%v]", instance.ID)
+		}
 		instance.Status = "error"
+		m.instances.Store(instance.ID, instance)
+		m.sendSSEEvent("update", instance)
 		cancel()
-	} else {
-		instance.cmd = cmd
-		instance.Status = "running"
-		go m.monitorInstance(instance, cmd)
+		return
 	}
+
+	instance.cmd = cmd
+	instance.Status = "running"
+	go m.monitorInstance(instance, cmd)
 
 	m.instances.Store(instance.ID, instance)
 
@@ -1264,33 +1274,66 @@ func (m *Master) startInstance(instance *Instance) {
 
 // monitorInstance 监控实例状态
 func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
-	select {
-	case <-instance.stopped:
-		// 实例被显式停止
-		return
-	default:
-		// 等待进程完成
-		err := cmd.Wait()
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
 
-		// 获取最新的实例状态
-		if value, exists := m.instances.Load(instance.ID); exists {
-			instance = value.(*Instance)
-
-			// 仅在实例状态为running时才发送事件
-			if instance.Status == "running" {
-				if err != nil {
-					m.logger.Error("Instance error: %v [%v]", err, instance.ID)
-					instance.Status = "error"
-				} else {
-					instance.Status = "stopped"
+	for {
+		select {
+		case <-instance.stopped:
+			// 实例被显式停止
+			return
+		case err := <-done:
+			// 获取最新的实例状态
+			if value, exists := m.instances.Load(instance.ID); exists {
+				instance = value.(*Instance)
+				if instance.Status == "running" {
+					if err != nil {
+						m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+						instance.Status = "error"
+					} else {
+						instance.Status = "stopped"
+					}
+					m.instances.Store(instance.ID, instance)
+					m.sendSSEEvent("update", instance)
 				}
+			}
+			return
+		case <-time.After(reportInterval):
+			if !m.isInstanceAlive(instance) {
+				instance.Status = "error"
 				m.instances.Store(instance.ID, instance)
-
-				// 安全地发送停止事件，避免向已关闭的通道发送
 				m.sendSSEEvent("update", instance)
 			}
 		}
 	}
+}
+
+// isInstanceAlive 检查实例是否存活
+func (m *Master) isInstanceAlive(instance *Instance) bool {
+	// 进程存活检测
+	alive := false
+	if instance.cmd != nil && instance.cmd.Process != nil {
+		if runtime.GOOS == "windows" {
+			process, err := os.FindProcess(instance.cmd.Process.Pid)
+			if err != nil {
+				return false
+			}
+			alive = process.Signal(syscall.Signal(0)) == nil
+		} else {
+			alive = syscall.Kill(instance.cmd.Process.Pid, 0) == nil
+		}
+	}
+	if !alive {
+		return false
+	}
+
+	// 心跳存活检测
+	if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 6*reportInterval {
+		return false
+	}
+	return true
 }
 
 // stopInstance 停止实例
