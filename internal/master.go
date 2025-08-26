@@ -1301,39 +1301,13 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 			}
 			return
 		case <-time.After(reportInterval):
-			if !m.isInstanceAlive(instance) {
+			if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 5*reportInterval {
 				instance.Status = "error"
 				m.instances.Store(instance.ID, instance)
 				m.sendSSEEvent("update", instance)
 			}
 		}
 	}
-}
-
-// isInstanceAlive 检查实例是否存活
-func (m *Master) isInstanceAlive(instance *Instance) bool {
-	// 进程存活检测
-	alive := false
-	if instance.cmd != nil && instance.cmd.Process != nil {
-		if runtime.GOOS == "windows" {
-			process, err := os.FindProcess(instance.cmd.Process.Pid)
-			if err != nil {
-				return false
-			}
-			alive = process.Signal(syscall.Signal(0)) == nil
-		} else {
-			alive = syscall.Kill(instance.cmd.Process.Pid, 0) == nil
-		}
-	}
-	if !alive {
-		return false
-	}
-
-	// 心跳存活检测
-	if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 6*reportInterval {
-		return false
-	}
-	return true
 }
 
 // stopInstance 停止实例
