@@ -31,12 +31,13 @@ import (
 
 // 常量定义
 const (
-	openAPIVersion = "v1"           // OpenAPI版本
-	stateFilePath  = "gob"          // 实例状态持久化文件路径
-	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
-	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
-	apiKeyID       = "********"     // API Key的特殊ID
-	tcpingSemLimit = 10             // TCPing最大并发数
+	openAPIVersion = "v1"                   // OpenAPI版本
+	stateFilePath  = "gob"                  // 实例状态持久化文件路径
+	stateFileName  = "nodepass.gob"         // 实例状态持久化文件名
+	sseRetryTime   = 3000                   // 重试间隔时间（毫秒）
+	apiKeyID       = "********"             // API Key的特殊ID
+	tcpingSemLimit = 10                     // TCPing最大并发数
+	baseDuration   = 100 * time.Millisecond // 基准持续时间
 )
 
 // Swagger UI HTML模板
@@ -479,7 +480,7 @@ func (m *Master) Shutdown(ctx context.Context) error {
 		})
 
 		// 等待所有订阅者处理完关闭事件
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 
 		// 关闭所有订阅者通道
 		m.subscribers.Range(func(key, value any) bool {
@@ -732,7 +733,7 @@ func getLinuxSysInfo() SystemInfo {
 		return
 	}
 	idle1, total1 := readStat()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(baseDuration)
 	idle2, total2 := readStat()
 	numCPU := runtime.NumCPU()
 	if deltaIdle, deltaTotal := idle2-idle1, total2-total1; deltaTotal > 0 && numCPU > 0 {
@@ -874,7 +875,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 
 		// 保存实例状态
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(baseDuration)
 			m.saveState()
 		}()
 		writeJSON(w, http.StatusCreated, instance)
@@ -1025,7 +1026,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	// 如果实例正在运行，先停止它
 	if instance.Status == "running" {
 		m.stopInstance(instance)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 	}
 
 	// 更新实例URL和类型
@@ -1041,7 +1042,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 
 	// 保存实例状态
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 		m.saveState()
 	}()
 	writeJSON(w, http.StatusOK, instance)
@@ -1072,7 +1073,7 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 		if instance.Status == "running" {
 			go func() {
 				m.stopInstance(instance)
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(baseDuration)
 				m.startInstance(instance)
 			}()
 		} else {
@@ -1352,7 +1353,7 @@ func (m *Master) stopInstance(instance *Instance) {
 		} else {
 			instance.cmd.Process.Signal(syscall.SIGTERM)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 	}
 
 	// 关闭停止通道
