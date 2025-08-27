@@ -710,13 +710,33 @@ func getLinuxSysInfo() SystemInfo {
 		return info
 	}
 
-	// CPU使用率：解析/proc/loadavg
-	if data, err := os.ReadFile("/proc/loadavg"); err == nil {
-		if fields := strings.Fields(string(data)); len(fields) > 0 {
-			if load, err := strconv.ParseFloat(fields[0], 64); err == nil {
-				info.CPU = min(int(load*100), 100)
+	// CPU使用率：解析/proc/stat
+	readStat := func() (idle, total uint64) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return
+		}
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if strings.HasPrefix(line, "cpu ") {
+				fields := strings.Fields(line)
+				for i, v := range fields[1:] {
+					val, _ := strconv.ParseUint(v, 10, 64)
+					total += val
+					if i == 3 {
+						idle = val
+					}
+				}
+				break
 			}
 		}
+		return
+	}
+	idle1, total1 := readStat()
+	time.Sleep(100 * time.Millisecond)
+	idle2, total2 := readStat()
+	numCPU := runtime.NumCPU()
+	if deltaIdle, deltaTotal := idle2-idle1, total2-total1; deltaTotal > 0 && numCPU > 0 {
+		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal/uint64(numCPU)), 100)
 	}
 
 	// RAM使用率：解析/proc/meminfo
