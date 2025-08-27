@@ -633,8 +633,8 @@ func (m *Master) loadState() {
 
 		// 处理自启动
 		if instance.Restart {
-			go m.startInstance(instance)
 			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
+			m.startInstance(instance)
 		}
 	}
 
