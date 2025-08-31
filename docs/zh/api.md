@@ -808,22 +808,25 @@ GET /info
 
 ```json
 {
-  "os": "linux",          // 操作系统类型
-  "arch": "amd64",        // 系统架构
-  "cpu": 45,              // CPU使用率百分比（仅Linux系统）
-  "ram": 67,              // RAM使用率百分比（仅Linux系统）
-  "netrx": 1048576000,    // 网络接收字节数（累计值，仅Linux）
-  "nettx": 2097152000,    // 网络发送字节数（累计值，仅Linux）
-  "diskr": 4194304000,    // 磁盘读取字节数（累计值，仅Linux）
-  "diskw": 8388608000,    // 磁盘写入字节数（累计值，仅Linux）
-  "sysup": 86400,         // 系统运行时间（秒，仅Linux）
-  "ver": "1.2.0",         // NodePass版本
-  "name": "example.com",  // 隧道主机名
-  "uptime": 11525,        // API运行时间（秒）
-  "log": "info",          // 日志级别
-  "tls": "1",             // TLS启用状态
-  "crt": "/path/to/cert", // 证书路径
-  "key": "/path/to/key"   // 密钥路径
+  "os": "linux",              // 操作系统类型
+  "arch": "amd64",            // 系统架构
+  "cpu": 45,                  // CPU使用率百分比（仅Linux系统）
+  "mem_total": 8589934592,    // 内存容量（字节，仅Linux系统）
+  "mem_free": 2684354560,     // 内存可用（字节，仅Linux系统）
+  "swap_total": 3555328000,   // 交换区总量（字节，仅Linux系统）
+  "swap_free": 3555328000,    // 交换区可用（字节，仅Linux系统）
+  "netrx": 1048576000,        // 网络接收字节数（累计值，仅Linux）
+  "nettx": 2097152000,        // 网络发送字节数（累计值，仅Linux）
+  "diskr": 4194304000,        // 磁盘读取字节数（累计值，仅Linux）
+  "diskw": 8388608000,        // 磁盘写入字节数（累计值，仅Linux）
+  "sysup": 86400,             // 系统运行时间（秒，仅Linux）
+  "ver": "1.2.0",             // NodePass版本
+  "name": "example.com",      // 隧道主机名
+  "uptime": 11525,            // API运行时间（秒）
+  "log": "info",              // 日志级别
+  "tls": "1",                 // TLS启用状态
+  "crt": "/path/to/cert",     // 证书路径
+  "key": "/path/to/key"       // 密钥路径
 }
 ```
 
@@ -858,11 +861,16 @@ function displaySystemStatus() {
       if (info.cpu !== -1) {
         console.log(`CPU使用率: ${info.cpu}%`);
       }
-      if (info.ram !== -1) {
-        console.log(`RAM使用率: ${info.ram}%`);
+      if (info.mem_total > 0) {
+        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
+        console.log(`内存使用率: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+      }
+      if (info.swap_total > 0) {
+        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
+        console.log(`交换区使用率: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
       }
     } else {
-      console.log('CPU、RAM、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
+      console.log('CPU、内存、交换区、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
     }
     
     // 显示网络I/O统计（累计值）
@@ -883,9 +891,10 @@ function displaySystemStatus() {
 - **版本验证**：在部署更新后检查版本号
 - **运行时间监控**：监控运行时间以检测意外重启
 - **日志级别验证**：确认当前日志级别符合预期
-- **资源监控**：在Linux系统上，监控CPU、RAM、网络I/O、磁盘I/O使用情况以确保最佳性能
-  - CPU使用率通过解析`/proc/loadavg`计算（1分钟负载平均值）
-  - RAM使用率通过解析`/proc/meminfo`计算（已用内存百分比）
+- **资源监控**：在Linux系统上，监控CPU、内存、交换区、网络I/O、磁盘I/O使用情况以确保最佳性能
+  - CPU使用率通过解析`/proc/stat`计算（非空闲时间百分比）
+  - 内存信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
+  - 交换区信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
   - 网络I/O通过解析`/proc/net/dev`计算（累计字节数，排除虚拟接口）
   - 磁盘I/O通过解析`/proc/diskstats`计算（累计字节数，仅统计主设备）
   - 系统运行时间通过解析`/proc/uptime`获取

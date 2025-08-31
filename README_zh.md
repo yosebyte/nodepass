@@ -116,19 +116,19 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 <table>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://whmcs.as211392.com"><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
     </td>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://t.me/xiao_bai_xue_zhang"><img src="https://cdn.yobc.de/assets/xuezhang.png"></a>
     </td>
   </tr>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://sharon.io"><img src="https://cdn.yobc.de/assets/sharon.png"></a>
     </td>
-    <td width="220" align="center">
-      <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
+    <td width="240" align="center">
+      <a href="https://vps.town"><img src="https://cdn.yobc.de/assets/vpstown.png"></a>
     </td>
   </tr>
 </table>

@@ -809,22 +809,25 @@ The response contains the following system information fields:
 
 ```json
 {
-  "os": "linux",          // Operating system type
-  "arch": "amd64",        // System architecture
-  "cpu": 45,              // CPU usage percentage (Linux only)
-  "ram": 67,              // RAM usage percentage (Linux only)
-  "netrx": 1048576000,    // Network received bytes (cumulative, Linux only)
-  "nettx": 2097152000,    // Network transmitted bytes (cumulative, Linux only)
-  "diskr": 4194304000,    // Disk read bytes (cumulative, Linux only)
-  "diskw": 8388608000,    // Disk write bytes (cumulative, Linux only)
-  "sysup": 86400,         // System uptime in seconds (Linux only)
-  "ver": "1.2.0",         // NodePass version
-  "name": "example.com",  // Tunnel hostname
-  "uptime": 11525,        // API uptime in seconds
-  "log": "info",          // Log level
-  "tls": "1",             // TLS enabled status
-  "crt": "/path/to/cert", // Certificate path
-  "key": "/path/to/key"   // Key path
+  "os": "linux",              // Operating system type
+  "arch": "amd64",            // System architecture
+  "cpu": 45,                  // CPU usage percentage (Linux only)
+  "mem_total": 8589934592,    // Total memory in bytes (Linux only)
+  "mem_free": 2684354560,     // Free memory in bytes (Linux only)
+  "swap_total": 3555328000,   // Total swap space in bytes (Linux only)
+  "swap_free": 3555328000,    // Free swap space in bytes (Linux only)
+  "netrx": 1048576000,        // Network received bytes (cumulative, Linux only)
+  "nettx": 2097152000,        // Network transmitted bytes (cumulative, Linux only)
+  "diskr": 4194304000,        // Disk read bytes (cumulative, Linux only)
+  "diskw": 8388608000,        // Disk write bytes (cumulative, Linux only)
+  "sysup": 86400,             // System uptime in seconds (Linux only)
+  "ver": "1.2.0",             // NodePass version
+  "name": "example.com",      // Tunnel hostname
+  "uptime": 11525,            // API uptime in seconds
+  "log": "info",              // Log level
+  "tls": "1",                 // TLS enabled status
+  "crt": "/path/to/cert",     // Certificate path
+  "key": "/path/to/key"       // Key path
 }
 ```
 
@@ -859,11 +862,16 @@ function displaySystemStatus() {
       if (info.cpu !== -1) {
         console.log(`CPU usage: ${info.cpu}%`);
       }
-      if (info.ram !== -1) {
-        console.log(`RAM usage: ${info.ram}%`);
+      if (info.mem_total > 0) {
+        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
+        console.log(`Memory usage: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+      }
+      if (info.swap_total > 0) {
+        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
+        console.log(`Swap usage: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
       }
     } else {
-      console.log('CPU, RAM, network I/O, disk I/O, and system uptime monitoring is only available on Linux systems');
+      console.log('CPU, memory, swap space, network I/O, disk I/O, and system uptime monitoring is only available on Linux systems');
     }
     
     // Display network I/O statistics (cumulative values)
@@ -884,9 +892,10 @@ function displaySystemStatus() {
 - **Version verification**: Check version number after deploying updates
 - **Uptime monitoring**: Monitor uptime to detect unexpected restarts
 - **Log level verification**: Ensure current log level meets expectations
-- **Resource monitoring**: On Linux systems, monitor CPU, RAM, network I/O, disk I/O usage to ensure optimal performance
-  - CPU usage is calculated by parsing `/proc/loadavg` (1-minute load average)
-  - RAM usage is calculated by parsing `/proc/meminfo` (used memory percentage)
+- **Resource monitoring**: On Linux systems, monitor CPU, memory, swap space, network I/O, disk I/O usage to ensure optimal performance
+  - CPU usage is calculated by parsing `/proc/stat` (percentage of non-idle time)
+  - Memory information is obtained by parsing `/proc/meminfo` (total and free memory in bytes)
+  - Swap space information is obtained by parsing `/proc/meminfo` (total and free swap space in bytes)
   - Network I/O is calculated by parsing `/proc/net/dev` (cumulative bytes, excluding virtual interfaces)
   - Disk I/O is calculated by parsing `/proc/diskstats` (cumulative bytes, major devices only)
   - System uptime is obtained by parsing `/proc/uptime`
