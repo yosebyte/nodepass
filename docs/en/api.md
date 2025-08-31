@@ -347,7 +347,20 @@ Key persistence features:
 - Instances with auto-restart enabled automatically start when master restarts
 - No need to manually re-register after restart
 
-**Note:** While instance configurations are now persistent, frontend applications should still maintain their own instance configuration records as a backup strategy.
+#### Automatic Backup Feature
+
+NodePass Master Mode provides automatic backup functionality to periodically backup state files to prevent data loss:
+
+- **Backup File**: Automatically creates `nodepass.gob.backup` backup file
+- **Backup Interval**: Automatically backs up every 1 hour (configurable via `NP_RELOAD_INTERVAL` environment variable)
+- **Backup Strategy**: Uses single backup file, new backups overwrite old backups
+- **Backup Content**: Includes all instance configurations, states, auto-restart policies, and statistics
+- **Disaster Recovery**: When the main file is corrupted, backup file can be manually used for recovery
+- **Auto Start**: Backup functionality starts automatically with master service, no additional configuration required
+
+Backup file location: `nodepass.gob.backup` in the same directory as the main state file `nodepass.gob`
+
+**Note:** While instance configurations are now persistent and automatically backed up, frontend applications should still maintain their own instance configuration records as an additional backup strategy.
 
 ### Instance Lifecycle Management
 

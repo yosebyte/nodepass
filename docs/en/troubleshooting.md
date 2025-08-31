@@ -279,6 +279,49 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Ensure the NodePass master has sufficient permissions to create processes
    - Check file system permissions for any referenced certificates or keys
 
+## Data Recovery
+
+### Master State File Corruption
+
+**Symptoms**: Master mode fails to start showing state file corruption errors, or instance data is lost.
+
+**Possible Causes and Solutions**:
+
+1. **Recovery using automatic backup file**
+   - NodePass automatically creates backup file `nodepass.gob.backup` every hour
+   - Stop the NodePass master service
+   - Copy backup file as main file: `cp nodepass.gob.backup nodepass.gob`
+   - Restart the master service
+
+2. **Manual state file recovery**
+   ```bash
+   # Stop NodePass service
+   pkill nodepass
+   
+   # Backup corrupted file (optional)
+   mv nodepass.gob nodepass.gob.corrupted
+   
+   # Use backup file
+   cp nodepass.gob.backup nodepass.gob
+   
+   # Restart service
+   nodepass "master://0.0.0.0:9090?log=info"
+   ```
+
+3. **When backup file is also corrupted**
+   - Remove corrupted state files: `rm nodepass.gob*`
+   - Restart master, which will create new state file
+   - Need to reconfigure all instances and settings
+
+4. **Preventive backup recommendations**
+   - Regularly backup `nodepass.gob` to external storage
+   - Adjust backup frequency: set environment variable `export NP_RELOAD_INTERVAL=30m`
+   - Monitor state file size, abnormal growth may indicate issues
+
+**Best Practices**:
+- In production environments, recommend regularly backing up `nodepass.gob` to different storage locations
+- Use configuration management tools to save text-form backups of instance configurations
+
 ## Next Steps
 
 If you encounter issues not covered in this guide:

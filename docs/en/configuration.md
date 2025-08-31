@@ -251,7 +251,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | Cooldown period before restart attempts | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | Timeout for graceful shutdown | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
-| `NP_RELOAD_INTERVAL` | Interval for cert/pool reload | 1h | `export NP_RELOAD_INTERVAL=30m` |
+| `NP_RELOAD_INTERVAL` | Interval for cert reload/state backup | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### Connection Pool Tuning
 
@@ -323,9 +323,9 @@ For optimizing TCP connections:
   - Lower values provide more frequent updates but increase log volume
   - Higher values reduce log output but provide less immediate visibility
 
-- `NP_RELOAD_INTERVAL`: Controls how frequently TLS certificates are checked for changes
-  - Lower values detect certificate changes faster but increase file system operations
-  - Higher values reduce overhead but delay detection of certificate updates
+- `NP_RELOAD_INTERVAL`: Controls how frequently TLS certificates are checked for changes and state backups are performed
+  - Lower values provide faster certificate change detection and more frequent backups but increase file system operations
+  - Higher values reduce overhead but delay certificate updates and backup frequency
 
 - `NP_SERVICE_COOLDOWN`: Time to wait before attempting service restarts
   - Lower values attempt recovery faster but might cause thrashing in case of persistent issues

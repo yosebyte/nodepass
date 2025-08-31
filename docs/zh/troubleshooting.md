@@ -279,6 +279,49 @@
    - 确保NodePass主控具有创建进程的足够权限
    - 检查任何引用的证书或密钥的文件系统权限
 
+## 数据恢复
+
+### 主控状态文件损坏
+
+**症状**：主控模式启动失败，显示状态文件损坏错误，或实例数据丢失。
+
+**可能的原因和解决方案**：
+
+1. **使用自动备份文件恢复**
+   - NodePass每小时自动创建备份文件 `nodepass.gob.backup`
+   - 停止NodePass主控服务
+   - 将备份文件复制为主文件：`cp nodepass.gob.backup nodepass.gob`
+   - 重新启动主控服务
+
+2. **手动状态文件恢复**
+   ```bash
+   # 停止NodePass服务
+   pkill nodepass
+   
+   # 备份损坏的文件（可选）
+   mv nodepass.gob nodepass.gob.corrupted
+   
+   # 使用备份文件
+   cp nodepass.gob.backup nodepass.gob
+   
+   # 重新启动服务
+   nodepass "master://0.0.0.0:9090?log=info"
+   ```
+
+3. **备份文件也损坏时**
+   - 删除损坏的状态文件：`rm nodepass.gob*`
+   - 重新启动主控，将创建新的状态文件
+   - 需要重新配置所有实例和设置
+
+4. **预防性备份建议**
+   - 定期备份 `nodepass.gob` 到外部存储
+   - 调整备份频率：设置环境变量 `export NP_RELOAD_INTERVAL=30m`
+   - 监控状态文件大小，异常增长可能表示问题
+
+**最佳实践**：
+- 在生产环境中，建议将 `nodepass.gob` 定期备份到不同的存储位置
+- 使用配置管理工具保存实例配置的文本形式备份
+
 ## 下一步
 
 如果您遇到本指南未涵盖的问题：

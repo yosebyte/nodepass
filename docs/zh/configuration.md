@@ -252,7 +252,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
-| `NP_RELOAD_INTERVAL` | 证书/连接池重载间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
+| `NP_RELOAD_INTERVAL` | 证书重载/状态备份间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### 连接池调优
 
