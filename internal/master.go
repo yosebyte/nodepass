@@ -118,13 +118,16 @@ type InstanceEvent struct {
 
 // SystemInfo 系统信息结构体
 type SystemInfo struct {
-	CPU   int    `json:"cpu"`   // CPU使用率 (%)
-	RAM   int    `json:"ram"`   // 内存使用率 (%)
-	NetRX uint64 `json:"netrx"` // 网络接收字节数
-	NetTX uint64 `json:"nettx"` // 网络发送字节数
-	DiskR uint64 `json:"diskr"` // 磁盘读取字节数
-	DiskW uint64 `json:"diskw"` // 磁盘写入字节数
-	SysUp uint64 `json:"sysup"` // 系统运行时间（秒）
+	CPU       int    `json:"cpu"`        // CPU使用率 (%)
+	MemTotal  uint64 `json:"mem_total"`  // 内存容量字节数
+	MemFree   uint64 `json:"mem_free"`   // 内存可用字节数
+	SwapTotal uint64 `json:"swap_total"` // 交换区容量字节数
+	SwapFree  uint64 `json:"swap_free"`  // 交换区可用字节数
+	NetRX     uint64 `json:"netrx"`      // 网络接收字节数
+	NetTX     uint64 `json:"nettx"`      // 网络发送字节数
+	DiskR     uint64 `json:"diskr"`      // 磁盘读取字节数
+	DiskW     uint64 `json:"diskw"`      // 磁盘写入字节数
+	SysUp     uint64 `json:"sysup"`      // 系统运行时间（秒）
 }
 
 // TCPingResult TCPing结果结构体
@@ -663,28 +666,34 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info := map[string]any{
-		"os":     runtime.GOOS,
-		"arch":   runtime.GOARCH,
-		"cpu":    -1,
-		"ram":    -1,
-		"netrx":  uint64(0),
-		"nettx":  uint64(0),
-		"diskr":  uint64(0),
-		"diskw":  uint64(0),
-		"sysup":  uint64(0),
-		"ver":    m.version,
-		"name":   m.hostname,
-		"uptime": uint64(time.Since(m.startTime).Seconds()),
-		"log":    m.logLevel,
-		"tls":    m.tlsCode,
-		"crt":    m.crtPath,
-		"key":    m.keyPath,
+		"os":         runtime.GOOS,
+		"arch":       runtime.GOARCH,
+		"cpu":        -1,
+		"mem_total":  uint64(0),
+		"mem_free":   uint64(0),
+		"swap_total": uint64(0),
+		"swap_free":  uint64(0),
+		"netrx":      uint64(0),
+		"nettx":      uint64(0),
+		"diskr":      uint64(0),
+		"diskw":      uint64(0),
+		"sysup":      uint64(0),
+		"ver":        m.version,
+		"name":       m.hostname,
+		"uptime":     uint64(time.Since(m.startTime).Seconds()),
+		"log":        m.logLevel,
+		"tls":        m.tlsCode,
+		"crt":        m.crtPath,
+		"key":        m.keyPath,
 	}
 
 	if runtime.GOOS == "linux" {
 		sysInfo := getLinuxSysInfo()
 		info["cpu"] = sysInfo.CPU
-		info["ram"] = sysInfo.RAM
+		info["mem_total"] = sysInfo.MemTotal
+		info["mem_free"] = sysInfo.MemFree
+		info["swap_total"] = sysInfo.SwapTotal
+		info["swap_free"] = sysInfo.SwapFree
 		info["netrx"] = sysInfo.NetRX
 		info["nettx"] = sysInfo.NetTX
 		info["diskr"] = sysInfo.DiskR
@@ -698,13 +707,16 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 // getLinuxSysInfo 获取Linux系统信息
 func getLinuxSysInfo() SystemInfo {
 	info := SystemInfo{
-		CPU:   -1,
-		RAM:   -1,
-		NetRX: 0,
-		NetTX: 0,
-		DiskR: 0,
-		DiskW: 0,
-		SysUp: 0,
+		CPU:       -1,
+		MemTotal:  0,
+		MemFree:   0,
+		SwapTotal: 0,
+		SwapFree:  0,
+		NetRX:     0,
+		NetTX:     0,
+		DiskR:     0,
+		DiskW:     0,
+		SysUp:     0,
 	}
 
 	if runtime.GOOS != "linux" {
@@ -742,22 +754,28 @@ func getLinuxSysInfo() SystemInfo {
 
 	// RAM使用率：解析/proc/meminfo
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
-		var memTotal, memFree uint64
+		var memTotal, memFree, swapTotal, swapFree uint64
 		for line := range strings.SplitSeq(string(data), "\n") {
 			if fields := strings.Fields(line); len(fields) >= 2 {
 				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					val *= 1024
 					switch fields[0] {
 					case "MemTotal:":
 						memTotal = val
 					case "MemFree:":
 						memFree = val
+					case "SwapTotal:":
+						swapTotal = val
+					case "SwapFree:":
+						swapFree = val
 					}
 				}
 			}
 		}
-		if memTotal > 0 {
-			info.RAM = min(int((memTotal-memFree)*100/memTotal), 100)
-		}
+		info.MemTotal = memTotal
+		info.MemFree = memFree
+		info.SwapTotal = swapTotal
+		info.SwapFree = swapFree
 	}
 
 	// 网络I/O：解析/proc/net/dev
@@ -1650,7 +1668,10 @@ func generateOpenAPISpec() string {
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
 		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
-		  "ram": {"type": "integer", "description": "RAM usage percentage"},
+		  "mem_total": {"type": "integer", "format": "int64", "description": "Total memory in bytes"},
+		  "mem_free": {"type": "integer", "format": "int64", "description": "Free memory in bytes"},
+		  "swap_total": {"type": "integer", "format": "int64", "description": "Total swap space in bytes"},
+		  "swap_free": {"type": "integer", "format": "int64", "description": "Free swap space in bytes"},
 		  "netrx": {"type": "integer", "format": "int64", "description": "Network received bytes"},
 		  "nettx": {"type": "integer", "format": "int64", "description": "Network transmitted bytes"},
 		  "diskr": {"type": "integer", "format": "int64", "description": "Disk read bytes"},
