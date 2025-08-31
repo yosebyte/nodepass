@@ -80,6 +80,7 @@ type Master struct {
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	tcpingSem     chan struct{}       // TCPing并发控制
 	startTime     time.Time           // 启动时间
+	backupDone    chan struct{}       // 备份停止信号
 }
 
 // Instance 实例信息
@@ -314,6 +315,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		notifyChannel: make(chan *InstanceEvent, semaphoreLimit),
 		tcpingSem:     make(chan struct{}, tcpingSemLimit),
 		startTime:     time.Now(),
+		backupDone:    make(chan struct{}),
 	}
 	master.tunnelTCPAddr = host
 
@@ -322,6 +324,9 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 	// 启动事件分发器
 	go master.startEventDispatcher()
+
+	// 启动定期备份
+	go master.startPeriodicBackup()
 
 	return master
 }
@@ -516,6 +521,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
+		// 关闭定期备份
+		close(m.backupDone)
+
 		// 关闭事件通知通道，停止事件分发器
 		close(m.notifyChannel)
 
@@ -535,6 +543,11 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
+	return m.saveStateToPath(m.statePath)
+}
+
+// saveStateToPath 保存实例状态到指定路径
+func (m *Master) saveStateToPath(filePath string) error {
 	if !m.stateMu.TryLock() {
 		return nil
 	}
@@ -553,20 +566,20 @@ func (m *Master) saveState() error {
 	// 如果没有实例，直接返回
 	if len(persistentData) == 0 {
 		// 如果状态文件存在，删除它
-		if _, err := os.Stat(m.statePath); err == nil {
-			return os.Remove(m.statePath)
+		if _, err := os.Stat(filePath); err == nil {
+			return os.Remove(filePath)
 		}
 		return nil
 	}
 
 	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(m.statePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		m.logger.Error("Create state dir failed: %v", err)
 		return err
 	}
 
 	// 创建临时文件
-	tempFile, err := os.CreateTemp(filepath.Dir(m.statePath), "np-*.tmp")
+	tempFile, err := os.CreateTemp(filepath.Dir(filePath), "np-*.tmp")
 	if err != nil {
 		m.logger.Error("Create temp failed: %v", err)
 		return err
@@ -597,13 +610,32 @@ func (m *Master) saveState() error {
 	}
 
 	// 原子地替换文件
-	if err := os.Rename(tempPath, m.statePath); err != nil {
+	if err := os.Rename(tempPath, filePath); err != nil {
 		m.logger.Error("Rename temp failed: %v", err)
 		removeTemp()
 		return err
 	}
 
 	return nil
+}
+
+// startPeriodicBackup 启动定期备份
+func (m *Master) startPeriodicBackup() {
+	for {
+		select {
+		case <-time.After(ReloadInterval):
+			// 固定备份文件名
+			backupPath := fmt.Sprintf("%s.backup", m.statePath)
+
+			if err := m.saveStateToPath(backupPath); err != nil {
+				m.logger.Error("Backup state failed: %v", err)
+			} else {
+				m.logger.Info("State backup saved: %v", backupPath)
+			}
+		case <-m.backupDone:
+			return
+		}
+	}
 }
 
 // loadState 从文件加载实例状态
