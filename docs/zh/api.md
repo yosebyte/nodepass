@@ -65,6 +65,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "mode": 0,
   "ping": 0,
   "pool": 0,
   "tcps": 0,
@@ -76,6 +77,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 }
 ```
 
+- `mode`：实例运行模式
 - `ping`/`pool`：健康检查数据
 - `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
@@ -791,16 +793,17 @@ API响应中的实例对象包含以下字段：
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
   "restart": true,            // 自启动策略
-  "tcprx": 1024,             // TCP接收字节数
-  "tcptx": 2048,             // TCP发送字节数
-  "udprx": 512,              // UDP接收字节数
-  "udptx": 256               // UDP发送字节数
+  "mode": 0,                  // 运行模式
+  "tcprx": 1024,              // TCP接收字节数
+  "tcptx": 2048,              // TCP发送字节数
+  "udprx": 512,               // UDP接收字节数
+  "udptx": 256                // UDP发送字节数
 }
 ```
 
 **注意：** 
 - `alias` 字段为可选，如果未设置则为空字符串
-- 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
+- `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
 
 ## 系统信息端点

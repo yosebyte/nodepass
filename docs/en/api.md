@@ -65,6 +65,7 @@ API Key authentication is enabled by default, automatically generated and saved 
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "mode": 0,
   "ping": 0,
   "pool": 0,
   "tcps": 0,
@@ -76,6 +77,7 @@ API Key authentication is enabled by default, automatically generated and saved 
 }
 ```
 
+- `mode`: Instance mode
 - `ping`/`pool`: Health check data
 - `tcps`/`udps`: Current active connection count statistics
 - `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
@@ -792,16 +794,17 @@ The instance object in API responses contains the following fields:
   "status": "running",        // Instance status: running, stopped, or error
   "url": "server://...",      // Instance configuration URL
   "restart": true,            // Auto-restart policy
-  "tcprx": 1024,             // TCP received bytes
-  "tcptx": 2048,             // TCP transmitted bytes
-  "udprx": 512,              // UDP received bytes
-  "udptx": 256               // UDP transmitted bytes
+  "mode": 0,                  // Instance mode
+  "tcprx": 1024,              // TCP received bytes
+  "tcptx": 2048,              // TCP transmitted bytes
+  "udprx": 512,               // UDP received bytes
+  "udptx": 256                // UDP transmitted bytes
 }
 ```
 
 **Note:** 
 - `alias` field is optional, empty string if not set
-- Traffic statistics fields (tcprx, tcptx, udprx, udptx) are only valid when debug mode is enabled
+- `mode` field indicates the current runtime mode of the instance
 - `restart` field controls the auto-restart behavior of the instance
 
 ## System Information Endpoint
