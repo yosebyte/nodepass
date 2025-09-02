@@ -109,8 +109,10 @@ func (s *Server) start() error {
 		s.dataFlow = "+"
 	default: // 自动判断
 		if err := s.initTargetListener(); err == nil {
+			s.runMode = "1"
 			s.dataFlow = "-"
 		} else {
+			s.runMode = "2"
 			s.dataFlow = "+"
 		}
 	}

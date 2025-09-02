@@ -102,8 +102,10 @@ func (c *Client) start() error {
 		return c.commonStart()
 	default: // 自动判断
 		if err := c.initTunnelListener(); err == nil {
+			c.runMode = "1"
 			return c.singleStart()
 		} else {
+			c.runMode = "2"
 			return c.commonStart()
 		}
 	}
