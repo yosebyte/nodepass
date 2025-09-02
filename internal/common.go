@@ -485,7 +485,7 @@ func (c *Common) stop() {
 	}
 
 	// 发送检查点事件
-	c.logger.Event("CHECK_POINT|PING=0ms|POOL=0|TCPS=0|UDPS=0|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v",
+	c.logger.Event("CHECK_POINT|MODE=%v|PING=0ms|POOL=0|TCPS=0|UDPS=0|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v", c.runMode,
 		atomic.LoadUint64(&c.tcpRX), atomic.LoadUint64(&c.tcpTX),
 		atomic.LoadUint64(&c.udpRX), atomic.LoadUint64(&c.udpTX))
 }
@@ -914,8 +914,8 @@ func (c *Common) commonOnce() error {
 				}
 			case "o": // PONG
 				// 发送检查点事件
-				c.logger.Event("CHECK_POINT|PING=%vms|POOL=%v|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v",
-					time.Since(c.checkPoint).Milliseconds(), c.tunnelPool.Active(),
+				c.logger.Event("CHECK_POINT|MODE=%v|PING=%vms|POOL=%v|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v",
+					c.runMode, time.Since(c.checkPoint).Milliseconds(), c.tunnelPool.Active(),
 					atomic.LoadInt32(&c.tcpSlot), atomic.LoadInt32(&c.udpSlot),
 					atomic.LoadUint64(&c.tcpRX), atomic.LoadUint64(&c.tcpTX),
 					atomic.LoadUint64(&c.udpRX), atomic.LoadUint64(&c.udpTX))
@@ -1163,7 +1163,7 @@ func (c *Common) singleEventLoop() error {
 		}
 
 		// 发送检查点事件
-		c.logger.Event("CHECK_POINT|PING=%vms|POOL=0|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v", ping,
+		c.logger.Event("CHECK_POINT|MODE=%v|PING=%vms|POOL=0|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v", c.runMode, ping,
 			atomic.LoadInt32(&c.tcpSlot), atomic.LoadInt32(&c.udpSlot),
 			atomic.LoadUint64(&c.tcpRX), atomic.LoadUint64(&c.tcpTX),
 			atomic.LoadUint64(&c.udpRX), atomic.LoadUint64(&c.udpTX))
