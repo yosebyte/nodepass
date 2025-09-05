@@ -684,14 +684,6 @@ func (c *Common) commonTCPLoop() {
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
-			// 监听上下文，避免泄漏
-			go func() {
-				<-c.ctx.Done()
-				if remoteConn != nil {
-					remoteConn.Close()
-				}
-			}()
-
 			// 构建并发送启动URL到客户端
 			launchURL := &url.URL{
 				Scheme:   "np",
@@ -785,14 +777,6 @@ func (c *Common) commonUDPLoop() {
 					// 清理UDP会话
 					c.targetUDPSession.Delete(sessionKey)
 					c.releaseSlot(true)
-				}()
-
-				// 监听上下文，避免泄漏
-				go func() {
-					<-c.ctx.Done()
-					if remoteConn != nil {
-						remoteConn.Close()
-					}
 				}()
 
 				buffer := getUDPBuffer()
@@ -1033,14 +1017,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 
-		// 监听上下文，避免泄漏
-		go func() {
-			<-c.ctx.Done()
-			if remoteConn != nil {
-				remoteConn.Close()
-			}
-		}()
-
 		buffer := getUDPBuffer()
 		defer putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
@@ -1074,14 +1050,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	go func() {
 		defer func() { done <- struct{}{} }()
-
-		// 监听上下文，避免泄漏
-		go func() {
-			<-c.ctx.Done()
-			if targetConn != nil {
-				targetConn.Close()
-			}
-		}()
 
 		buffer := getUDPBuffer()
 		defer putUDPBuffer(buffer)
@@ -1221,14 +1189,6 @@ func (c *Common) singleTCPLoop() error {
 				}
 			}()
 
-			// 监听上下文，避免泄漏
-			go func() {
-				<-c.ctx.Done()
-				if tunnelConn != nil {
-					tunnelConn.Close()
-				}
-			}()
-
 			// 尝试建立目标连接
 			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 			if err != nil {
@@ -1323,14 +1283,6 @@ func (c *Common) singleUDPLoop() error {
 						targetConn.Close()
 					}
 					c.releaseSlot(true)
-				}()
-
-				// 监听上下文，避免泄漏
-				go func() {
-					<-c.ctx.Done()
-					if targetConn != nil {
-						targetConn.Close()
-					}
 				}()
 
 				buffer := getUDPBuffer()
