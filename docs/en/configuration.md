@@ -127,7 +127,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 
 ## Data Read Timeout
 Data read timeout can be set using the URL query parameter `read`, with units in seconds or minutes:
-- `read`: Data read timeout (default: 10 minutes)
+- `read`: Data read timeout (default: 1 hour)
+  - Value format: integer followed by optional unit (`s` for seconds, `m` for minutes)
+  - Examples: `30s` (30 seconds), `5m` (5 minutes), `1h` (1 hour)
+  - Applies to both client and server modes
+  - If no data is received within the timeout period, the connection is closed
 
 Example:
 ```bash
@@ -241,7 +245,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |

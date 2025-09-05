@@ -127,7 +127,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 
 ## 数据读取超时
 数据读取超时可以通过URL查询参数`read`设置，单位为秒或分钟：
-- `read`: 数据读取超时时间（默认: 10分钟）
+- `read`: 数据读取超时时间（默认: 1小时）
+  - 值格式：整数后跟可选单位（`s`表示秒，`m`表示分钟）
+  - 示例：`30s`（30秒），`5m`（5分钟），`1h`（1小时）
+  - 适用于客户端和服务端模式
+  - 如果在超时时间内未接收到数据，连接将被关闭
 
 示例：
 ```bash
@@ -242,7 +246,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
