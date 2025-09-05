@@ -64,7 +64,7 @@ type Common struct {
 
 // 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                        // 信号量限制
+	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
 	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 2048)                      // UDP缓冲区大小
 	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 10*time.Second)       // 握手超时
 	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 30*time.Second)        // TCP拨号超时
