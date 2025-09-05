@@ -65,7 +65,7 @@ type Common struct {
 // 配置变量，可通过环境变量调整
 var (
 	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 1024)                        // 信号量限制
-	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 8192)                      // UDP缓冲区大小
+	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 2048)                      // UDP缓冲区大小
 	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 10*time.Second)       // 握手超时
 	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 30*time.Second)        // TCP拨号超时
 	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second)        // UDP拨号超时
@@ -241,7 +241,7 @@ func (c *Common) getReadTimeout(parsedURL *url.URL) {
 			c.readTimeout = value
 		}
 	} else {
-		c.readTimeout = 10 * time.Minute
+		c.readTimeout = 1 * time.Hour
 	}
 }
 
@@ -1253,7 +1253,7 @@ func (c *Common) singleTCPLoop() error {
 
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
-			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, 0))
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout))
 		}(tunnelConn)
 	}
 }
@@ -1335,7 +1335,7 @@ func (c *Common) singleUDPLoop() error {
 
 				buffer := getUDPBuffer()
 				defer putUDPBuffer(buffer)
-				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: 0}
+				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 
 				for {
 					if c.ctx.Err() != nil {
