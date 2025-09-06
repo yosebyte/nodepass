@@ -98,6 +98,8 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: 简单易用的 NodePass 一键脚本合集，包括 API 主控、Dash 面板的安装部署、灵活配置和辅助管理。
 
+- **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: 开发分支，包含新功能预览和性能优化测试，适合高级用户和开发者。
+
 ## 💬 讨论
 
 - 关注我们的 [Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。

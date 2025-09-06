@@ -98,6 +98,8 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: A collection of one-click scripts that provide simple deployment for API or Dashboard with flexible configuration and management.
 
+- **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: Development branch, featuring previews of new functionalities and performance optimizations, suitable for advanced users and developers.
+
 ## 💬 Discussion
 
 - Follow our [Telegram Channel](https://t.me/NodePassChannel) for updates and community support.
