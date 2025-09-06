@@ -6,10 +6,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -30,38 +32,49 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
-			dataFlow:   "+",
 			logger:     logger,
-			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tlsConfig: tlsConfig,
 	}
-	// 初始化公共字段
-	server.getTunnelKey(parsedURL)
-	server.getPoolCapacity(parsedURL)
-	server.getAddress(parsedURL)
+	server.initConfig(parsedURL)
+	server.initRateLimiter()
 	return server
 }
 
 // Run 管理服务端生命周期
 func (s *Server) Run() {
-	s.logger.Info("Server started: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
+	logInfo := func(prefix string) {
+		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v",
+			prefix, s.tunnelKey, s.tunnelTCPAddr, s.targetTCPAddr,
+			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit)
+	}
+	logInfo("Server started")
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// 启动服务端并处理重启
 	go func() {
 		for {
-			time.Sleep(serviceCooldown)
-			if err := s.start(); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			// 启动服务端
+			if err := s.start(); err != nil && err != io.EOF {
 				s.logger.Error("Server error: %v", err)
+				// 重启服务端
 				s.stop()
-				s.logger.Info("Server restarted: %v@%v/%v", s.tunnelKey, s.tunnelAddr, s.targetTCPAddr)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(serviceCooldown):
+				}
+				logInfo("Server restarting")
 			}
 		}
 	}()
 
 	// 监听系统信号以优雅关闭
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
 	stop()
 
@@ -85,9 +98,23 @@ func (s *Server) start() error {
 		return err
 	}
 
-	// 通过是否监听成功判断数据流向
-	if err := s.initTargetListener(); err == nil {
+	// 运行模式判断
+	switch s.runMode {
+	case "1": // 反向模式
+		if err := s.initTargetListener(); err != nil {
+			return err
+		}
 		s.dataFlow = "-"
+	case "2": // 正向模式
+		s.dataFlow = "+"
+	default: // 自动判断
+		if err := s.initTargetListener(); err == nil {
+			s.runMode = "1"
+			s.dataFlow = "-"
+		} else {
+			s.runMode = "2"
+			s.dataFlow = "+"
+		}
 	}
 
 	// 与客户端进行握手
@@ -107,13 +134,11 @@ func (s *Server) start() error {
 		s.tlsConfig,
 		s.tunnelListener,
 		reportInterval)
-
 	go s.tunnelPool.ServerManager()
 
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}
-
 	return s.commonControl()
 }
 
@@ -121,21 +146,33 @@ func (s *Server) start() error {
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
 	for {
+		if s.ctx.Err() != nil {
+			return s.ctx.Err()
+		}
+
 		tunnelTCPConn, err := s.tunnelListener.Accept()
 		if err != nil {
 			s.logger.Error("Accept error: %v", err)
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
 		}
 
-		tunnelTCPConn.SetReadDeadline(time.Now().Add(tcpReadTimeout))
+		tunnelTCPConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 
 		bufReader := bufio.NewReader(tunnelTCPConn)
 		rawTunnelKey, err := bufReader.ReadString('\n')
 		if err != nil {
 			s.logger.Warn("Handshake timeout: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
 		}
 
@@ -145,23 +182,29 @@ func (s *Server) tunnelHandshake() error {
 		if tunnelKey != s.tunnelKey {
 			s.logger.Warn("Access denied: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
-			time.Sleep(serviceCooldown)
+			select {
+			case <-s.ctx.Done():
+				return s.ctx.Err()
+			case <-time.After(serviceCooldown):
+			}
 			continue
-		} else {
-			s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-			s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: tcpReadTimeout})
-			s.tunnelTCPConn.SetKeepAlive(true)
-			s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
-
-			// 记录客户端IP
-			s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
-			break
 		}
+
+		s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
+		s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: 2 * reportInterval})
+		s.tunnelTCPConn.SetKeepAlive(true)
+		s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+
+		// 记录客户端IP
+		s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
+		break
 	}
 
-	// 构建并发送隧道URL到客户端
+	// 发送客户端配置
 	tunnelURL := &url.URL{
-		Host:     s.dataFlow,
+		Scheme:   "np",
+		Host:     strconv.Itoa(s.maxPoolCapacity),
+		Path:     s.dataFlow,
 		Fragment: s.tlsCode,
 	}
 

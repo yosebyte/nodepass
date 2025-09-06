@@ -40,7 +40,7 @@
 - **⚙️ 极简配置方式**
   - 无需配置文件，仅命令行参数即可运行，适合自动化和快速迭代。
   - 适配 CI/CD 流程与容器环境，极大提升部署和运维效率。
-  - 支持环境变量性能调优，灵活适应不同运行环境。
+  - 支持超时、限速等高级参数调优，灵活适应不同运行环境。
 
 - **📈 高性能优化**
   - 智能流量调度与自动连接调优，极低资源占用。
@@ -98,6 +98,8 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: 简单易用的 NodePass 一键脚本合集，包括 API 主控、Dash 面板的安装部署、灵活配置和辅助管理。
 
+- **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: 开发分支，包含新功能预览和性能优化测试，适合高级用户和开发者。
+
 ## 💬 讨论
 
 - 关注我们的 [Telegram 频道](https://t.me/NodePassChannel) 获取最新更新和社区支持。
@@ -116,19 +118,19 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 <table>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://whmcs.as211392.com"><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
     </td>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://t.me/xiao_bai_xue_zhang"><img src="https://cdn.yobc.de/assets/xuezhang.png"></a>
     </td>
   </tr>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://sharon.io"><img src="https://cdn.yobc.de/assets/sharon.png"></a>
     </td>
-    <td width="220" align="center">
-      <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
+    <td width="240" align="center">
+      <a href="https://vps.town"><img src="https://cdn.yobc.de/assets/vpstown.png"></a>
     </td>
   </tr>
 </table>

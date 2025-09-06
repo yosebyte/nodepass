@@ -31,11 +31,13 @@ import (
 
 // 常量定义
 const (
-	openAPIVersion = "v1"           // OpenAPI版本
-	stateFilePath  = "gob"          // 实例状态持久化文件路径
-	stateFileName  = "nodepass.gob" // 实例状态持久化文件名
-	sseRetryTime   = 3000           // 重试间隔时间（毫秒）
-	apiKeyID       = "********"     // API Key的特殊ID
+	openAPIVersion = "v1"                   // OpenAPI版本
+	stateFilePath  = "gob"                  // 实例状态持久化文件路径
+	stateFileName  = "nodepass.gob"         // 实例状态持久化文件名
+	sseRetryTime   = 3000                   // 重试间隔时间（毫秒）
+	apiKeyID       = "********"             // API Key的特殊ID
+	tcpingSemLimit = 10                     // TCPing最大并发数
+	baseDuration   = 100 * time.Millisecond // 基准持续时间
 )
 
 // Swagger UI HTML模板
@@ -76,26 +78,36 @@ type Master struct {
 	stateMu       sync.Mutex          // 持久化文件写入互斥锁
 	subscribers   sync.Map            // SSE订阅者映射表
 	notifyChannel chan *InstanceEvent // 事件通知通道
+	tcpingSem     chan struct{}       // TCPing并发控制
 	startTime     time.Time           // 启动时间
+	backupDone    chan struct{}       // 备份停止信号
 }
 
 // Instance 实例信息
 type Instance struct {
-	ID         string             `json:"id"`        // 实例ID
-	Alias      string             `json:"alias"`     // 实例别名
-	Type       string             `json:"type"`      // 实例类型
-	Status     string             `json:"status"`    // 实例状态
-	URL        string             `json:"url"`       // 实例URL
-	Restart    bool               `json:"restart"`   // 是否自启动
-	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
-	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
-	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
-	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
-	Pool       int64              `json:"pool"`      // 健康检查池连接数
-	Ping       int64              `json:"ping"`      // 健康检查端内延迟
-	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
-	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
-	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+	ID             string             `json:"id"`        // 实例ID
+	Alias          string             `json:"alias"`     // 实例别名
+	Type           string             `json:"type"`      // 实例类型
+	Status         string             `json:"status"`    // 实例状态
+	URL            string             `json:"url"`       // 实例URL
+	Restart        bool               `json:"restart"`   // 是否自启动
+	Mode           int32              `json:"mode"`      // 实例模式
+	Ping           int32              `json:"ping"`      // 端内延迟
+	Pool           int32              `json:"pool"`      // 池连接数
+	TCPS           int32              `json:"tcps"`      // TCP连接数
+	UDPS           int32              `json:"udps"`      // UDP连接数
+	TCPRX          uint64             `json:"tcprx"`     // TCP接收字节数
+	TCPTX          uint64             `json:"tcptx"`     // TCP发送字节数
+	UDPRX          uint64             `json:"udprx"`     // UDP接收字节数
+	UDPTX          uint64             `json:"udptx"`     // UDP发送字节数
+	TCPRXBase      uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
+	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
+	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
+	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
+	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
 // InstanceEvent 实例事件信息
@@ -106,25 +118,96 @@ type InstanceEvent struct {
 	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
 }
 
+// SystemInfo 系统信息结构体
+type SystemInfo struct {
+	CPU       int    `json:"cpu"`        // CPU使用率 (%)
+	MemTotal  uint64 `json:"mem_total"`  // 内存容量字节数
+	MemFree   uint64 `json:"mem_free"`   // 内存可用字节数
+	SwapTotal uint64 `json:"swap_total"` // 交换区容量字节数
+	SwapFree  uint64 `json:"swap_free"`  // 交换区可用字节数
+	NetRX     uint64 `json:"netrx"`      // 网络接收字节数
+	NetTX     uint64 `json:"nettx"`      // 网络发送字节数
+	DiskR     uint64 `json:"diskr"`      // 磁盘读取字节数
+	DiskW     uint64 `json:"diskw"`      // 磁盘写入字节数
+	SysUp     uint64 `json:"sysup"`      // 系统运行时间（秒）
+}
+
+// TCPingResult TCPing结果结构体
+type TCPingResult struct {
+	Target    string  `json:"target"`
+	Connected bool    `json:"connected"`
+	Latency   int64   `json:"latency"`
+	Error     *string `json:"error"`
+}
+
+// handleTCPing 处理TCPing请求
+func (m *Master) handleTCPing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		httpError(w, "Target address required", http.StatusBadRequest)
+		return
+	}
+
+	// 执行TCPing
+	result := m.performTCPing(target)
+	writeJSON(w, http.StatusOK, result)
+}
+
+// performTCPing 执行单次TCPing
+func (m *Master) performTCPing(target string) *TCPingResult {
+	result := &TCPingResult{
+		Target:    target,
+		Connected: false,
+		Latency:   0,
+		Error:     nil,
+	}
+
+	// 并发控制
+	select {
+	case m.tcpingSem <- struct{}{}:
+		defer func() { <-m.tcpingSem }()
+	case <-time.After(time.Second):
+		errMsg := "too many requests"
+		result.Error = &errMsg
+		return result
+	}
+
+	start := time.Now()
+	conn, err := net.DialTimeout("tcp", target, reportInterval)
+	if err != nil {
+		errMsg := err.Error()
+		result.Error = &errMsg
+		return result
+	}
+
+	result.Connected = true
+	result.Latency = time.Since(start).Milliseconds()
+	conn.Close()
+	return result
+}
+
 // InstanceLogWriter 实例日志写入器
 type InstanceLogWriter struct {
-	instanceID  string         // 实例ID
-	instance    *Instance      // 实例对象
-	target      io.Writer      // 目标写入器
-	master      *Master        // 主控对象
-	statRegex   *regexp.Regexp // 统计信息正则表达式
-	healthRegex *regexp.Regexp // 健康检查正则表达式
+	instanceID string         // 实例ID
+	instance   *Instance      // 实例对象
+	target     io.Writer      // 目标写入器
+	master     *Master        // 主控对象
+	checkPoint *regexp.Regexp // 检查点正则表达式
 }
 
 // NewInstanceLogWriter 创建新的实例日志写入器
 func NewInstanceLogWriter(instanceID string, instance *Instance, target io.Writer, master *Master) *InstanceLogWriter {
 	return &InstanceLogWriter{
-		instanceID:  instanceID,
-		instance:    instance,
-		target:      target,
-		master:      master,
-		statRegex:   regexp.MustCompile(`TRAFFIC_STATS\|TCP_RX=(\d+)\|TCP_TX=(\d+)\|UDP_RX=(\d+)\|UDP_TX=(\d+)`),
-		healthRegex: regexp.MustCompile(`HEALTH_CHECKS\|POOL=(\d+)\|PING=(\d+)ms`),
+		instanceID: instanceID,
+		instance:   instance,
+		target:     target,
+		master:     master,
+		checkPoint: regexp.MustCompile(`CHECK_POINT\|MODE=(\d+)\|PING=(\d+)ms\|POOL=(\d+)\|TCPS=(\d+)\|UDPS=(\d+)\|TCPRX=(\d+)\|TCPTX=(\d+)\|UDPRX=(\d+)\|UDPTX=(\d+)`),
 	}
 }
 
@@ -135,33 +218,41 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		// 解析并处理统计信息
-		if matches := w.statRegex.FindStringSubmatch(line); len(matches) == 5 {
+		// 解析并处理检查点信息
+		if matches := w.checkPoint.FindStringSubmatch(line); len(matches) == 10 {
+			// matches[1] = MODE, matches[2] = PING, matches[3] = POOL, matches[4] = TCPS, matches[5] = UDPS, matches[6] = TCPRX, matches[7] = TCPTX, matches[8] = UDPRX, matches[9] = UDPTX
+			if mode, err := strconv.ParseInt(matches[1], 10, 32); err == nil {
+				w.instance.Mode = int32(mode)
+			}
+			if ping, err := strconv.ParseInt(matches[2], 10, 32); err == nil {
+				w.instance.Ping = int32(ping)
+			}
+			if pool, err := strconv.ParseInt(matches[3], 10, 32); err == nil {
+				w.instance.Pool = int32(pool)
+			}
+			if tcps, err := strconv.ParseInt(matches[4], 10, 32); err == nil {
+				w.instance.TCPS = int32(tcps)
+			}
+			if udps, err := strconv.ParseInt(matches[5], 10, 32); err == nil {
+				w.instance.UDPS = int32(udps)
+			}
+
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
+			bases := []uint64{w.instance.TCPRXBase, w.instance.TCPTXBase, w.instance.UDPRXBase, w.instance.UDPTXBase}
 			for i, stat := range stats {
-				if v, err := strconv.ParseUint(matches[i+1], 10, 64); err == nil {
-					// 累加新的统计数据
-					*stat += v
+				if v, err := strconv.ParseUint(matches[i+6], 10, 64); err == nil {
+					*stat = bases[i] + v
 				}
 			}
+
+			w.instance.lastCheckPoint = time.Now()
 			w.master.instances.Store(w.instanceID, w.instance)
-			// 过滤统计日志
-			continue
-		}
-		// 解析并处理健康检查信息
-		if matches := w.healthRegex.FindStringSubmatch(line); len(matches) == 3 {
-			if v, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
-				w.instance.Pool = v
-			}
-			if v, err := strconv.ParseInt(matches[2], 10, 64); err == nil {
-				w.instance.Ping = v
-			}
-			w.master.instances.Store(w.instanceID, w.instance)
-			// 发送健康检查更新事件
+			// 发送检查点更新事件
 			w.master.sendSSEEvent("update", w.instance)
-			// 过滤检查日志
+			// 过滤检查点日志
 			continue
 		}
+
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 
@@ -225,8 +316,10 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		tlsConfig:     tlsConfig,
 		masterURL:     parsedURL,
 		statePath:     filepath.Join(baseDir, stateFilePath, stateFileName),
-		notifyChannel: make(chan *InstanceEvent, 1024),
+		notifyChannel: make(chan *InstanceEvent, semaphoreLimit),
+		tcpingSem:     make(chan struct{}, tcpingSemLimit),
 		startTime:     time.Now(),
+		backupDone:    make(chan struct{}),
 	}
 	master.tunnelTCPAddr = host
 
@@ -236,12 +329,15 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动事件分发器
 	go master.startEventDispatcher()
 
+	// 启动定期备份
+	go master.startPeriodicBackup()
+
 	return master
 }
 
 // Run 管理主控生命周期
 func (m *Master) Run() {
-	m.logger.Info("Master started: %v%v", m.tunnelAddr, m.prefix)
+	m.logger.Info("Master started: %v%v", m.tunnelTCPAddr, m.prefix)
 
 	// 初始化API Key
 	apiKey, ok := m.findInstance(apiKeyID)
@@ -267,6 +363,7 @@ func (m *Master) Run() {
 		fmt.Sprintf("%s/instances/", m.prefix): m.handleInstanceDetail,
 		fmt.Sprintf("%s/events", m.prefix):     m.handleSSE,
 		fmt.Sprintf("%s/info", m.prefix):       m.handleInfo,
+		fmt.Sprintf("%s/tcping", m.prefix):     m.handleTCPing,
 	}
 
 	// 创建不需要API Key认证的端点
@@ -395,7 +492,7 @@ func (m *Master) Shutdown(ctx context.Context) error {
 		})
 
 		// 等待所有订阅者处理完关闭事件
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 
 		// 关闭所有订阅者通道
 		m.subscribers.Range(func(key, value any) bool {
@@ -428,6 +525,9 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
+		// 关闭定期备份
+		close(m.backupDone)
+
 		// 关闭事件通知通道，停止事件分发器
 		close(m.notifyChannel)
 
@@ -447,7 +547,14 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // saveState 保存实例状态到文件
 func (m *Master) saveState() error {
-	m.stateMu.Lock()
+	return m.saveStateToPath(m.statePath)
+}
+
+// saveStateToPath 保存实例状态到指定路径
+func (m *Master) saveStateToPath(filePath string) error {
+	if !m.stateMu.TryLock() {
+		return nil
+	}
 	defer m.stateMu.Unlock()
 
 	// 创建持久化数据
@@ -463,20 +570,20 @@ func (m *Master) saveState() error {
 	// 如果没有实例，直接返回
 	if len(persistentData) == 0 {
 		// 如果状态文件存在，删除它
-		if _, err := os.Stat(m.statePath); err == nil {
-			return os.Remove(m.statePath)
+		if _, err := os.Stat(filePath); err == nil {
+			return os.Remove(filePath)
 		}
 		return nil
 	}
 
 	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(m.statePath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		m.logger.Error("Create state dir failed: %v", err)
 		return err
 	}
 
 	// 创建临时文件
-	tempFile, err := os.CreateTemp(filepath.Dir(m.statePath), "np-*.tmp")
+	tempFile, err := os.CreateTemp(filepath.Dir(filePath), "np-*.tmp")
 	if err != nil {
 		m.logger.Error("Create temp failed: %v", err)
 		return err
@@ -507,13 +614,32 @@ func (m *Master) saveState() error {
 	}
 
 	// 原子地替换文件
-	if err := os.Rename(tempPath, m.statePath); err != nil {
+	if err := os.Rename(tempPath, filePath); err != nil {
 		m.logger.Error("Rename temp failed: %v", err)
 		removeTemp()
 		return err
 	}
 
 	return nil
+}
+
+// startPeriodicBackup 启动定期备份
+func (m *Master) startPeriodicBackup() {
+	for {
+		select {
+		case <-time.After(ReloadInterval):
+			// 固定备份文件名
+			backupPath := fmt.Sprintf("%s.backup", m.statePath)
+
+			if err := m.saveStateToPath(backupPath); err != nil {
+				m.logger.Error("Backup state failed: %v", err)
+			} else {
+				m.logger.Info("State backup saved: %v", backupPath)
+			}
+		case <-m.backupDone:
+			return
+		}
+	}
 }
 
 // loadState 从文件加载实例状态
@@ -546,8 +672,8 @@ func (m *Master) loadState() {
 
 		// 处理自启动
 		if instance.Restart {
-			go m.startInstance(instance)
 			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
+			m.startInstance(instance)
 		}
 	}
 
@@ -576,18 +702,172 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info := map[string]any{
-		"os":     runtime.GOOS,
-		"arch":   runtime.GOARCH,
-		"ver":    m.version,
-		"name":   m.hostname,
-		"uptime": uint64(time.Since(m.startTime).Seconds()),
-		"log":    m.logLevel,
-		"tls":    m.tlsCode,
-		"crt":    m.crtPath,
-		"key":    m.keyPath,
+		"os":         runtime.GOOS,
+		"arch":       runtime.GOARCH,
+		"cpu":        -1,
+		"mem_total":  uint64(0),
+		"mem_free":   uint64(0),
+		"swap_total": uint64(0),
+		"swap_free":  uint64(0),
+		"netrx":      uint64(0),
+		"nettx":      uint64(0),
+		"diskr":      uint64(0),
+		"diskw":      uint64(0),
+		"sysup":      uint64(0),
+		"ver":        m.version,
+		"name":       m.hostname,
+		"uptime":     uint64(time.Since(m.startTime).Seconds()),
+		"log":        m.logLevel,
+		"tls":        m.tlsCode,
+		"crt":        m.crtPath,
+		"key":        m.keyPath,
+	}
+
+	if runtime.GOOS == "linux" {
+		sysInfo := getLinuxSysInfo()
+		info["cpu"] = sysInfo.CPU
+		info["mem_total"] = sysInfo.MemTotal
+		info["mem_free"] = sysInfo.MemFree
+		info["swap_total"] = sysInfo.SwapTotal
+		info["swap_free"] = sysInfo.SwapFree
+		info["netrx"] = sysInfo.NetRX
+		info["nettx"] = sysInfo.NetTX
+		info["diskr"] = sysInfo.DiskR
+		info["diskw"] = sysInfo.DiskW
+		info["sysup"] = sysInfo.SysUp
 	}
 
 	writeJSON(w, http.StatusOK, info)
+}
+
+// getLinuxSysInfo 获取Linux系统信息
+func getLinuxSysInfo() SystemInfo {
+	info := SystemInfo{
+		CPU:       -1,
+		MemTotal:  0,
+		MemFree:   0,
+		SwapTotal: 0,
+		SwapFree:  0,
+		NetRX:     0,
+		NetTX:     0,
+		DiskR:     0,
+		DiskW:     0,
+		SysUp:     0,
+	}
+
+	if runtime.GOOS != "linux" {
+		return info
+	}
+
+	// CPU使用率：解析/proc/stat
+	readStat := func() (idle, total uint64) {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return
+		}
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if strings.HasPrefix(line, "cpu ") {
+				fields := strings.Fields(line)
+				for i, v := range fields[1:] {
+					val, _ := strconv.ParseUint(v, 10, 64)
+					total += val
+					if i == 3 {
+						idle = val
+					}
+				}
+				break
+			}
+		}
+		return
+	}
+	idle1, total1 := readStat()
+	time.Sleep(baseDuration)
+	idle2, total2 := readStat()
+	numCPU := runtime.NumCPU()
+	if deltaIdle, deltaTotal := idle2-idle1, total2-total1; deltaTotal > 0 && numCPU > 0 {
+		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal/uint64(numCPU)), 100)
+	}
+
+	// RAM使用率：解析/proc/meminfo
+	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
+		var memTotal, memFree, swapTotal, swapFree uint64
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if fields := strings.Fields(line); len(fields) >= 2 {
+				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					val *= 1024
+					switch fields[0] {
+					case "MemTotal:":
+						memTotal = val
+					case "MemFree:":
+						memFree = val
+					case "SwapTotal:":
+						swapTotal = val
+					case "SwapFree:":
+						swapFree = val
+					}
+				}
+			}
+		}
+		info.MemTotal = memTotal
+		info.MemFree = memFree
+		info.SwapTotal = swapTotal
+		info.SwapFree = swapFree
+	}
+
+	// 网络I/O：解析/proc/net/dev
+	if data, err := os.ReadFile("/proc/net/dev"); err == nil {
+		for _, line := range strings.Split(string(data), "\n")[2:] {
+			if fields := strings.Fields(line); len(fields) >= 10 {
+				ifname := strings.TrimSuffix(fields[0], ":")
+				// 排除项
+				if strings.HasPrefix(ifname, "lo") || strings.HasPrefix(ifname, "veth") ||
+					strings.HasPrefix(ifname, "docker") || strings.HasPrefix(ifname, "podman") ||
+					strings.HasPrefix(ifname, "br-") || strings.HasPrefix(ifname, "virbr") {
+					continue
+				}
+				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+					info.NetRX += val
+				}
+				if val, err := strconv.ParseUint(fields[9], 10, 64); err == nil {
+					info.NetTX += val
+				}
+			}
+		}
+	}
+
+	// 磁盘I/O：解析/proc/diskstats
+	if data, err := os.ReadFile("/proc/diskstats"); err == nil {
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if fields := strings.Fields(line); len(fields) >= 14 {
+				deviceName := fields[2]
+				// 排除项
+				if strings.Contains(deviceName, "loop") || strings.Contains(deviceName, "ram") ||
+					strings.HasPrefix(deviceName, "dm-") || strings.HasPrefix(deviceName, "md") {
+					continue
+				}
+				if matched, _ := regexp.MatchString(`\d+$`, deviceName); matched {
+					continue
+				}
+				if val, err := strconv.ParseUint(fields[5], 10, 64); err == nil {
+					info.DiskR += val * 512
+				}
+				if val, err := strconv.ParseUint(fields[9], 10, 64); err == nil {
+					info.DiskW += val * 512
+				}
+			}
+		}
+	}
+
+	// 系统运行时间：解析/proc/uptime
+	if data, err := os.ReadFile("/proc/uptime"); err == nil {
+		if fields := strings.Fields(string(data)); len(fields) > 0 {
+			if uptime, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				info.SysUp = uint64(uptime)
+			}
+		}
+	}
+
+	return info
 }
 
 // handleInstances 处理实例集合请求
@@ -649,7 +929,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 
 		// 保存实例状态
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(baseDuration)
 			m.saveState()
 		}()
 		writeJSON(w, http.StatusCreated, instance)
@@ -800,7 +1080,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	// 如果实例正在运行，先停止它
 	if instance.Status == "running" {
 		m.stopInstance(instance)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 	}
 
 	// 更新实例URL和类型
@@ -816,7 +1096,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 
 	// 保存实例状态
 	go func() {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 		m.saveState()
 	}()
 	writeJSON(w, http.StatusOK, instance)
@@ -847,7 +1127,7 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 		if instance.Status == "running" {
 			go func() {
 				m.stopInstance(instance)
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(baseDuration)
 				m.startInstance(instance)
 			}()
 		} else {
@@ -1016,11 +1296,11 @@ func (m *Master) startInstance(instance *Instance) {
 		}
 	}
 
-	// 保存原始流量统计
-	originalTCPRX := instance.TCPRX
-	originalTCPTX := instance.TCPTX
-	originalUDPRX := instance.UDPRX
-	originalUDPTX := instance.UDPTX
+	// 启动前，记录基线
+	instance.TCPRXBase = instance.TCPRX
+	instance.TCPTXBase = instance.TCPTX
+	instance.UDPRXBase = instance.UDPRX
+	instance.UDPTXBase = instance.UDPTX
 
 	// 获取可执行文件路径
 	execPath, err := os.Executable()
@@ -1028,6 +1308,7 @@ func (m *Master) startInstance(instance *Instance) {
 		m.logger.Error("Get path failed: %v [%v]", err, instance.ID)
 		instance.Status = "error"
 		m.instances.Store(instance.ID, instance)
+		m.sendSSEEvent("update", instance)
 		return
 	}
 
@@ -1043,22 +1324,22 @@ func (m *Master) startInstance(instance *Instance) {
 	m.logger.Info("Instance starting: %v [%v]", instance.URL, instance.ID)
 
 	// 启动实例
-	if err := cmd.Start(); err != nil {
-		m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+	if err := cmd.Start(); err != nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
+		if err != nil {
+			m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+		} else {
+			m.logger.Error("Instance start failed [%v]", instance.ID)
+		}
 		instance.Status = "error"
+		m.instances.Store(instance.ID, instance)
+		m.sendSSEEvent("update", instance)
 		cancel()
-	} else {
-		instance.cmd = cmd
-		instance.Status = "running"
-
-		// 恢复原始流量统计
-		instance.TCPRX = originalTCPRX
-		instance.TCPTX = originalTCPTX
-		instance.UDPRX = originalUDPRX
-		instance.UDPTX = originalUDPTX
-
-		go m.monitorInstance(instance, cmd)
+		return
 	}
+
+	instance.cmd = cmd
+	instance.Status = "running"
+	go m.monitorInstance(instance, cmd)
 
 	m.instances.Store(instance.ID, instance)
 
@@ -1068,29 +1349,36 @@ func (m *Master) startInstance(instance *Instance) {
 
 // monitorInstance 监控实例状态
 func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
-	select {
-	case <-instance.stopped:
-		// 实例被显式停止
-		return
-	default:
-		// 等待进程完成
-		err := cmd.Wait()
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
 
-		// 获取最新的实例状态
-		if value, exists := m.instances.Load(instance.ID); exists {
-			instance = value.(*Instance)
-
-			// 仅在实例状态为running时才发送事件
-			if instance.Status == "running" {
-				if err != nil {
-					m.logger.Error("Instance error: %v [%v]", err, instance.ID)
-					instance.Status = "error"
-				} else {
-					instance.Status = "stopped"
+	for {
+		select {
+		case <-instance.stopped:
+			// 实例被显式停止
+			return
+		case err := <-done:
+			// 获取最新的实例状态
+			if value, exists := m.instances.Load(instance.ID); exists {
+				instance = value.(*Instance)
+				if instance.Status == "running" {
+					if err != nil {
+						m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+						instance.Status = "error"
+					} else {
+						instance.Status = "stopped"
+					}
+					m.instances.Store(instance.ID, instance)
+					m.sendSSEEvent("update", instance)
 				}
+			}
+			return
+		case <-time.After(reportInterval):
+			if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 5*reportInterval {
+				instance.Status = "error"
 				m.instances.Store(instance.ID, instance)
-
-				// 安全地发送停止事件，避免向已关闭的通道发送
 				m.sendSSEEvent("update", instance)
 			}
 		}
@@ -1119,7 +1407,7 @@ func (m *Master) stopInstance(instance *Instance) {
 		} else {
 			instance.cmd.Process.Signal(syscall.SIGTERM)
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(baseDuration)
 	}
 
 	// 关闭停止通道
@@ -1325,6 +1613,27 @@ func generateOpenAPISpec() string {
 		}
 	  }
 	},
+	"/tcping": {
+	  "get": {
+		"summary": "TCP connectivity test",
+		"security": [{"ApiKeyAuth": []}],
+		"parameters": [
+		  {
+			"name": "target",
+			"in": "query",
+			"required": true,
+			"schema": {"type": "string"},
+			"description": "Target address in format host:port"
+		  }
+		],
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TCPingResult"}}}},
+		  "400": {"description": "Target address required"},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
+	  }
+	},
 	"/openapi.json": {
 	  "get": {
 		"summary": "Get OpenAPI specification",
@@ -1361,12 +1670,15 @@ func generateOpenAPISpec() string {
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "mode": {"type": "integer", "description": "Instance mode"},
+	  "ping": {"type": "integer", "description": "TCPing latency"},
+	  "pool": {"type": "integer", "description": "Pool active count"},
+	  "tcps": {"type": "integer", "description": "TCP connection count"},
+	  "udps": {"type": "integer", "description": "UDP connection count"},
 	  "tcprx": {"type": "integer", "description": "TCP received bytes"},
 	  "tcptx": {"type": "integer", "description": "TCP transmitted bytes"},
 	  "udprx": {"type": "integer", "description": "UDP received bytes"},
-	  "udptx": {"type": "integer", "description": "UDP transmitted bytes"},
-	  "pool": {"type": "integer", "description": "Health check pool active"},
-	  "ping": {"type": "integer", "description": "Health check one-way latency"},
+	  "udptx": {"type": "integer", "description": "UDP transmitted bytes"}
 	}
 	 },
 	  "CreateInstanceRequest": {
@@ -1392,13 +1704,32 @@ func generateOpenAPISpec() string {
 		"properties": {
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
+		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
+		  "mem_total": {"type": "integer", "format": "int64", "description": "Total memory in bytes"},
+		  "mem_free": {"type": "integer", "format": "int64", "description": "Free memory in bytes"},
+		  "swap_total": {"type": "integer", "format": "int64", "description": "Total swap space in bytes"},
+		  "swap_free": {"type": "integer", "format": "int64", "description": "Free swap space in bytes"},
+		  "netrx": {"type": "integer", "format": "int64", "description": "Network received bytes"},
+		  "nettx": {"type": "integer", "format": "int64", "description": "Network transmitted bytes"},
+		  "diskr": {"type": "integer", "format": "int64", "description": "Disk read bytes"},
+		  "diskw": {"type": "integer", "format": "int64", "description": "Disk write bytes"},
+		  "sysup": {"type": "integer", "format": "int64", "description": "System uptime in seconds"},
 		  "ver": {"type": "string", "description": "NodePass version"},
 		  "name": {"type": "string", "description": "Hostname"},
-		  "uptime": {"type": "integer", "format": "int64", "description": "Uptime in seconds"},
+		  "uptime": {"type": "integer", "format": "int64", "description": "API uptime in seconds"},
 		  "log": {"type": "string", "description": "Log level"},
 		  "tls": {"type": "string", "description": "TLS code"},
 		  "crt": {"type": "string", "description": "Certificate path"},
 		  "key": {"type": "string", "description": "Private key path"}
+		}
+	  },
+	  "TCPingResult": {
+		"type": "object",
+		"properties": {
+		  "target": {"type": "string", "description": "Target address"},
+		  "connected": {"type": "boolean", "description": "Is connected"},
+		  "latency": {"type": "integer", "format": "int64", "description": "Latency in milliseconds"},
+		  "error": {"type": "string", "nullable": true, "description": "Error message"}
 		}
 	  }
 	}

@@ -1,9 +1,3 @@
-# NodePass API参考
-
-## 概述
-
-NodePass在主控模式（Master Mode）下提供了RESTful API，使前端应用能够以编程方式进行控制和集成。本节提供API端点、集成模式和最佳实践的全面文档。
-
 # NodePass API 参考
 
 ## 概述
@@ -48,6 +42,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | 删除实例             |
 | `/events`          | GET    | SSE 实时事件流       |
 | `/info`            | GET    | 获取主控服务信息     |
+| `/tcping`          | GET    | TCP连接测试          |
 | `/openapi.json`    | GET    | OpenAPI 规范         |
 | `/docs`            | GET    | Swagger UI 文档      |
 
@@ -55,7 +50,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`。
 
-- 受保护接口：`/instances`、`/instances/{id}`、`/events`、`/info`
+- 受保护接口：`/instances`、`/instances/{id}`、`/events`、`/info`、`/tcping`
 - 公共接口：`/openapi.json`、`/docs`
 - 认证方式：请求头加 `X-API-Key: <key>`
 - 重置 Key：PATCH `/instances/********`，body `{ "action": "restart" }`
@@ -70,16 +65,21 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "mode": 0,
+  "ping": 0,
+  "pool": 0,
+  "tcps": 0,
+  "udps": 0,
   "tcprx": 0,
   "tcptx": 0,
   "udprx": 0,
-  "udptx": 0,
-  "pool": 0,   // 健康检查池连接数
-  "ping": 0    // 健康检查延迟(ms)
+  "udptx": 0
 }
 ```
 
-- `pool`/`ping`：健康检查数据，仅 debug 模式下统计
+- `mode`：实例运行模式
+- `ping`/`pool`：健康检查数据
+- `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
 - `restart`：自启动策略
 
@@ -87,7 +87,20 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 服务端：`server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<参数>`
 - 客户端：`client://<server_host>:<server_port>/<local_host>:<local_port>?<参数>`
-- 支持参数：`tls`、`log`、`crt`、`key`
+- 支持参数：`log`、`tls`、`crt`、`key`、`min`、`max`、`mode`、`read`、`rate`
+
+### URL 查询参数
+
+- `log`：日志级别（`none`、`debug`、`info`、`warn`、`error`、`event`）
+- `tls`：TLS加密模式（`0`、`1`、`2`）- 仅服务端/主控模式
+- `crt`/`key`：证书/密钥文件路径（当`tls=2`时）
+- `min`/`max`：连接池容量（`min`由客户端设置，`max`由服务端设置并在握手时传递给客户端）
+- `mode`：运行模式控制（`0`、`1`、`2`）- 控制操作行为
+  - 对于服务端：`0`=自动，`1`=反向模式，`2`=正向模式
+  - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
+- `read`：数据读取超时时长（如1h、30m、15s）
+- `rate`：带宽速率限制，单位Mbps（0=无限制）
+- `proxy`：PROXY协议支持（`0`、`1`）- 启用后在数据传输前发送PROXY协议v1头部
 
 ### 实时事件流（SSE）
 
@@ -141,6 +154,44 @@ GET /events
 4. `delete` - 实例被删除时发送
 5. `shutdown` - 主控服务即将关闭时发送，通知前端应用关闭连接
 6. `log` - 实例产生新日志内容时发送，包含日志文本
+
+#### 处理实例日志
+
+在前端应用中，可以通过监听`log`事件来处理实例日志。以下是一个示例函数，用于将日志追加到特定实例的UI中：
+
+```javascript
+// 处理日志事件
+function appendLogToInstanceUI(instanceId, logText) {
+  // 找到或创建日志容器
+  let logContainer = document.getElementById(`logs-${instanceId}`);
+  if (!logContainer) {
+    logContainer = document.createElement('div');
+    logContainer.id = `logs-${instanceId}`;
+    document.getElementById('instance-container').appendChild(logContainer);
+  }
+
+  // 创建新的日志条目
+  const logEntry = document.createElement('div');
+  logEntry.className = 'log-entry';
+
+  // 可以在这里解析ANSI颜色代码或格式化日志
+  logEntry.textContent = logText;
+
+  // 添加到容器
+  logContainer.appendChild(logEntry);
+
+  // 滚动到最新日志
+  logContainer.scrollTop = logContainer.scrollHeight;
+}
+```
+
+日志集成最佳实践：
+
+1. **缓冲管理**：限制日志条目的数量，以防止内存问题
+2. **ANSI颜色解析**：解析日志中的ANSI颜色代码，以提高可读性
+3. **过滤选项**：提供按严重性或内容过滤日志的选项
+4. **搜索功能**：允许用户在实例日志中搜索
+5. **日志持久化**：可选地将日志保存到本地存储，以便在页面刷新后查看
 
 #### JavaScript客户端实现
 
@@ -261,36 +312,6 @@ function connectToEventSourceWithApiKey(apiKey) {
 }
 ```
 
-#### 处理实例日志
-
-新增的`log`事件类型允许实时接收和显示实例的日志输出。这对于监控和调试非常有用：
-
-```javascript
-// 处理日志事件
-function appendLogToInstanceUI(instanceId, logText) {
-  // 找到或创建日志容器
-  let logContainer = document.getElementById(`logs-${instanceId}`);
-  if (!logContainer) {
-    logContainer = document.createElement('div');
-    logContainer.id = `logs-${instanceId}`;
-    document.getElementById('instance-container').appendChild(logContainer);
-  }
-  
-  // 创建新的日志条目
-  const logEntry = document.createElement('div');
-  logEntry.className = 'log-entry';
-  
-  // 可以在这里解析ANSI颜色代码或格式化日志
-  logEntry.textContent = logText;
-  
-  // 添加到容器
-  logContainer.appendChild(logEntry);
-  
-  // 滚动到最新日志
-  logContainer.scrollTop = logContainer.scrollHeight;
-}
-```
-
 #### SSE相比轮询的优势
 
 使用SSE监控实例状态比传统轮询提供多种优势：
@@ -327,7 +348,20 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
 - 启用自启动策略的实例在主控重启时自动启动
 - 重启后无需手动重新注册
 
-**注意：** 虽然实例配置现在已经持久化，前端应用仍应保留自己的实例配置记录作为备份策略。
+#### 自动备份功能
+
+NodePass主控模式提供自动备份功能，定期备份状态文件以防止数据丢失：
+
+- **备份文件**：自动创建 `nodepass.gob.backup` 备份文件
+- **备份周期**：每1小时自动备份一次（可通过环境变量 `NP_RELOAD_INTERVAL` 配置）
+- **备份策略**：使用单一备份文件，新备份会覆盖旧备份
+- **备份内容**：包含所有实例配置、状态、自启动策略和统计数据
+- **故障恢复**：当主文件损坏时，可手动使用备份文件恢复
+- **自动启动**：备份功能随主控服务自动启动，无需额外配置
+
+备份文件位置：与主状态文件 `nodepass.gob` 相同目录下的 `nodepass.gob.backup`
+
+**注意：** 虽然实例配置现在已经持久化并自动备份，前端应用仍应保留自己的实例配置记录作为额外的备份策略。
 
 ### 实例生命周期管理
 
@@ -502,7 +536,7 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ restart: enableAutoStart })
      });
@@ -511,13 +545,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      return data.success;
    }
    
-   // 组合操作：控制实例并更新自启动策略
    async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ 
          action: action,
@@ -529,13 +562,12 @@ NodePass主控模式现在支持使用gob序列化格式进行实例持久化。
      return data.success;
    }
    
-   // 组合操作：同时更新别名、控制实例和自启动策略
    async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // 如果启用了API Key
+         'X-API-Key': apiKey
        },
        body: JSON.stringify({ 
          alias: alias,
@@ -761,16 +793,17 @@ API响应中的实例对象包含以下字段：
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
   "restart": true,            // 自启动策略
-  "tcprx": 1024,             // TCP接收字节数
-  "tcptx": 2048,             // TCP发送字节数
-  "udprx": 512,              // UDP接收字节数
-  "udptx": 256               // UDP发送字节数
+  "mode": 0,                  // 运行模式
+  "tcprx": 1024,              // TCP接收字节数
+  "tcptx": 2048,              // TCP发送字节数
+  "udprx": 512,               // UDP接收字节数
+  "udptx": 256                // UDP发送字节数
 }
 ```
 
 **注意：** 
 - `alias` 字段为可选，如果未设置则为空字符串
-- 流量统计字段（tcprx、tcptx、udprx、udptx）仅在启用调试模式时有效
+- `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
 
 ## 系统信息端点
@@ -791,15 +824,25 @@ GET /info
 
 ```json
 {
-  "os": "linux",          // 操作系统类型
-  "arch": "amd64",        // 系统架构
-  "ver": "1.2.0",         // NodePass版本
-  "name": "example.com",  // 隧道主机名
-  "uptime": 11525,         // API运行时间（秒）
-  "log": "info",          // 日志级别
-  "tls": "1",             // TLS启用状态
-  "crt": "/path/to/cert", // 证书路径
-  "key": "/path/to/key"   // 密钥路径
+  "os": "linux",              // 操作系统类型
+  "arch": "amd64",            // 系统架构
+  "cpu": 45,                  // CPU使用率百分比（仅Linux系统）
+  "mem_total": 8589934592,    // 内存容量（字节，仅Linux系统）
+  "mem_free": 2684354560,     // 内存可用（字节，仅Linux系统）
+  "swap_total": 3555328000,   // 交换区总量（字节，仅Linux系统）
+  "swap_free": 3555328000,    // 交换区可用（字节，仅Linux系统）
+  "netrx": 1048576000,        // 网络接收字节数（累计值，仅Linux）
+  "nettx": 2097152000,        // 网络发送字节数（累计值，仅Linux）
+  "diskr": 4194304000,        // 磁盘读取字节数（累计值，仅Linux）
+  "diskw": 8388608000,        // 磁盘写入字节数（累计值，仅Linux）
+  "sysup": 86400,             // 系统运行时间（秒，仅Linux）
+  "ver": "1.2.0",             // NodePass版本
+  "name": "example.com",      // 隧道主机名
+  "uptime": 11525,            // API运行时间（秒）
+  "log": "info",              // 日志级别
+  "tls": "1",                 // TLS启用状态
+  "crt": "/path/to/cert",     // 证书路径
+  "key": "/path/to/key"       // 密钥路径
 }
 ```
 
@@ -818,15 +861,42 @@ async function getSystemInfo() {
   return await response.json();
 }
 
-// 显示服务运行时间
-function displayServiceUptime() {
+// 显示服务运行时间和系统资源使用情况
+function displaySystemStatus() {
   getSystemInfo().then(info => {
     console.log(`服务已运行: ${info.uptime} 秒`);
-    // 也可以格式化为更友好的显示
+    
+    // 格式化运行时间为更友好的显示
     const hours = Math.floor(info.uptime / 3600);
     const minutes = Math.floor((info.uptime % 3600) / 60);
     const seconds = info.uptime % 60;
     console.log(`服务已运行: ${hours}小时${minutes}分${seconds}秒`);
+    
+    // 显示系统资源使用情况（仅Linux系统）
+    if (info.os === 'linux') {
+      if (info.cpu !== -1) {
+        console.log(`CPU使用率: ${info.cpu}%`);
+      }
+      if (info.mem_total > 0) {
+        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
+        console.log(`内存使用率: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+      }
+      if (info.swap_total > 0) {
+        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
+        console.log(`交换区使用率: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+      }
+    } else {
+      console.log('CPU、内存、交换区、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
+    }
+    
+    // 显示网络I/O统计（累计值）
+    if (info.os === 'linux') {
+      console.log(`网络接收: ${(info.netrx / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`网络发送: ${(info.nettx / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`磁盘读取: ${(info.diskr / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`磁盘写入: ${(info.diskw / 1024 / 1024).toFixed(2)} MB（累计）`);
+      console.log(`系统运行时间: ${Math.floor(info.sysup / 3600)}小时`);
+    }
   });
 }
 ```
@@ -837,6 +907,15 @@ function displayServiceUptime() {
 - **版本验证**：在部署更新后检查版本号
 - **运行时间监控**：监控运行时间以检测意外重启
 - **日志级别验证**：确认当前日志级别符合预期
+- **资源监控**：在Linux系统上，监控CPU、内存、交换区、网络I/O、磁盘I/O使用情况以确保最佳性能
+  - CPU使用率通过解析`/proc/stat`计算（非空闲时间百分比）
+  - 内存信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
+  - 交换区信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
+  - 网络I/O通过解析`/proc/net/dev`计算（累计字节数，排除虚拟接口）
+  - 磁盘I/O通过解析`/proc/diskstats`计算（累计字节数，仅统计主设备）
+  - 系统运行时间通过解析`/proc/uptime`获取
+  - 值为-1或0表示系统信息不可用（非Linux系统）
+  - 网络和磁盘I/O字段提供的是累计值，前端应用需要存储历史数据并计算差值来得到实时速率（字节/秒）
 
 ## API端点文档
 
@@ -992,7 +1071,23 @@ await fetch(`${API_URL}/instances/abc123`, {
 #### GET /info
 - **描述**：获取主控服务信息
 - **认证**：需要API Key
-- **响应**：包含系统信息、版本、运行时间等
+- **响应**：包含系统信息、版本、运行时间、CPU和RAM使用率等
+
+#### GET /tcping
+- **描述**：TCP连接测试，检测目标地址的连通性和延迟
+- **认证**：需要API Key
+- **参数**：
+  - `target`（必需）：目标地址，格式为 `host:port`
+- **响应**：
+  ```json
+  {
+    "target": "example.com:80",
+    "connected": true,
+    "latency": 45,
+    "error": null
+  }
+  ```
+- **示例**：`GET /api/tcping?target=fast.com:443`
 
 #### GET /openapi.json
 - **描述**：获取OpenAPI 3.1.1规范
@@ -1015,7 +1110,7 @@ server://<bind_address>:<bind_port>/<target_host>:<target_port>?<parameters>
 
 示例：
 - `server://0.0.0.0:8080/localhost:3000` - 在8080端口监听，转发到本地3000端口
-- `server://0.0.0.0:9090/localhost:8080?tls=1` - 启用TLS的服务器
+- `server://0.0.0.0:9090/localhost:8080?tls=1&mode=1` - 启用TLS的服务器，强制反向模式
 
 #### 客户端模式 (Client Mode)
 ```
@@ -1024,13 +1119,19 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 示例：
 - `client://example.com:8080/localhost:3000` - 连接到远程服务器，本地监听3000端口
-- `client://vpn.example.com:443/localhost:22?tls=1` - 通过TLS连接到VPN服务器
+- `client://remote.example.com:443/localhost:22?mode=2&min=32` - 通过远程服务器，强制双端模式
 
 #### 支持的参数
 
-| 参数 | 描述 | 值 | 默认值 |
-|------|------|----|----|
-| `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` |
-| `log` | 日志级别 | `trace`, `debug`, `info`, `warn`, `error` | `info` |
-| `crt` | 证书路径 | 文件路径 | 无 |
-| `key` | 私钥路径 | 文件路径 | 无 |
+| 参数 | 描述 | 值 | 默认值 | 适用范围 |
+|------|------|----|----|---------|
+| `log` | 日志级别 | `none`, `debug`, `info`, `warn`, `error`, `event` | `info` | 两者 |
+| `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` | 仅服务器 |
+| `crt` | 证书路径 | 文件路径 | 无 | 仅服务器 |
+| `key` | 私钥路径 | 文件路径 | 无 | 仅服务器 |
+| `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
+| `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端双端握手模式 |
+| `max` | 最大连接池容量 | 整数 > 0 | `1024` | 双端握手模式 |
+| `read` | 读取超时时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `10m` | 两者 |
+| `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |
+| `proxy` | PROXY协议支持 | `0`(禁用), `1`(启用) | `0` | 两者 |

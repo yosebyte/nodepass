@@ -40,7 +40,7 @@ English | [简体中文](README_zh.md)
 - **⚙️ Minimal Configuration**
   - No config files required, ready to use via CLI.
   - Optimized for CI/CD and containers.
-  - Flexible tuning via environment variables.
+  - Advanced parameters like timeouts and rate limits.
 
 - **📈 Performance**
   - Intelligent scheduling, auto-tuning, ultra-low resource usage.
@@ -98,6 +98,8 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: A collection of one-click scripts that provide simple deployment for API or Dashboard with flexible configuration and management.
 
+- **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: Development branch, featuring previews of new functionalities and performance optimizations, suitable for advanced users and developers.
+
 ## 💬 Discussion
 
 - Follow our [Telegram Channel](https://t.me/NodePassChannel) for updates and community support.
@@ -116,19 +118,19 @@ This project is provided "as is" without any warranties. Users assume all risks 
 
 <table>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://whmcs.as211392.com"><img src="https://cdn.yobc.de/assets/dreamcloud.png"></a>
     </td>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://t.me/xiao_bai_xue_zhang"><img src="https://cdn.yobc.de/assets/xuezhang.png"></a>
     </td>
   </tr>
   <tr>
-    <td width="220" align="center">
+    <td width="240" align="center">
       <a href="https://sharon.io"><img src="https://cdn.yobc.de/assets/sharon.png"></a>
     </td>
-    <td width="220" align="center">
-      <a href="https://zmto.com"><img src="https://cdn.yobc.de/assets/zmto.png"></a>
+    <td width="240" align="center">
+      <a href="https://vps.town"><img src="https://cdn.yobc.de/assets/vpstown.png"></a>
     </td>
   </tr>
 </table>

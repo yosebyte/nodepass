@@ -47,18 +47,168 @@ TLS模式2示例（自定义证书）：
 nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
-## 连接池容量参数
+## 运行模式控制
 
-连接池容量可以通过URL查询参数进行配置：
+NodePass支持通过`mode`查询参数配置运行模式，以控制客户端和服务端实例的行为。这在自动模式检测不适合的部署场景中提供了灵活性。
 
-- `min`: 最小连接池容量（默认: 64）
-- `max`: 最大连接池容量（默认: 1024）
+### 客户端模式控制
+
+对于客户端实例，`mode`参数控制连接策略：
+
+- **模式0**（默认）：自动模式检测
+  - 首先尝试本地绑定隧道地址
+  - 如果成功，以单端转发模式运行
+  - 如果绑定失败，以双端握手模式运行
+  
+- **模式1**：强制单端转发模式
+  - 本地绑定隧道地址并直接转发流量到目标
+  - 使用直接连接建立实现高性能
+  - 无需与服务器握手
+  
+- **模式2**：强制双端握手模式
+  - 始终连接到远程服务器建立隧道
+  - 数据传输前需要与服务器握手
+  - 支持双向数据流协调
 
 示例：
 ```bash
-# 设置最小连接池为32，最大为4096
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32&max=4096"
+# 强制客户端以单端转发模式运行
+nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1"
+
+# 强制客户端以双端握手模式运行
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 ```
+
+### 服务端模式控制
+
+对于服务端实例，`mode`参数控制数据流方向：
+
+- **模式0**（默认）：自动流向检测
+  - 首先尝试本地绑定目标地址
+  - 如果成功，以反向模式运行（服务器接收流量）
+  - 如果绑定失败，以正向模式运行（服务器发送流量）
+  
+- **模式1**：强制反向模式
+  - 服务器本地绑定目标地址并接收流量
+  - 入站连接转发到已连接的客户端
+  - 数据流：外部 → 服务器 → 客户端 → 目标
+  
+- **模式2**：强制正向模式
+  - 服务器连接到远程目标地址
+  - 客户端连接转发到远程目标
+  - 数据流：客户端 → 服务器 → 外部目标
+
+示例：
+```bash
+# 强制服务器以反向模式运行
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1"
+
+# 强制服务器以正向模式运行
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
+```
+
+## 连接池容量参数
+
+连接池容量参数仅适用于双端握手模式，通过不同方式进行配置：
+
+- `min`: 最小连接池容量（默认: 64）- 由客户端通过URL查询参数设置
+- `max`: 最大连接池容量（默认: 1024）- 由服务端确定，在握手过程中下发给客户端
+
+**重要说明**：
+- 客户端设置的`max`参数会被服务端在握手时传递的值覆盖
+- `min`参数由客户端完全控制，服务端不会修改此值
+- 在客户端单端转发模式下，不使用连接池，这些参数被忽略
+
+示例：
+```bash
+# 客户端设置最小连接池为32，最大连接池将由服务端决定
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
+```
+
+## 数据读取超时
+数据读取超时可以通过URL查询参数`read`设置，单位为秒或分钟：
+- `read`: 数据读取超时时间（默认: 1小时）
+  - 值格式：整数后跟可选单位（`s`表示秒，`m`表示分钟）
+  - 示例：`30s`（30秒），`5m`（5分钟），`1h`（1小时）
+  - 适用于客户端和服务端模式
+  - 如果在超时时间内未接收到数据，连接将被关闭
+
+示例：
+```bash
+# 设置数据读取超时为5分钟
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
+
+# 设置数据读取超时为30秒，适用于快速响应应用
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
+
+# 设置数据读取超时为30分钟，适用于长时间传输
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30m"
+```
+
+## 速率限制
+NodePass支持通过`rate`参数进行带宽速率限制，用于流量控制。此功能有助于防止网络拥塞，确保多个连接间的公平资源分配。
+
+- `rate`: 最大带宽限制，单位为Mbps（兆比特每秒）
+  - 值为0或省略：无速率限制（无限带宽）
+  - 正整数：以Mbps为单位的速率限制（例如，10表示10 Mbps）
+  - 同时应用于上传和下载流量
+  - 使用令牌桶算法进行平滑流量整形
+
+示例：
+```bash
+# 限制带宽为50 Mbps
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?rate=50"
+
+# 客户端100 Mbps速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?rate=100"
+
+# 与其他参数组合使用
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=error&tls=1&rate=50"
+```
+
+**速率限制使用场景：**
+- **带宽控制**：防止NodePass消耗所有可用带宽
+- **公平共享**：确保多个应用程序可以共享网络资源
+- **成本管理**：在按流量计费的网络环境中控制数据使用
+- **QoS合规**：满足带宽使用的服务级别协议
+- **测试**：模拟低带宽环境进行应用程序测试
+
+## PROXY协议支持
+
+NodePass支持PROXY协议v1，用于在通过负载均衡器、反向代理或其他中介服务转发流量时保留客户端连接信息。
+
+- `proxy`：PROXY协议支持（默认：0）
+  - 值0：禁用 - 不发送PROXY协议头部
+  - 值1：启用 - 在数据传输前发送PROXY协议v1头部
+  - 支持TCP4和TCP6连接
+  - 兼容HAProxy、Nginx和其他支持PROXY协议的服务
+
+PROXY协议头部包含原始客户端IP、服务器IP和端口信息，即使流量通过NodePass隧道，也允许下游服务识别真实的客户端连接详情。
+
+示例：
+```bash
+# 为服务端模式启用PROXY协议v1
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?proxy=1"
+
+# 为客户端模式启用PROXY协议v1
+nodepass "client://server.example.com:10101/127.0.0.1:8080?proxy=1"
+
+# 与其他参数组合使用
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
+```
+
+**PROXY协议使用场景：**
+- **负载均衡器集成**：通过负载均衡器转发时保留客户端IP信息
+- **反向代理支持**：使后端服务能够看到原始客户端连接
+- **日志和分析**：维护准确的客户端连接日志用于安全和分析
+- **访问控制**：允许下游服务应用基于IP的访问控制
+- **合规性**：满足连接日志记录和审计的监管要求
+
+**重要说明：**
+- 目标服务必须支持PROXY协议v1才能正确处理头部
+- PROXY头部仅对TCP连接发送，不支持UDP
+- 头部格式遵循HAProxy PROXY协议v1规范
+- 如果目标服务不支持PROXY协议，将导致连接失败
 
 ## URL查询参数配置及作用范围
 
@@ -71,7 +221,12 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `crt`     | 自定义证书路径       |   O    |   X    |   O    |
 | `key`     | 自定义密钥路径       |   O    |   X    |   O    |
 | `min`     | 最小连接池容量       |   X    |   O    |   X    |
-| `max`     | 最大连接池容量       |   O    |   O    |   X    |
+| `max`     | 最大连接池容量       |   O    |   X    |   X    |
+| `mode`    | 运行模式控制         |   O    |   O    |   X    |
+| `read`    | 读取超时时间         |   O    |   O    |   X    |
+| `rate`    | 带宽速率限制         |   O    |   O    |   X    |
+| `slot`    | 最大连接数限制       |   O    |   O    |   X    |
+| `proxy`   | PROXY协议支持        |   O    |   O    |   X    |
 
 
 - O：参数有效，推荐根据实际场景配置
@@ -79,7 +234,9 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 **最佳实践：**
 - server/master 模式建议配置安全相关参数（如 tls、crt、key），提升数据通道安全性。
-- client 模式建议根据流量和资源情况调整连接池容量（min/max），优化性能。
+- client/server 双端握手模式建议根据流量和资源情况调整连接池容量（min/max），优化性能。
+- 当自动检测不符合部署需求时或需要跨环境一致行为时，使用运行模式控制（mode）。
+- 配置速率限制（rate）以控制带宽使用，防止共享环境中的网络拥塞。
 - 日志级别（log）可在所有模式下灵活调整，便于运维和排查。
 
 ## 环境变量
@@ -88,22 +245,22 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
-| `NP_SEMAPHORE_LIMIT` | 最大并发连接数 | 1024 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 8192 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 20s | `export NP_UDP_READ_TIMEOUT=30s` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 20s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_TCP_READ_TIMEOUT` | TCP读取操作超时 | 20s | `export NP_TCP_READ_TIMEOUT=30s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 20s | `export NP_TCP_DIAL_TIMEOUT=30s` |
-| `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 1s | `export NP_MIN_POOL_INTERVAL=500ms` |
-| `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 5s | `export NP_MAX_POOL_INTERVAL=3s` |
+| `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
+| `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
 | `NP_SERVICE_COOLDOWN` | 重启尝试前的冷却期 | 3s | `export NP_SERVICE_COOLDOWN=5s` |
 | `NP_SHUTDOWN_TIMEOUT` | 优雅关闭超时 | 5s | `export NP_SHUTDOWN_TIMEOUT=10s` |
-| `NP_RELOAD_INTERVAL` | 证书/连接池重载间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
+| `NP_RELOAD_INTERVAL` | 证书重载/状态备份间隔 | 1h | `export NP_RELOAD_INTERVAL=30m` |
 
 ### 连接池调优
 
-连接池参数是性能调优中的重要设置：
+连接池参数是双端握手模式下性能调优中的重要设置，在客户端单端转发模式下不适用：
 
 #### 池容量设置
 
@@ -121,18 +278,18 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 - `NP_MIN_POOL_INTERVAL`：控制连接创建尝试之间的最小时间
   - 太低：可能以连接尝试压垮网络
-  - 推荐范围：根据网络延迟，500ms-2s
+  - 推荐范围：根据网络延迟和预期负载，100ms-500ms
 
 - `NP_MAX_POOL_INTERVAL`：控制连接创建尝试之间的最大时间
   - 太高：流量高峰期可能导致池耗尽
-  - 推荐范围：根据预期流量模式，3s-10s
+  - 推荐范围：根据预期流量模式，1s-5s
 
 #### 连接管理
 
-- `NP_SEMAPHORE_LIMIT`：控制最大并发隧道操作数
-  - 太低：流量高峰期拒绝连接
-  - 太高：太多并发goroutine可能导致内存压力
-  - 推荐范围：大多数应用1000-5000，高吞吐量场景更高
+- `NP_SEMAPHORE_LIMIT`：控制信号缓冲区大小
+  - 太小：容易导致信号丢失
+  - 太大：内存使用增加
+  - 推荐范围：1000-5000
 
 ### UDP设置
 
@@ -143,27 +300,27 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 默认值(8192)适用于大多数情况
   - 考虑为媒体流或游戏服务器增加到16384或更高
 
-- `NP_UDP_READ_TIMEOUT`：UDP读取操作超时
-  - 对于高延迟网络或响应时间慢的应用增加此值
-  - 对于需要快速故障转移的低延迟应用减少此值
-
-- `NP_UDP_DIAL_TIMEOUT`：UDP拨号超时
-  - 对于高延迟网络增加此值
-  - 对于需要快速连接的应用减少此值
+- `NP_UDP_DIAL_TIMEOUT`：UDP连接建立超时
+  - 默认值(10s)为大多数应用提供良好平衡
+  - 对于高延迟网络或响应缓慢的应用增加此值
+  - 对于需要快速故障切换的低延迟应用减少此值
 
 ### TCP设置
 
 对于TCP连接的优化：
 
-- `NP_TCP_READ_TIMEOUT`：TCP读取操作超时
-  - 对于高延迟网络或响应慢的服务器增加此值
-  - 对于需要快速检测断开连接的应用降低此值
-  - 影响数据传输过程中的等待时间
-
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
+  - 默认值(30s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
   - 对于需要快速判断连接成功与否的应用减少此值
-  - 影响初始连接建立阶段
+
+### 连接池管理设置
+
+- `NP_POOL_GET_TIMEOUT`：从连接池获取连接时的最大等待时间
+  - 默认值(30s)为连接建立提供充足时间
+  - 对于高延迟环境或使用大型连接池时增加此值
+  - 对于需要快速故障检测的应用减少此值
+  - 在客户端单端转发模式下不使用连接池，此参数被忽略
 
 ### 服务管理设置
 
@@ -193,15 +350,20 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&max=8192"
+# 高吞吐量服务器，1 Gbps速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000"
+
+# 高吞吐量客户端，500 Mbps速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500"
 ```
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=500ms
-export NP_MAX_POOL_INTERVAL=3s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
 export NP_UDP_DATA_BUF_SIZE=32768
+export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s
 ```
 
@@ -211,15 +373,21 @@ export NP_REPORT_INTERVAL=10s
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&max=4096"
+# 低延迟服务器，适度速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200"
+
+# 低延迟客户端，适度速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&rate=200"
 ```
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=100ms
-export NP_MAX_POOL_INTERVAL=1s
+export NP_MIN_POOL_INTERVAL=50ms
+export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=4096
-export NP_UDP_READ_TIMEOUT=5s
+export NP_TCP_DIAL_TIMEOUT=5s
+export NP_UDP_DIAL_TIMEOUT=5s
+export NP_POOL_GET_TIMEOUT=15s
 export NP_REPORT_INTERVAL=1s
 ```
 
@@ -229,14 +397,21 @@ export NP_REPORT_INTERVAL=1s
 
 URL参数：
 ```bash
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&max=512"
+# 资源受限服务器，保守速率限制
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50"
+
+# 资源受限客户端，保守速率限制
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&rate=50"
 ```
 
 环境变量：
 ```bash
-export NP_MIN_POOL_INTERVAL=2s
-export NP_MAX_POOL_INTERVAL=10s
+export NP_MIN_POOL_INTERVAL=200ms
+export NP_MAX_POOL_INTERVAL=2s
 export NP_SEMAPHORE_LIMIT=512
+export NP_TCP_DIAL_TIMEOUT=20s
+export NP_UDP_DIAL_TIMEOUT=20s
+export NP_POOL_GET_TIMEOUT=45s
 export NP_REPORT_INTERVAL=30s
 export NP_SHUTDOWN_TIMEOUT=3s
 ```

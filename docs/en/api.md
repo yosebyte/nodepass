@@ -2,23 +2,16 @@
 
 ## Overview
 
-NodePass offers a RESTful API in Master Mode that enables programmatic control and integration with frontend applications. This section provides comprehensive d     // Configure auto-start policy for new instance based on type
-     if (data.success) {
-
-# NodePass API Reference
-
-## Overview
-
-NodePass provides a RESTful API in Master Mode for programmatic control and frontend integration. This document covers all endpoints, data structures, and best practices.
+NodePass provides RESTful API in Master Mode, supporting frontend integration and automation. This document covers all interfaces, data structures, and best practices.
 
 ## Master Mode API
 
-When running in `master://` mode, NodePass supports:
+In Master Mode (`master://`), NodePass supports:
 
 1. Creating and managing server/client instances
 2. Real-time monitoring of status, traffic, and health checks
 3. Instance control (start, stop, restart, reset traffic)
-4. Configurable auto-start policy
+4. Auto-restart policy configuration
 5. Flexible parameter configuration
 
 ### Base URL
@@ -27,7 +20,7 @@ When running in `master://` mode, NodePass supports:
 master://<api_addr>/<prefix>?<log>&<tls>
 ```
 
-- `<api_addr>`: Listen address (e.g. `0.0.0.0:9090`)
+- `<api_addr>`: Listen address (e.g., `0.0.0.0:9090`)
 - `<prefix>`: API path prefix (default `/api`)
 
 ### Starting Master Mode
@@ -39,27 +32,28 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 
 ### Main Endpoints
 
-| Endpoint           | Method | Description           |
-|--------------------|--------|----------------------|
-| `/instances`       | GET    | List all instances   |
-| `/instances`       | POST   | Create new instance  |
-| `/instances/{id}`  | GET    | Get instance details |
-| `/instances/{id}`  | PATCH  | Update/control       |
-| `/instances/{id}`  | PUT    | Update instance URL  |
-| `/instances/{id}`  | DELETE | Delete instance      |
-| `/events`          | GET    | SSE event stream     |
-| `/info`            | GET    | Master info          |
-| `/openapi.json`    | GET    | OpenAPI spec         |
-| `/docs`            | GET    | Swagger UI           |
+| Endpoint           | Method | Description              |
+|--------------------|--------|--------------------------|
+| `/instances`       | GET    | Get all instances        |
+| `/instances`       | POST   | Create new instance      |
+| `/instances/{id}`  | GET    | Get instance details     |
+| `/instances/{id}`  | PATCH  | Update/control instance  |
+| `/instances/{id}`  | PUT    | Update instance URL      |
+| `/instances/{id}`  | DELETE | Delete instance          |
+| `/events`          | GET    | SSE real-time event stream |
+| `/info`            | GET    | Get master service info  |
+| `/tcping`          | GET    | TCP connection test      |
+| `/openapi.json`    | GET    | OpenAPI specification    |
+| `/docs`            | GET    | Swagger UI documentation |
 
 ### API Authentication
 
-API Key authentication is enabled by default. The key is auto-generated and stored in `nodepass.gob`.
+API Key authentication is enabled by default, automatically generated and saved in `nodepass.gob` on first startup.
 
-- Protected: `/instances`, `/instances/{id}`, `/events`, `/info`
-- Public: `/openapi.json`, `/docs`
-- Use header: `X-API-Key: <key>`
-- Regenerate: PATCH `/instances/********` with `{ "action": "restart" }`
+- Protected endpoints: `/instances`, `/instances/{id}`, `/events`, `/info`, `/tcping`
+- Public endpoints: `/openapi.json`, `/docs`
+- Authentication method: Add `X-API-Key: <key>` to request headers
+- Reset Key: PATCH `/instances/********`, body `{ "action": "restart" }`
 
 ### Instance Data Structure
 
@@ -71,62 +65,100 @@ API Key authentication is enabled by default. The key is auto-generated and stor
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "mode": 0,
+  "ping": 0,
+  "pool": 0,
+  "tcps": 0,
+  "udps": 0,
   "tcprx": 0,
   "tcptx": 0,
   "udprx": 0,
-  "udptx": 0,
-  "pool": 0,   // Health check pool size
-  "ping": 0    // Health check ping (ms)
+  "udptx": 0
 }
 ```
 
-- `pool`/`ping`: health check data, only available in debug mode
-- `tcprx`/`tcptx`/`udprx`/`udptx`: cumulative traffic stats
-- `restart`: auto-start policy
+- `mode`: Instance mode
+- `ping`/`pool`: Health check data
+- `tcps`/`udps`: Current active connection count statistics
+- `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
+- `restart`: Auto-restart policy
 
 ### Instance URL Format
 
-- Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<params>`
-- Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<params>`
-- Supported params: `tls`, `log`, `crt`, `key`
+- Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<parameters>`
+- Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>`
+- Supported parameters: `log`, `tls`, `crt`, `key`, `min`, `max`, `mode`, `read`, `rate`
 
-### Real-time Events (SSE)
+### URL Query Parameters
+
+- `log`: Log level (`none`, `debug`, `info`, `warn`, `error`, `event`)
+- `tls`: TLS encryption mode (`0`, `1`, `2`) - Server/Master mode only
+- `crt`/`key`: Certificate/key file paths (when `tls=2`)
+- `min`/`max`: Connection pool capacity (`min` set by client, `max` set by server and passed to client during handshake)
+- `mode`: Runtime mode control (`0`, `1`, `2`) - Controls operation behavior
+  - For server: `0`=auto, `1`=reverse mode, `2`=forward mode
+  - For client: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
+- `read`: Data read timeout duration (e.g., 1h, 30m, 15s)
+- `rate`: Bandwidth rate limit in Mbps (0=unlimited)
+- `proxy`: PROXY protocol support (`0`, `1`) - When enabled, sends PROXY protocol v1 header before data transmission
+
+### Real-time Event Stream (SSE)
 
 - Event types: `initial`, `create`, `update`, `delete`, `shutdown`, `log`
-- Only normal logs are sent in `log` events; traffic/health logs are filtered
-- Connect to `/events` for real-time instance and log updates
+- `log` events only push normal logs, traffic/health check logs are filtered
+- Connect to `/events` for real-time instance changes and logs
 
 ### Additional Notes
 
-- All instance, traffic, health, alias, and auto-start data are persisted and restored after restart
-- Full OpenAPI spec: `/openapi.json`, Swagger UI: `/docs`
-### Real-time Event Monitoring with SSE
+- All instances, traffic, health checks, aliases, and auto-restart policies are persistently stored and automatically restored after restart
+- Detailed API specification at `/openapi.json`, Swagger UI at `/docs`
 
-NodePass now supports Server-Sent Events (SSE) for real-time monitoring of instance state changes. This allows frontend applications to receive instant notifications about instance creation, updates, and deletions without polling.
+```javascript
+// Regenerate API Key (requires knowing current API Key)
+async function regenerateApiKey() {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'current-api-key'
+    },
+    body: JSON.stringify({ action: 'restart' })
+  });
+  
+  const result = await response.json();
+  return result.url; // New API Key
+}
+```
+
+**Note**: API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+
+### Using SSE for Real-time Event Monitoring
+
+NodePass now supports Server-Sent Events (SSE) functionality for real-time monitoring of instance state changes. This enables frontend applications to receive immediate notifications of instance creation, updates, and deletions without the need for polling.
 
 #### Using the SSE Endpoint
 
-The SSE endpoint is available at:
+The SSE endpoint is located at:
 ```
 GET /events
 ```
 
-This endpoint establishes a persistent connection that delivers events in real-time using the SSE protocol format.
+This endpoint establishes a persistent connection and delivers events in real-time using the SSE protocol format. If API Key authentication is enabled, you need to include a valid API Key in the request headers.
 
 #### Event Types
 
 The following event types are supported:
 
-1. `initial` - Sent when a connection is established, containing the current state of all instances
+1. `initial` - Sent when connection is established, contains current state of all instances
 2. `create` - Sent when a new instance is created
-3. `update` - Sent when an instance is updated (status change, start/stop operations)
+3. `update` - Sent when an instance is updated (state changes, start/stop operations)
 4. `delete` - Sent when an instance is deleted
-5. `shutdown` - Sent when the master service is about to shut down, notifying frontend applications to close their connections
-6. `log` - Sent when an instance produces new log content, including the log text
+5. `shutdown` - Sent when the master service is about to shut down, notifying frontend applications to close connections
+6. `log` - Sent when an instance produces new log content, contains log text
 
 #### Handling Instance Logs
 
-The new `log` event type allows for real-time reception and display of instance log output. This is useful for monitoring and debugging:
+In frontend applications, you can handle instance logs by listening to `log` events. Here's an example function to append logs to a specific instance's UI:
 
 ```javascript
 // Handle log events
@@ -138,43 +170,43 @@ function appendLogToInstanceUI(instanceId, logText) {
     logContainer.id = `logs-${instanceId}`;
     document.getElementById('instance-container').appendChild(logContainer);
   }
-  
+
   // Create new log entry
   const logEntry = document.createElement('div');
   logEntry.className = 'log-entry';
-  
-  // Can parse ANSI color codes or format logs here
+
+  // You can parse ANSI color codes or format logs here
   logEntry.textContent = logText;
-  
+
   // Add to container
   logContainer.appendChild(logEntry);
-  
+
   // Scroll to latest log
   logContainer.scrollTop = logContainer.scrollHeight;
 }
 ```
 
-When implementing log handling, consider the following best practices:
+Best practices for log integration:
 
-1. **Buffer Management**: Limit the number of log entries to prevent memory issues
-2. **ANSI Color Parsing**: Parse ANSI color codes in logs for better readability
-3. **Filtering Options**: Provide options to filter logs by severity or content
-4. **Search Functionality**: Allow users to search within instance logs
-5. **Log Persistence**: Optionally save logs to local storage for review after page refresh
+1. **Buffer management**: Limit the number of log entries to prevent memory issues
+2. **ANSI color parsing**: Parse ANSI color codes in logs for better readability
+3. **Filtering options**: Provide options to filter logs by severity or content
+4. **Search functionality**: Allow users to search within instance logs
+5. **Log persistence**: Optionally save logs to local storage for viewing after page refresh
 
 #### JavaScript Client Implementation
 
-Here's an example of how to consume the SSE endpoint in a JavaScript frontend:
+Here's an example of consuming the SSE endpoint in JavaScript frontend:
 
 ```javascript
 function connectToEventSource() {
   const eventSource = new EventSource(`${API_URL}/events`, {
     // If authentication is needed, native EventSource doesn't support custom headers
-    // Need to use fetch API to implement a custom SSE client
+    // Need to use fetch API to implement custom SSE client
   });
   
-  // If using API Key, use custom implementation instead of native EventSource
-  // Example using native EventSource (for non-protected endpoints)
+  // If using API Key, need to use custom implementation instead of native EventSource
+  // Below is an example using native EventSource
   eventSource.addEventListener('instance', (event) => {
     const data = JSON.parse(event.data);
     
@@ -201,7 +233,7 @@ function connectToEventSource() {
         break;
       case 'shutdown':
         console.log('Master service is shutting down');
-        // Close the event source and show notification
+        // Close event source and show notification
         eventSource.close();
         showShutdownNotification();
         break;
@@ -210,7 +242,7 @@ function connectToEventSource() {
   
   eventSource.addEventListener('error', (error) => {
     console.error('SSE connection error:', error);
-    // Attempt to reconnect after a delay
+    // Try to reconnect after delay
     setTimeout(() => {
       eventSource.close();
       connectToEventSource();
@@ -260,7 +292,7 @@ function connectToEventSourceWithApiKey(apiKey) {
           
           if (eventMatch && dataMatch) {
             const data = JSON.parse(dataMatch[1]);
-            // Process events - see switch code above
+            // Handle events - see switch code above
           }
         }
         
@@ -281,36 +313,367 @@ function connectToEventSourceWithApiKey(apiKey) {
 }
 ```
 
-#### Benefits of SSE over Polling
+#### Advantages of SSE over Polling
 
-Using SSE for instance monitoring offers several advantages over traditional polling:
+Using SSE for monitoring instance state provides several advantages over traditional polling:
 
-1. **Reduced Latency**: Changes are delivered in real-time
-2. **Reduced Server Load**: Eliminates unnecessary polling requests
-3. **Bandwidth Efficiency**: Only sends data when changes occur
-4. **Native Browser Support**: Built-in browser support without additional libraries
-5. **Automatic Reconnection**: Browsers automatically reconnect if the connection is lost
+1. **Reduced latency**: Changes are delivered in real-time
+2. **Reduced server load**: Eliminates unnecessary polling requests
+3. **Bandwidth efficiency**: Data is only sent when changes occur
+4. **Native browser support**: Built-in browser support without additional libraries
+5. **Automatic reconnection**: Browser automatically reconnects when connection is lost
 
 #### Best Practices for SSE Implementation
 
-When implementing SSE in your frontend:
+When implementing SSE in frontend:
 
-1. **Handle Reconnection**: While browsers attempt to reconnect automatically, implement custom logic for persistent connections
-2. **Process Events Efficiently**: Keep event processing fast to avoid UI blocking
-3. **Implement Fallback**: For environments where SSE is not supported, implement a polling fallback
-4. **Handle Errors**: Properly handle connection errors and disconnects
+1. **Handle reconnection**: While browsers automatically attempt reconnection, implement custom logic to ensure persistent connection
+2. **Efficient event handling**: Keep event handlers fast to avoid UI blocking
+3. **Implement fallback**: Implement polling fallback for environments that don't support SSE
+4. **Handle errors**: Properly handle connection errors and disconnections
+5. **Log management**: Maintain log buffers for each instance to prevent unlimited growth
+
+## Frontend Integration Guide
+
+When integrating NodePass with frontend applications, consider the following important aspects:
+
+### Instance Persistence
+
+NodePass Master Mode now supports instance persistence using gob serialization format. Instances and their states are saved to a `nodepass.gob` file in the same directory as the executable and automatically restored when the master restarts.
+
+Key persistence features:
+- Instance configurations are automatically saved to disk
+- Instance states (running/stopped) are preserved
+- Auto-restart policies are maintained across master restarts
+- Traffic statistics are maintained between restarts
+- Instances with auto-restart enabled automatically start when master restarts
+- No need to manually re-register after restart
+
+#### Automatic Backup Feature
+
+NodePass Master Mode provides automatic backup functionality to periodically backup state files to prevent data loss:
+
+- **Backup File**: Automatically creates `nodepass.gob.backup` backup file
+- **Backup Interval**: Automatically backs up every 1 hour (configurable via `NP_RELOAD_INTERVAL` environment variable)
+- **Backup Strategy**: Uses single backup file, new backups overwrite old backups
+- **Backup Content**: Includes all instance configurations, states, auto-restart policies, and statistics
+- **Disaster Recovery**: When the main file is corrupted, backup file can be manually used for recovery
+- **Auto Start**: Backup functionality starts automatically with master service, no additional configuration required
+
+Backup file location: `nodepass.gob.backup` in the same directory as the main state file `nodepass.gob`
+
+**Note:** While instance configurations are now persistent and automatically backed up, frontend applications should still maintain their own instance configuration records as an additional backup strategy.
+
+### Instance Lifecycle Management
+
+To properly manage lifecycles:
+
+1. **Creation**: Store instance configuration and URL
+   ```javascript
+   async function createNodePassInstance(config) {
+     const response = await fetch(`${API_URL}/instances`, {
+       method: 'POST',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled
+       },
+       body: JSON.stringify({
+         url: `server://0.0.0.0:${config.port}/${config.target}?tls=${config.tls}`
+       })
+     });
+     
+     const data = await response.json();
+     
+     // Configure auto-restart policy based on type
+     if (data.success) {
+       const shouldAutoRestart = config.type === 'server' || config.critical === true;
+       await setAutoStartPolicy(data.data.id, shouldAutoRestart);
+     }
+     
+     // Store in frontend persistence storage
+     saveInstanceConfig({
+       id: data.data.id,
+       originalConfig: config,
+       url: data.data.url
+     });
+     
+     return data;
+   }
+   ```
+
+2. **Status Monitoring**: Monitor instance state changes
+   
+   NodePass provides two methods for monitoring instance status:
+   
+   A. **Using SSE (Recommended)**: Receive real-time events through persistent connection
+   ```javascript
+   function connectToEventSource() {
+     const eventSource = new EventSource(`${API_URL}/events`, {
+       // If authentication is needed, use custom implementation
+     });
+     
+     // Or use custom implementation with API Key
+     // connectToEventSourceWithApiKey(apiKey);
+     
+     eventSource.addEventListener('instance', (event) => {
+       const data = JSON.parse(event.data);
+       // Handle different event types: initial, create, update, delete, log
+       // ...handling logic see "Using SSE for Real-time Event Monitoring" section above
+     });
+     
+     // Error handling and reconnection logic
+     // ...see previous examples
+     
+     return eventSource;
+   }
+   ```
+   
+   B. **Traditional Polling (Alternative)**: Use in environments that don't support SSE
+   ```javascript
+   function startInstanceMonitoring(instanceId, interval = 5000) {
+     return setInterval(async () => {
+       try {
+         const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+           headers: {
+             'X-API-Key': apiKey // If API Key is enabled
+           }
+         });
+         const data = await response.json();
+         
+         if (data.success) {
+           updateInstanceStatus(instanceId, data.data.status);
+           updateInstanceMetrics(instanceId, {
+             connections: data.data.connections,
+             pool_size: data.data.pool_size,
+             uptime: data.data.uptime
+           });
+         }
+       } catch (error) {
+         markInstanceUnreachable(instanceId);
+       }
+     }, interval);
+   }
+   ```
+
+   **Recommendation:** Prioritize SSE method as it provides more efficient real-time monitoring and reduces server load. Only use polling when client doesn't support SSE or specific environment compatibility is needed.
+
+3. **Instance Alias Management**: Set readable names for instances
+   ```javascript
+   // Batch set instance aliases
+   async function setInstanceAliases(instances) {
+     for (const instance of instances) {
+       // Generate meaningful aliases based on instance type and purpose
+       const alias = `${instance.type}-${instance.region || 'default'}-${instance.port || 'auto'}`;
+       await updateInstanceAlias(instance.id, alias);
+     }
+   }
+   
+   // Find instance by alias
+   async function findInstanceByAlias(targetAlias) {
+     const response = await fetch(`${API_URL}/instances`, {
+       headers: { 'X-API-Key': apiKey }
+     });
+     const data = await response.json();
+     
+     if (data.success) {
+       return data.data.find(instance => instance.alias === targetAlias);
+     }
+     return null;
+   }
+   ```
+
+4. **Control Operations**: Start, stop, restart instances
+   ```javascript
+   async function controlInstance(instanceId, action) {
+     // action can be: start, stop, restart
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',  // Note: API has been updated to use PATCH method instead of PUT
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ action })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Update instance alias
+   async function updateInstanceAlias(instanceId, alias) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ alias })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Update instance URL configuration
+   async function updateInstanceURL(instanceId, newURL) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PUT',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ url: newURL })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+5. **Auto-restart Policy Management**: Configure automatic startup behavior
+   ```javascript
+   async function setAutoStartPolicy(instanceId, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ restart: enableAutoStart })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   async function controlInstanceWithAutoStart(instanceId, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ 
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   async function updateInstanceComplete(instanceId, alias, action, enableAutoStart) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ 
+         alias: alias,
+         action: action,
+         restart: enableAutoStart 
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+#### Complete Auto-restart Policy Usage Example
+
+Here's a comprehensive example showing how to implement auto-restart policy management in real scenarios:
+
+```javascript
+// Scenario: Establish load-balanced server cluster with auto-restart policies
+async function setupServerCluster(serverConfigs) {
+  const clusterInstances = [];
+  
+  for (const config of serverConfigs) {
+    try {
+      // Create server instance
+      const instance = await createNodePassInstance({
+        type: 'server',
+        port: config.port,
+        target: config.target,
+        critical: config.isPrimary, // Primary servers are critical instances
+        tls: config.enableTLS
+      });
+      
+      if (instance.success) {
+        // Set meaningful instance alias
+        const alias = `${config.role}-server-${config.port}`;
+        await updateInstanceAlias(instance.data.id, alias);
+        
+        // Configure auto-restart policy based on server role
+        const autoStartPolicy = config.isPrimary || config.role === 'essential';
+        await setAutoStartPolicy(instance.data.id, autoStartPolicy);
+        
+        // Start instance
+        await controlInstance(instance.data.id, 'start');
+        
+        clusterInstances.push({
+          id: instance.data.id,
+          alias: alias,
+          role: config.role,
+          autoStartEnabled: autoStartPolicy
+        });
+        
+        console.log(`Server ${alias} created, auto-restart policy: ${autoStartPolicy}`);
+      }
+    } catch (error) {
+      console.error(`Failed to create server ${config.role}:`, error);
+    }
+  }
+  
+  return clusterInstances;
+}
+
+// Monitor cluster health and dynamically adjust auto-restart policies
+async function monitorClusterHealth(clusterInstances) {
+  const healthyInstances = [];
+  
+  for (const cluster of clusterInstances) {
+    const instance = await fetch(`${API_URL}/instances/${cluster.id}`, {
+      headers: { 'X-API-Key': apiKey }
+    });
+    const data = await instance.json();
+    
+    if (data.success && data.data.status === 'running') {
+      healthyInstances.push(cluster);
+    } else {
+      // If critical instance is down, enable auto-restart for backup instances
+      if (cluster.role === 'primary') {
+        await enableBackupInstanceAutoStart(clusterInstances);
+      }
+    }
+  }
+  
+  return healthyInstances;
+}
+
+async function enableBackupInstanceAutoStart(clusterInstances) {
+  const backupInstances = clusterInstances.filter(c => c.role === 'backup');
+  for (const backup of backupInstances) {
+    await setAutoStartPolicy(backup.id, true);
+    console.log(`Enabled auto-restart policy for backup instance: ${backup.id}`);
+  }
+}
+```
 
 ### Traffic Statistics
 
-The Master API provides traffic statistics, but there are important requirements to note:
+The Master API provides traffic statistics, but there are important considerations:
 
-1. **Basic Traffic Metrics**: NodePass periodically provides cumulative TCP and UDP traffic values in both inbound and outbound directions. The frontend application needs to store and process these values to derive meaningful statistics.
+1. **Basic Traffic Metrics**: NodePass periodically provides cumulative values for TCP and UDP traffic in both inbound and outbound directions. Frontend applications need to store and process these values to obtain meaningful statistics.
    ```javascript
    function processTrafficStats(instanceId, currentStats) {
-     // Store the current timestamp
+     // Store current timestamp
      const timestamp = Date.now();
      
-     // If we have previous stats for this instance, calculate the difference
+     // If we have previous stats for this instance, calculate differences
      if (previousStats[instanceId]) {
        const timeDiff = timestamp - previousStats[instanceId].timestamp;
        const tcpInDiff = currentStats.tcp_in - previousStats[instanceId].tcp_in;
@@ -318,7 +681,7 @@ The Master API provides traffic statistics, but there are important requirements
        const udpInDiff = currentStats.udp_in - previousStats[instanceId].udp_in;
        const udpOutDiff = currentStats.udp_out - previousStats[instanceId].udp_out;
        
-       // Store historical data for graphs
+       // Store historical data for chart display
        storeTrafficHistory(instanceId, {
          timestamp,
          tcp_in_rate: tcpInDiff / timeDiff * 1000, // bytes per second
@@ -328,7 +691,7 @@ The Master API provides traffic statistics, but there are important requirements
        });
      }
      
-     // Update the previous stats for next calculation
+     // Update previous stats for next calculation
      previousStats[instanceId] = {
        timestamp,
        tcp_in: currentStats.tcp_in,
@@ -341,7 +704,7 @@ The Master API provides traffic statistics, but there are important requirements
 
 2. **Data Persistence**: Since the API only provides cumulative values, the frontend must implement proper storage and calculation logic
    ```javascript
-   // Example of frontend storage structure for traffic history
+   // Frontend traffic history storage structure example
    const trafficHistory = {};
    
    function storeTrafficHistory(instanceId, metrics) {
@@ -361,7 +724,7 @@ The Master API provides traffic statistics, but there are important requirements
      trafficHistory[instanceId].udp_in_rates.push(metrics.udp_in_rate);
      trafficHistory[instanceId].udp_out_rates.push(metrics.udp_out_rate);
      
-     // Keep history size manageable
+     // Keep history data manageable
      const MAX_HISTORY = 1000;
      if (trafficHistory[instanceId].timestamps.length > MAX_HISTORY) {
        trafficHistory[instanceId].timestamps.shift();
@@ -373,33 +736,80 @@ The Master API provides traffic statistics, but there are important requirements
    }
    ```
 
-## Instance Data Structure
+### Instance ID Persistence
 
-Instance objects in API responses contain the following fields:
+Since NodePass now uses gob format for persistent storage of instance state, instance IDs **no longer change** after master restart. This means:
 
-```json
-{
-  "id": "a1b2c3d4",           // Unique instance identifier
-  "alias": "web-server-01",   // Instance alias (optional, for friendly display names)
-  "type": "server",           // Instance type: server or client
-  "status": "running",        // Instance status: running, stopped, or error
-  "url": "server://...",      // Instance configuration URL
-  "restart": true,            // Auto-start policy
-  "tcprx": 1024,             // TCP bytes received
-  "tcptx": 2048,             // TCP bytes transmitted
-  "udprx": 512,              // UDP bytes received
-  "udptx": 256               // UDP bytes transmitted
+1. Frontend applications can safely use instance IDs as unique identifiers
+2. Instance configurations, states, and statistics are automatically restored after restart
+3. No longer need to implement logic for handling instance ID changes
+
+This greatly simplifies frontend integration, eliminating the previous complexity of handling instance recreation and ID mapping.
+
+### Auto-restart Policy Management
+
+NodePass now supports configuring auto-restart policies for instances, enabling automated instance management and improving reliability. The auto-restart policy feature has the following characteristics:
+
+1. **Automatic Instance Recovery**: Instances with auto-restart enabled automatically start when the master service restarts
+2. **Selective Auto-start**: Configure which instances should auto-start based on their importance or role
+3. **Persistent Policy Storage**: Auto-restart policies are saved and restored across master restarts
+4. **Fine-grained Control**: Each instance can have its own auto-restart policy setting
+
+#### How Auto-restart Policy Works
+
+- **Policy Assignment**: Each instance has a `restart` boolean field that determines its auto-start behavior
+- **Master Startup**: When master starts, it automatically starts all instances with `restart: true`
+- **Policy Persistence**: Auto-restart policies are saved with other instance data in the `nodepass.gob` file
+- **Runtime Management**: Auto-restart policies can be modified while instances are running
+
+#### Auto-restart Policy Best Practices
+
+1. **Enable for Server Instances**: Server instances should typically have auto-restart enabled for high availability
+2. **Selective Client Auto-start**: Only enable auto-restart for critical client connections
+3. **Testing Scenarios**: Disable auto-restart for temporary or testing instances
+4. **Load Balancing**: Use auto-restart policies to maintain minimum instance count for load distribution
+
+```javascript
+// Example: Configure auto-restart policies based on instance role
+async function configureAutoStartPolicies(instances) {
+  for (const instance of instances) {
+    // Enable auto-start for servers and critical clients
+    const shouldAutoStart = instance.type === 'server' || 
+                            instance.tags?.includes('critical');
+    
+    await setAutoStartPolicy(instance.id, shouldAutoStart);
+  }
 }
 ```
 
-**Notes:** 
-- `alias` field is optional and will be an empty string if not set
-- Traffic statistics fields (tcprx, tcptx, udprx, udptx) are only valid when debug mode is enabled
-- `restart` field controls the instance's auto-start behavior
+## Instance Data Structure
+
+The instance object in API responses contains the following fields:
+
+```json
+{
+  "id": "a1b2c3d4",           // Instance unique identifier
+  "alias": "web-server-01",   // Instance alias (optional, for friendly display name)
+  "type": "server",           // Instance type: server or client
+  "status": "running",        // Instance status: running, stopped, or error
+  "url": "server://...",      // Instance configuration URL
+  "restart": true,            // Auto-restart policy
+  "mode": 0,                  // Instance mode
+  "tcprx": 1024,              // TCP received bytes
+  "tcptx": 2048,              // TCP transmitted bytes
+  "udprx": 512,               // UDP received bytes
+  "udptx": 256                // UDP transmitted bytes
+}
+```
+
+**Note:** 
+- `alias` field is optional, empty string if not set
+- `mode` field indicates the current runtime mode of the instance
+- `restart` field controls the auto-restart behavior of the instance
 
 ## System Information Endpoint
 
-The `/info` endpoint provides system information about the NodePass Master service. This endpoint is useful for monitoring, troubleshooting, and verifying system status.
+The `/info` endpoint provides system information about the NodePass master service. This endpoint is useful for monitoring, troubleshooting, and system status validation.
 
 ### Request
 
@@ -407,7 +817,7 @@ The `/info` endpoint provides system information about the NodePass Master servi
 GET /info
 ```
 
-API Key Authentication Required: Yes
+Requires API Key authentication: Yes
 
 ### Response
 
@@ -415,15 +825,25 @@ The response contains the following system information fields:
 
 ```json
 {
-  "os": "linux",          // Operating system type
-  "arch": "amd64",        // System architecture
-  "ver": "1.2.0",         // NodePass version
-  "name": "example.com",  // Tunnel hostname
-  "uptime": 11525,         // API uptime in seconds
-  "log": "info",          // Log level
-  "tls": "1",             // TLS status
-  "crt": "/path/to/cert", // Certificate path
-  "key": "/path/to/key"   // Key path
+  "os": "linux",              // Operating system type
+  "arch": "amd64",            // System architecture
+  "cpu": 45,                  // CPU usage percentage (Linux only)
+  "mem_total": 8589934592,    // Total memory in bytes (Linux only)
+  "mem_free": 2684354560,     // Free memory in bytes (Linux only)
+  "swap_total": 3555328000,   // Total swap space in bytes (Linux only)
+  "swap_free": 3555328000,    // Free swap space in bytes (Linux only)
+  "netrx": 1048576000,        // Network received bytes (cumulative, Linux only)
+  "nettx": 2097152000,        // Network transmitted bytes (cumulative, Linux only)
+  "diskr": 4194304000,        // Disk read bytes (cumulative, Linux only)
+  "diskw": 8388608000,        // Disk write bytes (cumulative, Linux only)
+  "sysup": 86400,             // System uptime in seconds (Linux only)
+  "ver": "1.2.0",             // NodePass version
+  "name": "example.com",      // Tunnel hostname
+  "uptime": 11525,            // API uptime in seconds
+  "log": "info",              // Log level
+  "tls": "1",                 // TLS enabled status
+  "crt": "/path/to/cert",     // Certificate path
+  "key": "/path/to/key"       // Key path
 }
 ```
 
@@ -442,34 +862,70 @@ async function getSystemInfo() {
   return await response.json();
 }
 
-// Display service uptime
-function displayServiceUptime() {
+// Display service uptime and system resource usage
+function displaySystemStatus() {
   getSystemInfo().then(info => {
     console.log(`Service uptime: ${info.uptime} seconds`);
-    // You can also format it for better readability
+    
+    // Format uptime for friendlier display
     const hours = Math.floor(info.uptime / 3600);
     const minutes = Math.floor((info.uptime % 3600) / 60);
     const seconds = info.uptime % 60;
     console.log(`Service uptime: ${hours}h ${minutes}m ${seconds}s`);
+    
+    // Display system resource usage (Linux only)
+    if (info.os === 'linux') {
+      if (info.cpu !== -1) {
+        console.log(`CPU usage: ${info.cpu}%`);
+      }
+      if (info.mem_total > 0) {
+        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
+        console.log(`Memory usage: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+      }
+      if (info.swap_total > 0) {
+        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
+        console.log(`Swap usage: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+      }
+    } else {
+      console.log('CPU, memory, swap space, network I/O, disk I/O, and system uptime monitoring is only available on Linux systems');
+    }
+    
+    // Display network I/O statistics (cumulative values)
+    if (info.os === 'linux') {
+      console.log(`Network received: ${(info.netrx / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Network transmitted: ${(info.nettx / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Disk read: ${(info.diskr / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`Disk write: ${(info.diskw / 1024 / 1024).toFixed(2)} MB (cumulative)`);
+      console.log(`System uptime: ${Math.floor(info.sysup / 3600)} hours`);
+    }
   });
 }
 ```
 
 ### Monitoring Best Practices
 
-- **Regular Polling**: Periodically poll this endpoint to ensure service is running
-- **Version Verification**: Check version number after deploying updates
-- **Uptime Monitoring**: Monitor uptime to detect unexpected restarts
-- **Log Level Verification**: Confirm that the current log level matches expectations
+- **Regular checks**: Poll this endpoint regularly to ensure service is running properly
+- **Version verification**: Check version number after deploying updates
+- **Uptime monitoring**: Monitor uptime to detect unexpected restarts
+- **Log level verification**: Ensure current log level meets expectations
+- **Resource monitoring**: On Linux systems, monitor CPU, memory, swap space, network I/O, disk I/O usage to ensure optimal performance
+  - CPU usage is calculated by parsing `/proc/stat` (percentage of non-idle time)
+  - Memory information is obtained by parsing `/proc/meminfo` (total and free memory in bytes)
+  - Swap space information is obtained by parsing `/proc/meminfo` (total and free swap space in bytes)
+  - Network I/O is calculated by parsing `/proc/net/dev` (cumulative bytes, excluding virtual interfaces)
+  - Disk I/O is calculated by parsing `/proc/diskstats` (cumulative bytes, major devices only)
+  - System uptime is obtained by parsing `/proc/uptime`
+  - Values of -1 or 0 indicate system information is unavailable (non-Linux systems)
+  - Network and disk I/O fields provide cumulative values; frontend applications need to store historical data and calculate differences to get real-time rates (bytes/second)
 
 ## API Endpoint Documentation
 
-For detailed API documentation including request and response examples, please use the built-in Swagger UI documentation available at the `/docs` endpoint. This interactive documentation provides comprehensive information about:
+For detailed API documentation including request and response examples, use the built-in Swagger UI documentation available at the `/docs` endpoint. This interactive documentation provides comprehensive information about:
 
 - Available endpoints
 - Required parameters
 - Response formats
-- Example requests and responses
+- Request and response examples
 - Schema definitions
 
 ### Accessing Swagger UI
@@ -485,16 +941,16 @@ For example:
 http://localhost:9090/api/docs
 ```
 
-The Swagger UI provides a convenient way to explore and test the API directly in your browser. You can execute API calls against your running NodePass Master instance and see the actual responses.
+The Swagger UI provides a convenient way to explore and test the API directly in your browser. You can execute API calls against your running NodePass master instance and see actual responses.
 
 ## Complete API Reference
 
-### Instance Management Endpoints Details
+### Instance Management Endpoints Detail
 
 #### GET /instances
 - **Description**: Get list of all instances
-- **Authentication**: API Key required
-- **Response**: Array of instance objects
+- **Authentication**: Requires API Key
+- **Response**: Array of instances
 - **Example**:
 ```javascript
 const instances = await fetch(`${API_URL}/instances`, {
@@ -504,8 +960,8 @@ const instances = await fetch(`${API_URL}/instances`, {
 
 #### POST /instances
 - **Description**: Create new instance
-- **Authentication**: API Key required
-- **Request Body**: `{ "url": "client:// or server:// format URL" }`
+- **Authentication**: Requires API Key
+- **Request body**: `{ "url": "client:// or server:// format URL" }`
 - **Response**: Newly created instance object
 - **Example**:
 ```javascript
@@ -521,7 +977,7 @@ const newInstance = await fetch(`${API_URL}/instances`, {
 
 #### GET /instances/{id}
 - **Description**: Get specific instance details
-- **Authentication**: API Key required
+- **Authentication**: Requires API Key
 - **Response**: Instance object
 - **Example**:
 ```javascript
@@ -531,13 +987,13 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, or perform control actions
-- **Authentication**: API Key required
-- **Request Body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
-- **Note**: Only specified fields are updated without interrupting running instances. `action: "reset"` will clear the traffic statistics (tcprx, tcptx, udprx, udptx) for the instance.
+- **Description**: Update instance state, alias, or perform control operations
+- **Authentication**: Requires API Key
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
+- **Features**: Does not interrupt running instances, only updates specified fields. `action: "reset"` can reset traffic statistics (tcprx, tcptx, udprx, udptx) for the instance to zero.
 - **Example**:
 ```javascript
-// Update alias and auto-start policy
+// Update alias and auto-restart policy
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -560,7 +1016,7 @@ await fetch(`${API_URL}/instances/abc123`, {
   body: JSON.stringify({ action: 'restart' })
 });
 
-// Clear traffic statistics
+// Reset traffic statistics
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -572,11 +1028,11 @@ await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PUT /instances/{id}
-- **Description**: Fully update the instance URL configuration
-- **Authentication**: API Key required
-- **Request Body**: `{ "url": "new client:// or server:// style URL" }`
-- **Note**: The instance will be restarted.
-- **Restriction**: API Key instance (ID `********`) does not support this operation
+- **Description**: Completely update instance URL configuration
+- **Authentication**: Requires API Key
+- **Request body**: `{ "url": "new client:// or server:// format URL" }`
+- **Features**: Will restart the instance.
+- **Restrictions**: API Key instance (ID `********`) does not support this operation
 - **Example**:
 ```javascript
 // Update instance URL
@@ -594,7 +1050,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 
 #### DELETE /instances/{id}
 - **Description**: Delete instance
-- **Authentication**: API Key required
+- **Authentication**: Requires API Key
 - **Response**: 204 No Content
 - **Restrictions**: API Key instance (ID `********`) cannot be deleted
 - **Example**:
@@ -609,24 +1065,40 @@ await fetch(`${API_URL}/instances/abc123`, {
 
 #### GET /events
 - **Description**: Establish SSE connection to receive real-time events
-- **Authentication**: API Key required
+- **Authentication**: Requires API Key
 - **Response**: Server-Sent Events stream
-- **Event Types**: `initial`, `create`, `update`, `delete`, `shutdown`, `log`
+- **Event types**: `initial`, `create`, `update`, `delete`, `shutdown`, `log`
 
 #### GET /info
 - **Description**: Get master service information
-- **Authentication**: API Key required
-- **Response**: Contains system info, version, uptime, etc.
+- **Authentication**: Requires API Key
+- **Response**: Contains system information, version, uptime, CPU and RAM usage, etc.
+
+#### GET /tcping
+- **Description**: TCP connection test, checks connectivity and latency to target address
+- **Authentication**: Requires API Key
+- **Parameters**:
+  - `target` (required): Target address in format `host:port`
+- **Response**:
+  ```json
+  {
+    "target": "example.com:80",
+    "connected": true,
+    "latency": 45,
+    "error": null
+  }
+  ```
+- **Example**: `GET /api/tcping?target=fast.com:443`
 
 #### GET /openapi.json
 - **Description**: Get OpenAPI 3.1.1 specification
 - **Authentication**: No authentication required
-- **Response**: JSON formatted API specification
+- **Response**: JSON format API specification
 
 #### GET /docs
 - **Description**: Swagger UI documentation interface
 - **Authentication**: No authentication required
-- **Response**: HTML formatted interactive documentation
+- **Response**: HTML format interactive documentation
 
 ### Instance URL Format Specification
 
@@ -639,7 +1111,7 @@ server://<bind_address>:<bind_port>/<target_host>:<target_port>?<parameters>
 
 Examples:
 - `server://0.0.0.0:8080/localhost:3000` - Listen on port 8080, forward to local port 3000
-- `server://0.0.0.0:9090/localhost:8080?tls=1` - Server with TLS enabled
+- `server://0.0.0.0:9090/localhost:8080?tls=1&mode=1` - TLS-enabled server, force reverse mode
 
 #### Client Mode
 ```
@@ -648,13 +1120,19 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 
 Examples:
 - `client://example.com:8080/localhost:3000` - Connect to remote server, listen locally on port 3000
-- `client://vpn.example.com:443/localhost:22?tls=1` - Connect to VPN server via TLS
+- `client://remote.example.com:443/localhost:22?mode=2&min=32` - Through remote server, force dual-end mode
 
 #### Supported Parameters
 
-| Parameter | Description | Values | Default |
-|-----------|-------------|---------|---------|
-| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` |
-| `log` | Log level | `trace`, `debug`, `info`, `warn`, `error` | `info` |
-| `crt` | Certificate path | File path | None |
-| `key` | Private key path | File path | None |
+| Parameter | Description | Values | Default | Scope |
+|-----------|-------------|--------|---------|-------|
+| `log` | Log level | `none`, `debug`, `info`, `warn`, `error`, `event` | `info` | Both |
+| `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
+| `crt` | Certificate path | File path | None | Server only |
+| `key` | Private key path | File path | None | Server only |
+| `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
+| `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
+| `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
+| `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `10m` | Both |
+| `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
+| `proxy` | PROXY protocol support | `0`(disabled), `1`(enabled) | `0` | Both |

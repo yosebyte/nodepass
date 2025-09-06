@@ -69,12 +69,13 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Check file descriptor limits with `ulimit -n` on Linux/macOS
 
 3. **Timeout Configuration**
-   - Adjust `UDP_READ_TIMEOUT` if using UDP with slow response times
-   - Consider adjusting TCP keepalive settings at the OS level for long-lived connections
+   - Adjust `NP_UDP_DIAL_TIMEOUT` if using UDP with slow response times
+   - Increase `read` parameter in URL for long-running transfers (default: 10m)
+   - Consider adjusting `NP_TCP_DIAL_TIMEOUT` for unstable network conditions
 
 4. **Overloaded Server**
    - Check server logs for signs of connection overload
-   - Adjust `MAX_POOL_CAPACITY` and `SEMAPHORE_LIMIT` to handle the load
+   - Adjust `max` parameter and `NP_SEMAPHORE_LIMIT` to handle the load
    - Consider scaling horizontally with multiple NodePass instances
 
 ## Certificate Issues
@@ -135,9 +136,9 @@ This guide helps you diagnose and resolve common issues you might encounter when
 **Possible Causes and Solutions**:
 
 1. **Pool Configuration**
-   - Increase `MIN_POOL_CAPACITY` to have more connections ready
+   - Increase `min` parameter to have more connections ready
    - Decrease `MIN_POOL_INTERVAL` to create connections faster
-   - Adjust `SEMAPHORE_LIMIT` if connection queue is backing up
+   - Adjust `NP_SEMAPHORE_LIMIT` if connection queue is backing up
 
 2. **Network Path**
    - Check for network congestion or high-latency links
@@ -162,7 +163,7 @@ This guide helps you diagnose and resolve common issues you might encounter when
 1. **Pool Thrashing**
    - If pool is constantly creating and destroying connections, adjust timings
    - Increase `MIN_POOL_INTERVAL` to reduce connection creation frequency
-   - Find a good balance for `MIN_POOL_CAPACITY` and `MAX_POOL_CAPACITY`
+   - Find a good balance for `min` and `max` pool parameters
 
 2. **Excessive Logging**
    - Reduce log level from debug to info or warn for production use
@@ -184,12 +185,12 @@ This guide helps you diagnose and resolve common issues you might encounter when
 **Possible Causes and Solutions**:
 
 1. **Connection Leaks**
-   - Ensure `SHUTDOWN_TIMEOUT` is sufficient to properly close connections
+   - Ensure `NP_SHUTDOWN_TIMEOUT` is sufficient to properly close connections
    - Check for proper error handling in custom scripts or management code
    - Monitor connection counts with system tools like `netstat`
 
 2. **Pool Size Issues**
-   - If `MAX_POOL_CAPACITY` is very large, memory usage will be higher
+   - If `max` parameter is very large, memory usage will be higher
    - Monitor actual pool usage vs. configured capacity
    - Adjust capacity based on actual concurrent connection needs
 
@@ -210,7 +211,8 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Default of 8192 bytes may be too small for some applications
 
 2. **Timeout Issues**
-   - If responses are slow, increase `UDP_READ_TIMEOUT`
+   - If responses are slow, increase `NP_UDP_DIAL_TIMEOUT`
+   - Adjust `read` parameter for longer session timeouts
    - For applications with variable response times, find an optimal balance
 
 3. **High Packet Rate**
@@ -276,6 +278,49 @@ This guide helps you diagnose and resolve common issues you might encounter when
 4. **Permission Issues**
    - Ensure the NodePass master has sufficient permissions to create processes
    - Check file system permissions for any referenced certificates or keys
+
+## Data Recovery
+
+### Master State File Corruption
+
+**Symptoms**: Master mode fails to start showing state file corruption errors, or instance data is lost.
+
+**Possible Causes and Solutions**:
+
+1. **Recovery using automatic backup file**
+   - NodePass automatically creates backup file `nodepass.gob.backup` every hour
+   - Stop the NodePass master service
+   - Copy backup file as main file: `cp nodepass.gob.backup nodepass.gob`
+   - Restart the master service
+
+2. **Manual state file recovery**
+   ```bash
+   # Stop NodePass service
+   pkill nodepass
+   
+   # Backup corrupted file (optional)
+   mv nodepass.gob nodepass.gob.corrupted
+   
+   # Use backup file
+   cp nodepass.gob.backup nodepass.gob
+   
+   # Restart service
+   nodepass "master://0.0.0.0:9090?log=info"
+   ```
+
+3. **When backup file is also corrupted**
+   - Remove corrupted state files: `rm nodepass.gob*`
+   - Restart master, which will create new state file
+   - Need to reconfigure all instances and settings
+
+4. **Preventive backup recommendations**
+   - Regularly backup `nodepass.gob` to external storage
+   - Adjust backup frequency: set environment variable `export NP_RELOAD_INTERVAL=30m`
+   - Monitor state file size, abnormal growth may indicate issues
+
+**Best Practices**:
+- In production environments, recommend regularly backing up `nodepass.gob` to different storage locations
+- Use configuration management tools to save text-form backups of instance configurations
 
 ## Next Steps
 

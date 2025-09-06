@@ -67,10 +67,10 @@ docker run -d --name nodepass-server -p 10101:10101 -p 8080:8080 \
 
 # Run in client mode
 docker run -d --name nodepass-client \
-  -e MIN_POOL_CAPACITY=32 \
-  -e MAX_POOL_CAPACITY=512 \
+  -e NP_MIN_POOL_INTERVAL=200ms \
+  -e NP_SEMAPHORE_LIMIT=512 \
   -p 8080:8080 \
-  ghcr.io/yosebyte/nodepass client://nodepass-server:10101/127.0.0.1:8080
+  ghcr.io/yosebyte/nodepass "client://nodepass-server:10101/127.0.0.1:8080?min=32&max=512"
 ```
 
 ### Option 5: Using Management Script (Linux Only)

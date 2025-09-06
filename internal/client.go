@@ -5,10 +5,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,36 +31,48 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
-			semaphore:  make(chan struct{}, semaphoreLimit),
 			signalChan: make(chan string, semaphoreLimit),
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	// 初始化公共字段
-	client.getTunnelKey(parsedURL)
-	client.getPoolCapacity(parsedURL)
-	client.getAddress(parsedURL)
+	client.initConfig(parsedURL)
+	client.initRateLimiter()
 	return client
 }
 
 // Run 管理客户端生命周期
 func (c *Client) Run() {
-	c.logger.Info("Client started: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
+	logInfo := func(prefix string) {
+		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v",
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.targetTCPAddr,
+			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit)
+	}
+	logInfo("Client started")
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// 启动客户端服务并处理重启
 	go func() {
 		for {
-			time.Sleep(serviceCooldown)
-			if err := c.start(); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			// 启动客户端
+			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)
+				// 重启客户端
 				c.stop()
-				c.logger.Info("Client restarted: %v@%v/%v", c.tunnelKey, c.tunnelAddr, c.targetTCPAddr)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(serviceCooldown):
+				}
+				logInfo("Client restarting")
 			}
 		}
 	}()
 
 	// 监听系统信号以优雅关闭
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
 	stop()
 
@@ -76,56 +91,60 @@ func (c *Client) start() error {
 	// 初始化上下文
 	c.initContext()
 
-	// 通过是否监听成功判断单端转发或双端握手
-	if err := c.initTunnelListener(); err == nil {
-		// 初始化连接池
-		c.tunnelPool = pool.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			true,
-			c.tunnelName,
-			func() (net.Conn, error) {
-				return net.DialTCP("tcp", nil, c.targetTCPAddr)
-			})
-
-		go c.tunnelPool.ClientManager()
-
-		return c.singleLoop()
-	} else {
-		if err := c.tunnelHandshake(); err != nil {
+	// 运行模式判断
+	switch c.runMode {
+	case "1": // 单端模式
+		if err := c.initTunnelListener(); err != nil {
 			return err
 		}
-
-		// 初始化连接池
-		c.tunnelPool = pool.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			false,
-			c.tunnelName,
-			func() (net.Conn, error) {
-				return net.DialTCP("tcp", nil, c.tunnelTCPAddr)
-			})
-
-		go c.tunnelPool.ClientManager()
-
-		if c.dataFlow == "+" {
-			// 初始化目标监听器
-			if err := c.initTargetListener(); err != nil {
-				return err
-			}
-			go c.commonLoop()
+		return c.singleStart()
+	case "2": // 双端模式
+		return c.commonStart()
+	default: // 自动判断
+		if err := c.initTunnelListener(); err == nil {
+			c.runMode = "1"
+			return c.singleStart()
+		} else {
+			c.runMode = "2"
+			return c.commonStart()
 		}
-
-		return c.commonControl()
 	}
+}
+
+// singleStart 启动单端转发模式
+func (c *Client) singleStart() error {
+	return c.singleControl()
+}
+
+// commonStart 启动双端握手模式
+func (c *Client) commonStart() error {
+	// 与隧道服务端进行握手
+	if err := c.tunnelHandshake(); err != nil {
+		return err
+	}
+
+	// 初始化连接池
+	c.tunnelPool = pool.NewClientPool(
+		c.minPoolCapacity,
+		c.maxPoolCapacity,
+		minPoolInterval,
+		maxPoolInterval,
+		reportInterval,
+		c.tlsCode,
+		c.tunnelName,
+		func() (net.Conn, error) {
+			return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
+		})
+	go c.tunnelPool.ClientManager()
+
+	if c.dataFlow == "+" {
+		// 初始化目标监听器
+		if err := c.initTargetListener(); err != nil {
+			return err
+		}
+		go c.commonLoop()
+	}
+	return c.commonControl()
 }
 
 // tunnelHandshake 与隧道服务端进行握手
@@ -137,7 +156,7 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: tcpReadTimeout})
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 2 * reportInterval})
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
@@ -153,17 +172,25 @@ func (c *Client) tunnelHandshake() error {
 		return err
 	}
 
-	tunnelSignal := string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'})))
-
 	// 解析隧道URL
-	tunnelURL, err := url.Parse(tunnelSignal)
+	tunnelURL, err := url.Parse(string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'}))))
 	if err != nil {
 		return err
 	}
-	c.dataFlow = tunnelURL.Host
+
+	// 更新客户端配置
+	if tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
+		return net.UnknownNetworkError(tunnelURL.String())
+	}
+	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
+		return err
+	} else {
+		c.maxPoolCapacity = max
+	}
+	c.dataFlow = strings.TrimPrefix(tunnelURL.Path, "/")
 	c.tlsCode = tunnelURL.Fragment
 
-	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelSignal, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
 	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 	return nil
 }
