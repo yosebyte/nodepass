@@ -69,7 +69,7 @@ func (s *Server) Run() {
 					return
 				case <-time.After(serviceCooldown):
 				}
-				logInfo("Server restarted")
+				logInfo("Server restarting")
 			}
 		}
 	}()

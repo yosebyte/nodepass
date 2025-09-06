@@ -67,7 +67,7 @@ func (c *Client) Run() {
 					return
 				case <-time.After(serviceCooldown):
 				}
-				logInfo("Client restarted")
+				logInfo("Client restarting")
 			}
 		}
 	}()
