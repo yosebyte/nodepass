@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -95,14 +96,14 @@ func (s *Server) start() error {
 
 	// 初始化隧道监听器
 	if err := s.initTunnelListener(); err != nil {
-		return err
+		return fmt.Errorf("start: initTunnelListener failed: %w", err)
 	}
 
 	// 运行模式判断
 	switch s.runMode {
 	case "1": // 反向模式
 		if err := s.initTargetListener(); err != nil {
-			return err
+			return fmt.Errorf("start: initTargetListener failed: %w", err)
 		}
 		s.dataFlow = "-"
 	case "2": // 正向模式
@@ -119,7 +120,7 @@ func (s *Server) start() error {
 
 	// 与客户端进行握手
 	if err := s.tunnelHandshake(); err != nil {
-		return err
+		return fmt.Errorf("start: tunnelHandshake failed: %w", err)
 	}
 
 	// 握手之后把UDP监听关掉
@@ -139,7 +140,10 @@ func (s *Server) start() error {
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}
-	return s.commonControl()
+	if err := s.commonControl(); err != nil {
+		return fmt.Errorf("start: commonControl failed: %w", err)
+	}
+	return nil
 }
 
 // tunnelHandshake 与客户端进行握手
@@ -147,15 +151,15 @@ func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
 	for {
 		if s.ctx.Err() != nil {
-			return s.ctx.Err()
+			return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 		}
 
 		tunnelTCPConn, err := s.tunnelListener.Accept()
 		if err != nil {
-			s.logger.Error("Accept error: %v", err)
+			s.logger.Error("tunnelHandshake: accept error: %v", err)
 			select {
 			case <-s.ctx.Done():
-				return s.ctx.Err()
+				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 			case <-time.After(serviceCooldown):
 			}
 			continue
@@ -166,11 +170,11 @@ func (s *Server) tunnelHandshake() error {
 		bufReader := bufio.NewReader(tunnelTCPConn)
 		rawTunnelKey, err := bufReader.ReadString('\n')
 		if err != nil {
-			s.logger.Warn("Handshake timeout: %v", tunnelTCPConn.RemoteAddr())
+			s.logger.Warn("tunnelHandshake: handshake timeout: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
 			select {
 			case <-s.ctx.Done():
-				return s.ctx.Err()
+				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 			case <-time.After(serviceCooldown):
 			}
 			continue
@@ -180,11 +184,11 @@ func (s *Server) tunnelHandshake() error {
 		tunnelKey := string(s.xor(bytes.TrimSuffix([]byte(rawTunnelKey), []byte{'\n'})))
 
 		if tunnelKey != s.tunnelKey {
-			s.logger.Warn("Access denied: %v", tunnelTCPConn.RemoteAddr())
+			s.logger.Warn("tunnelHandshake: access denied: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
 			select {
 			case <-s.ctx.Done():
-				return s.ctx.Err()
+				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 			case <-time.After(serviceCooldown):
 			}
 			continue
@@ -210,7 +214,7 @@ func (s *Server) tunnelHandshake() error {
 
 	_, err := s.tunnelTCPConn.Write(append(s.xor([]byte(tunnelURL.String())), '\n'))
 	if err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)
 	}
 
 	s.logger.Info("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
