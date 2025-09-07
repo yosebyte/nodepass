@@ -395,13 +395,16 @@ func (c *Common) initTargetListener() error {
 	c.targetListener = targetListener
 
 	// 初始化目标UDP监听器
-	var targetUDPConn net.Conn
-	targetUDPConn, err = net.ListenUDP("udp", c.targetUDPAddr)
+	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
 	if err != nil {
 		return err
 	}
-	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
+	statUDPConn := &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+	if udpConn, ok := statUDPConn.Unwrap().(*net.UDPConn); ok {
+		c.targetUDPConn = udpConn
+	} else {
+		return fmt.Errorf("conversion to UDPConn failed")
+	}
 
 	return nil
 }
@@ -647,9 +650,14 @@ func (c *Common) commonTCPLoop() {
 			continue
 		}
 
-		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-		c.targetTCPConn = targetConn.(*net.TCPConn)
-		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+		statTCPConn := &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+		if tcpConn, ok := statTCPConn.Unwrap().(*net.TCPConn); ok {
+			c.targetTCPConn = tcpConn
+		} else {
+			c.logger.Error("commonTCPLoop: conversion to TCPConn failed")
+			return
+		}
+		c.logger.Debug("Target connection: %v <-> %v", c.targetTCPConn.LocalAddr(), c.targetTCPConn.RemoteAddr())
 
 		go func(targetConn net.Conn) {
 			// 尝试获取TCP连接槽位
@@ -706,7 +714,7 @@ func (c *Common) commonTCPLoop() {
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 			c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout))
-		}(targetConn)
+		}(c.targetTCPConn)
 	}
 }
 
@@ -952,19 +960,24 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		}
 	}()
 
-	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-	c.targetTCPConn = targetConn.(*net.TCPConn)
-	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
+	statTCPConn := &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+	if tcpConn, ok := statTCPConn.Unwrap().(*net.TCPConn); ok {
+		c.targetTCPConn = tcpConn
+	} else {
+		c.logger.Error("commonTCPOnce: conversion to TCPConn failed")
+		return
+	}
+	c.logger.Debug("Target connection: %v <-> %v", c.targetTCPConn.LocalAddr(), c.targetTCPConn.RemoteAddr())
 
 	// 发送PROXY v1
-	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
+	if err := c.sendProxyV1Header(signalURL.Host, c.targetTCPConn); err != nil {
 		c.logger.Error("sendProxyV1Header failed: %v", err)
 		return
 	}
 
 	// 交换数据
-	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-	c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout))
+	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), c.targetTCPConn.LocalAddr())
+	c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, c.targetTCPConn, c.readTimeout))
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -1006,8 +1019,13 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		}
 		c.targetUDPSession.Store(sessionKey, session)
 
-		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-		targetConn = session.(*net.UDPConn)
+		statUDPConn := &conn.StatConn{Conn: session, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+		if udpConn, ok := statUDPConn.Unwrap().(*net.UDPConn); ok {
+			targetConn = udpConn
+		} else {
+			c.logger.Error("commonUDPOnce: conversion to UDPConn failed")
+			return
+		}
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
@@ -1168,9 +1186,15 @@ func (c *Common) singleTCPLoop() error {
 			continue
 		}
 
-		tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-		c.tunnelTCPConn = tunnelConn.(*net.TCPConn)
-		c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
+		statTCPConn := &conn.StatConn{Conn: tunnelConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+		if tcpConn, ok := statTCPConn.Unwrap().(*net.TCPConn); ok {
+			c.tunnelTCPConn = tcpConn
+		} else {
+			c.logger.Error("singleTCPLoop: conversion to TCPConn failed")
+			tunnelConn.Close()
+			continue
+		}
+		c.logger.Debug("Tunnel connection: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
 
 		go func(tunnelConn net.Conn) {
 			// 尝试获取TCP连接槽位
@@ -1214,7 +1238,7 @@ func (c *Common) singleTCPLoop() error {
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
 			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout))
-		}(tunnelConn)
+		}(c.tunnelTCPConn)
 	}
 }
 
@@ -1273,8 +1297,17 @@ func (c *Common) singleUDPLoop() error {
 			}
 			c.targetUDPSession.Store(sessionKey, session)
 
-			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-			targetConn = session.(*net.UDPConn)
+			statUDPConn := &conn.StatConn{Conn: session, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+			if udpConn, ok := statUDPConn.Unwrap().(*net.UDPConn); ok {
+				targetConn = udpConn
+			} else {
+				c.logger.Error("singleUDPLoop: conversion to UDPConn failed")
+				c.targetUDPSession.Delete(sessionKey)
+				session.Close()
+				c.releaseSlot(true)
+				putUDPBuffer(buffer)
+				continue
+			}
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 			go func(targetConn net.Conn, clientAddr *net.UDPAddr, sessionKey string) {
