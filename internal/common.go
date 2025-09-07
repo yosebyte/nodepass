@@ -544,7 +544,7 @@ func (c *Common) commonQueue() error {
 		select {
 		case c.signalChan <- signal:
 		default:
-			c.logger.Error("Queue limit reached: %v", semaphoreLimit)
+			c.logger.Error("commonQueue: queue limit reached: %v", semaphoreLimit)
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
@@ -696,7 +696,7 @@ func (c *Common) commonTCPLoop() {
 			launchURL := &url.URL{
 				Scheme:   "np",
 				Host:     targetConn.RemoteAddr().String(),
-				Path:     id,
+				Path:     url.PathEscape(id),
 				Fragment: "1", // TCP模式
 			}
 
@@ -822,7 +822,7 @@ func (c *Common) commonUDPLoop() {
 			launchURL := &url.URL{
 				Scheme:   "np",
 				Host:     clientAddr.String(),
-				Path:     id,
+				Path:     url.PathEscape(id),
 				Fragment: "2", // UDP模式
 			}
 
@@ -875,7 +875,7 @@ func (c *Common) commonOnce() error {
 			// 解析信号URL
 			signalURL, err := url.Parse(signal)
 			if err != nil {
-				return fmt.Errorf("healthCheck: parse signal URL failed: %w", err)
+				return fmt.Errorf("commonOnce: parse signal URL failed: %w", err)
 			}
 
 			// 处理信号
@@ -902,7 +902,7 @@ func (c *Common) commonOnce() error {
 				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pongURL.String())), '\n'))
 				c.mu.Unlock()
 				if err != nil {
-					return fmt.Errorf("healthCheck: write pong signal failed: %w", err)
+					return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
 				}
 			case "o": // PONG
 				// 发送检查点事件
@@ -921,6 +921,12 @@ func (c *Common) commonOnce() error {
 // commonTCPOnce 共用处理单个TCP请求
 func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	id := strings.TrimPrefix(signalURL.Path, "/")
+	if unescapedID, err := url.PathUnescape(id); err != nil {
+		c.logger.Error("commonTCPOnce: unescape id failed: %v", err)
+		return
+	} else {
+		id = unescapedID
+	}
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 尝试获取TCP连接槽位
@@ -983,6 +989,12 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 // commonUDPOnce 共用处理单个UDP请求
 func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	id := strings.TrimPrefix(signalURL.Path, "/")
+	if unescapedID, err := url.PathUnescape(id); err != nil {
+		c.logger.Error("commonUDPOnce: unescape id failed: %v", err)
+		return
+	} else {
+		id = unescapedID
+	}
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 尝试获取UDP连接槽位
