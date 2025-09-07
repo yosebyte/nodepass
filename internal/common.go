@@ -400,8 +400,8 @@ func (c *Common) initTargetListener() error {
 	if err != nil {
 		return err
 	}
-	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
 	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
 
 	return nil
 }
@@ -647,8 +647,8 @@ func (c *Common) commonTCPLoop() {
 			continue
 		}
 
-		c.targetTCPConn = targetConn.(*net.TCPConn)
 		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+		c.targetTCPConn = targetConn.(*net.TCPConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 		go func(targetConn net.Conn) {
@@ -952,8 +952,8 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		}
 	}()
 
-	c.targetTCPConn = targetConn.(*net.TCPConn)
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+	c.targetTCPConn = targetConn.(*net.TCPConn)
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 	// 发送PROXY v1
@@ -1006,8 +1006,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		}
 		c.targetUDPSession.Store(sessionKey, session)
 
-		targetConn = session.(*net.UDPConn)
 		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+		targetConn = session.(*net.UDPConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
@@ -1168,8 +1168,8 @@ func (c *Common) singleTCPLoop() error {
 			continue
 		}
 
-		c.tunnelTCPConn = tunnelConn.(*net.TCPConn)
 		tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
+		c.tunnelTCPConn = tunnelConn.(*net.TCPConn)
 		c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
 
 		go func(tunnelConn net.Conn) {
@@ -1273,8 +1273,8 @@ func (c *Common) singleUDPLoop() error {
 			}
 			c.targetUDPSession.Store(sessionKey, session)
 
-			targetConn = session.(*net.UDPConn)
 			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+			targetConn = session.(*net.UDPConn)
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 			go func(targetConn net.Conn, clientAddr *net.UDPAddr, sessionKey string) {
