@@ -272,7 +272,7 @@ func (c *Common) getSlotLimit(parsedURL *url.URL) {
 			c.slotLimit = int32(value)
 		}
 	} else {
-		c.slotLimit = 1024
+		c.slotLimit = 65536
 	}
 }
 
