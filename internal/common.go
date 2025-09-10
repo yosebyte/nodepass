@@ -37,9 +37,9 @@ type Common struct {
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
-	tunnelUDPConn    *net.UDPConn       // 隧道UDP连接
+	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
 	targetTCPConn    *net.TCPConn       // 目标TCP连接
-	targetUDPConn    *net.UDPConn       // 目标UDP连接
+	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
 	tunnelPool       *pool.Pool         // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
@@ -358,9 +358,6 @@ func (c *Common) initTunnelListener() error {
 	// 初始化隧道TCP监听器
 	tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
 	if err != nil {
-		if tunnelListener != nil {
-			tunnelListener.Close()
-		}
 		return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
 	}
 	c.tunnelListener = tunnelListener
@@ -368,12 +365,9 @@ func (c *Common) initTunnelListener() error {
 	// 初始化隧道UDP监听器
 	tunnelUDPConn, err := net.ListenUDP("udp", c.tunnelUDPAddr)
 	if err != nil {
-		if tunnelUDPConn != nil {
-			tunnelUDPConn.Close()
-		}
 		return fmt.Errorf("initTunnelListener: listenUDP failed: %w", err)
 	}
-	c.tunnelUDPConn = tunnelUDPConn
+	c.tunnelUDPConn = &conn.StatConn{Conn: tunnelUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 
 	return nil
 }
@@ -387,21 +381,16 @@ func (c *Common) initTargetListener() error {
 	// 初始化目标TCP监听器
 	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
 	if err != nil {
-		if targetListener != nil {
-			targetListener.Close()
-		}
 		return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
 	}
 	c.targetListener = targetListener
 
 	// 初始化目标UDP监听器
-	var targetUDPConn net.Conn
-	targetUDPConn, err = net.ListenUDP("udp", c.targetUDPAddr)
+	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
 	if err != nil {
 		return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
 	}
-	targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-	c.targetUDPConn = targetUDPConn.(*net.UDPConn)
+	c.targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 
 	return nil
 }
@@ -867,7 +856,13 @@ func (c *Common) commonOnce() error {
 			// 解析信号URL
 			signalURL, err := url.Parse(signal)
 			if err != nil {
-				return fmt.Errorf("commonOnce: parse signal URL failed: %w", err)
+				c.logger.Error("commonOnce: parse signal failed: %v", err)
+				select {
+				case <-c.ctx.Done():
+					return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
+				case <-time.After(50 * time.Millisecond):
+				}
+				continue
 			}
 
 			// 处理信号
@@ -1007,19 +1002,17 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	// 获取或创建目标UDP会话
 	if session, ok := c.targetUDPSession.Load(sessionKey); ok {
-		targetConn = session.(*net.UDPConn)
+		targetConn = session.(net.Conn)
 		c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	} else {
 		// 创建新的会话
-		session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+		newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 		if err != nil {
 			c.logger.Error("commonUDPOnce: dialTimeout failed: %v", err)
 			return
 		}
-		c.targetUDPSession.Store(sessionKey, session)
-
-		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-		targetConn = session.(*net.UDPConn)
+		targetConn = &conn.StatConn{Conn: newSession, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
+		c.targetUDPSession.Store(sessionKey, targetConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
@@ -1265,7 +1258,7 @@ func (c *Common) singleUDPLoop() error {
 		// 获取或创建目标UDP会话
 		if session, ok := c.targetUDPSession.Load(sessionKey); ok {
 			// 复用现有会话
-			targetConn = session.(*net.UDPConn)
+			targetConn = session.(net.Conn)
 			c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 		} else {
 			// 尝试获取UDP连接槽位
@@ -1276,17 +1269,15 @@ func (c *Common) singleUDPLoop() error {
 			}
 
 			// 创建新的会话
-			session, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+			newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 			if err != nil {
 				c.logger.Error("singleUDPLoop: dialTimeout failed: %v", err)
 				c.releaseSlot(true)
 				putUDPBuffer(buffer)
 				continue
 			}
-			c.targetUDPSession.Store(sessionKey, session)
-
-			targetConn = &conn.StatConn{Conn: targetConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
-			targetConn = session.(*net.UDPConn)
+			targetConn = newSession
+			c.targetUDPSession.Store(sessionKey, newSession)
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 			go func(targetConn net.Conn, clientAddr *net.UDPAddr, sessionKey string) {
