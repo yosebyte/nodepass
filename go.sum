@@ -1,7 +1,7 @@
 github.com/NodePassProject/cert v1.0.1 h1:BDy2tTOudy6yk7hvcmScAJMw4NrpCdSCsbuu7hHsIuw=
 github.com/NodePassProject/cert v1.0.1/go.mod h1:wP7joOJeQAIlIuOUmhHPwMExjuwGa4XApMWQYChGSrk=
-github.com/NodePassProject/conn v1.0.11 h1:vyVliCZEqWEWThNkSonJzmcE+Md8JLZgKFDVFe4f20o=
-github.com/NodePassProject/conn v1.0.11/go.mod h1:xfQ7ZLUxrtdLsljGHYYCToW+Hdg6DAbmL1Cs94n5h6E=
+github.com/NodePassProject/conn v1.0.12 h1:63Ueb//leEptKNU8MXlrEDF3exJiitZefmJAEyMLnt4=
+github.com/NodePassProject/conn v1.0.12/go.mod h1:xfQ7ZLUxrtdLsljGHYYCToW+Hdg6DAbmL1Cs94n5h6E=
 github.com/NodePassProject/logs v1.0.3 h1:CDUZVQ477vmmFQHazrQCWM0gJPNINm0C2N3FzC4jVyw=
 github.com/NodePassProject/logs v1.0.3/go.mod h1:TwtPXOzLtb8iH+fdduQjEEywICXivsM39cy9AinMSks=
 github.com/NodePassProject/pool v1.0.24 h1:8DSgZ2dxnzYXgplp9ZwZlpwFiKIWU4JYW1glUm+hq/4=
