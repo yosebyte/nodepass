@@ -173,6 +173,46 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=error&tls=1&rate=50"
 - **QoS Compliance**: Meet service level agreements for bandwidth usage
 - **Testing**: Simulate low-bandwidth environments for application testing
 
+## Connection Slot Limit
+
+NodePass provides connection slot limiting to control the maximum number of concurrent connections and prevent resource exhaustion. This feature helps maintain system stability and predictable performance under high load conditions.
+
+- `slot`: Maximum total connection limit (default: 65536)
+  - Value 0 or omitted: No connection limit (unlimited concurrent connections)
+  - Positive integer: Maximum number of concurrent TCP and UDP connections combined
+  - Applies to both client and server modes
+  - Connections exceeding the limit will be rejected until slots become available
+  - Separate tracking for TCP and UDP connections with combined limit enforcement
+
+The slot limit provides a circuit breaker mechanism that prevents NodePass from accepting more connections than the system can handle effectively. When the limit is reached, new connection attempts are rejected immediately rather than queuing, which helps maintain low latency for existing connections.
+
+Example:
+```bash
+# Limit total concurrent connections to 1000
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?slot=1000"
+
+# Client with 500 connection limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?slot=500"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&slot=2000&rate=100"
+```
+
+**Connection Slot Limit Use Cases:**
+- **Resource Protection**: Prevent system overload by limiting concurrent connections
+- **Memory Management**: Control memory usage in high-traffic scenarios
+- **Performance Consistency**: Maintain predictable latency by avoiding resource contention
+- **Capacity Planning**: Set known limits for infrastructure capacity planning
+- **DoS Protection**: Provide basic protection against connection flood attacks
+- **Service Stability**: Ensure critical services remain responsive under load
+
+**Best Practices for Slot Configuration:**
+- **Small Systems**: Set conservative limits (100-1000) for resource-constrained environments
+- **High-Performance Systems**: Configure higher limits (10000-50000) based on available memory and CPU
+- **Load Testing**: Determine optimal limits through performance testing under expected load
+- **Monitoring**: Track connection usage to identify if limits need adjustment
+- **Headroom**: Leave 20-30% headroom below theoretical system limits for stability
+
 ## PROXY Protocol Support
 
 NodePass supports PROXY protocol v1 for preserving client connection information when forwarding traffic through load balancers, reverse proxies, or other intermediary services.
@@ -349,11 +389,11 @@ For applications requiring maximum throughput (e.g., media streaming, file trans
 
 URL parameters:
 ```bash
-# High-throughput server with 1 Gbps rate limit
-nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000"
+# High-throughput server with 1 Gbps rate limit and high connection capacity
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=8192&rate=1000&slot=10000"
 
-# High-throughput client with 500 Mbps rate limit
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500"
+# High-throughput client with 500 Mbps rate limit and high connection capacity
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500&slot=5000"
 ```
 
 Environment variables:
@@ -372,11 +412,11 @@ For applications requiring minimal latency (e.g., gaming, financial trading):
 
 URL parameters:
 ```bash
-# Low-latency server with moderate rate limit
-nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200"
+# Low-latency server with moderate rate limit and moderate connection limit
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=4096&rate=200&slot=3000"
 
-# Low-latency client with moderate rate limit
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&rate=200"
+# Low-latency client with moderate rate limit and moderate connection limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=256&rate=200&slot=2000"
 ```
 
 Environment variables:
@@ -396,11 +436,11 @@ For deployment on systems with limited resources (e.g., IoT devices, small VPS):
 
 URL parameters:
 ```bash
-# Resource-constrained server with conservative rate limit
-nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50"
+# Resource-constrained server with conservative rate limit and low connection limit
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?max=512&rate=50&slot=500"
 
-# Resource-constrained client with conservative rate limit
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&rate=50"
+# Resource-constrained client with conservative rate limit and low connection limit
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&rate=50&slot=200"
 ```
 
 Environment variables:

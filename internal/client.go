@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -95,7 +96,7 @@ func (c *Client) start() error {
 	switch c.runMode {
 	case "1": // 单端模式
 		if err := c.initTunnelListener(); err != nil {
-			return err
+			return fmt.Errorf("start: initTunnelListener failed: %w", err)
 		}
 		return c.singleStart()
 	case "2": // 双端模式
@@ -113,14 +114,17 @@ func (c *Client) start() error {
 
 // singleStart 启动单端转发模式
 func (c *Client) singleStart() error {
-	return c.singleControl()
+	if err := c.singleControl(); err != nil {
+		return fmt.Errorf("singleStart: singleControl failed: %w", err)
+	}
+	return nil
 }
 
 // commonStart 启动双端握手模式
 func (c *Client) commonStart() error {
 	// 与隧道服务端进行握手
 	if err := c.tunnelHandshake(); err != nil {
-		return err
+		return fmt.Errorf("commonStart: tunnelHandshake failed: %w", err)
 	}
 
 	// 初始化连接池
@@ -140,11 +144,14 @@ func (c *Client) commonStart() error {
 	if c.dataFlow == "+" {
 		// 初始化目标监听器
 		if err := c.initTargetListener(); err != nil {
-			return err
+			return fmt.Errorf("commonStart: initTargetListener failed: %w", err)
 		}
 		go c.commonLoop()
 	}
-	return c.commonControl()
+	if err := c.commonControl(); err != nil {
+		return fmt.Errorf("commonStart: commonControl failed: %w", err)
+	}
+	return nil
 }
 
 // tunnelHandshake 与隧道服务端进行握手
@@ -152,7 +159,7 @@ func (c *Client) tunnelHandshake() error {
 	// 建立隧道TCP连接
 	tunnelTCPConn, err := net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: dialTimeout failed: %w", err)
 	}
 
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
@@ -163,19 +170,19 @@ func (c *Client) tunnelHandshake() error {
 	// 发送隧道密钥
 	_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(c.tunnelKey)), '\n'))
 	if err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
 	}
 
 	// 读取隧道URL
 	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
 	if err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: readBytes failed: %w", err)
 	}
 
 	// 解析隧道URL
 	tunnelURL, err := url.Parse(string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'}))))
 	if err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: parse tunnel URL failed: %w", err)
 	}
 
 	// 更新客户端配置
@@ -183,7 +190,7 @@ func (c *Client) tunnelHandshake() error {
 		return net.UnknownNetworkError(tunnelURL.String())
 	}
 	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
-		return err
+		return fmt.Errorf("tunnelHandshake: parse max pool capacity failed: %w", err)
 	} else {
 		c.maxPoolCapacity = max
 	}

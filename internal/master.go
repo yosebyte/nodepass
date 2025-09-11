@@ -278,7 +278,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 解析主机地址
 	host, err := net.ResolveTCPAddr("tcp", parsedURL.Host)
 	if err != nil {
-		logger.Error("Resolve failed: %v", err)
+		logger.Error("newMaster: resolveTCPAddr failed: %v", err)
 		return nil
 	}
 
@@ -445,7 +445,7 @@ func (m *Master) Run() {
 			err = m.server.ListenAndServe()
 		}
 		if err != nil && err != http.ErrServerClosed {
-			m.logger.Error("Listen failed: %v", err)
+			m.logger.Error("run: listen failed: %v", err)
 		}
 	}()
 
@@ -533,14 +533,14 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		// 保存实例状态
 		if err := m.saveState(); err != nil {
-			m.logger.Error("Save gob failed: %v", err)
+			m.logger.Error("shutdown: save gob failed: %v", err)
 		} else {
 			m.logger.Info("Instances saved: %v", m.statePath)
 		}
 
 		// 关闭HTTP服务器
 		if err := m.server.Shutdown(ctx); err != nil {
-			m.logger.Error("ApiSvr shutdown error: %v", err)
+			m.logger.Error("shutdown: api shutdown error: %v", err)
 		}
 	})
 }
@@ -578,15 +578,13 @@ func (m *Master) saveStateToPath(filePath string) error {
 
 	// 确保目录存在
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-		m.logger.Error("Create state dir failed: %v", err)
-		return err
+		return fmt.Errorf("saveStateToPath: mkdirAll failed: %w", err)
 	}
 
 	// 创建临时文件
 	tempFile, err := os.CreateTemp(filepath.Dir(filePath), "np-*.tmp")
 	if err != nil {
-		m.logger.Error("Create temp failed: %v", err)
-		return err
+		return fmt.Errorf("saveStateToPath: createTemp failed: %w", err)
 	}
 	tempPath := tempFile.Name()
 
@@ -600,24 +598,21 @@ func (m *Master) saveStateToPath(filePath string) error {
 	// 编码数据
 	encoder := gob.NewEncoder(tempFile)
 	if err := encoder.Encode(persistentData); err != nil {
-		m.logger.Error("Encode instances failed: %v", err)
 		tempFile.Close()
 		removeTemp()
-		return err
+		return fmt.Errorf("saveStateToPath: encode failed: %w", err)
 	}
 
 	// 关闭文件
 	if err := tempFile.Close(); err != nil {
-		m.logger.Error("Close temp failed: %v", err)
 		removeTemp()
-		return err
+		return fmt.Errorf("saveStateToPath: close temp file failed: %w", err)
 	}
 
 	// 原子地替换文件
 	if err := os.Rename(tempPath, filePath); err != nil {
-		m.logger.Error("Rename temp failed: %v", err)
 		removeTemp()
-		return err
+		return fmt.Errorf("saveStateToPath: rename temp file failed: %w", err)
 	}
 
 	return nil
@@ -632,7 +627,7 @@ func (m *Master) startPeriodicBackup() {
 			backupPath := fmt.Sprintf("%s.backup", m.statePath)
 
 			if err := m.saveStateToPath(backupPath); err != nil {
-				m.logger.Error("Backup state failed: %v", err)
+				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
 			} else {
 				m.logger.Info("State backup saved: %v", backupPath)
 			}
@@ -652,7 +647,7 @@ func (m *Master) loadState() {
 	// 打开文件
 	file, err := os.Open(m.statePath)
 	if err != nil {
-		m.logger.Error("Open file failed: %v", err)
+		m.logger.Error("loadState: open file failed: %v", err)
 		return
 	}
 	defer file.Close()
@@ -661,7 +656,7 @@ func (m *Master) loadState() {
 	var persistentData map[string]*Instance
 	decoder := gob.NewDecoder(file)
 	if err := decoder.Decode(&persistentData); err != nil {
-		m.logger.Error("Decode file failed: %v", err)
+		m.logger.Error("loadState: decode file failed: %v", err)
 		return
 	}
 
@@ -1228,7 +1223,7 @@ func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
 			// 序列化事件数据
 			data, err := json.Marshal(event)
 			if err != nil {
-				m.logger.Error("Event marshal error: %v", err)
+				m.logger.Error("handleSSE: event marshal error: %v", err)
 				continue
 			}
 
@@ -1305,7 +1300,7 @@ func (m *Master) startInstance(instance *Instance) {
 	// 获取可执行文件路径
 	execPath, err := os.Executable()
 	if err != nil {
-		m.logger.Error("Get path failed: %v [%v]", err, instance.ID)
+		m.logger.Error("startInstance: get path failed: %v [%v]", err, instance.ID)
 		instance.Status = "error"
 		m.instances.Store(instance.ID, instance)
 		m.sendSSEEvent("update", instance)
@@ -1326,9 +1321,9 @@ func (m *Master) startInstance(instance *Instance) {
 	// 启动实例
 	if err := cmd.Start(); err != nil || cmd.Process == nil || cmd.Process.Pid <= 0 {
 		if err != nil {
-			m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+			m.logger.Error("startInstance: instance error: %v [%v]", err, instance.ID)
 		} else {
-			m.logger.Error("Instance start failed [%v]", instance.ID)
+			m.logger.Error("startInstance: instance start failed [%v]", instance.ID)
 		}
 		instance.Status = "error"
 		m.instances.Store(instance.ID, instance)
@@ -1365,7 +1360,7 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 				instance = value.(*Instance)
 				if instance.Status == "running" {
 					if err != nil {
-						m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+						m.logger.Error("monitorInstance: instance error: %v [%v]", err, instance.ID)
 						instance.Status = "error"
 					} else {
 						instance.Status = "stopped"
@@ -1419,7 +1414,7 @@ func (m *Master) stopInstance(instance *Instance) {
 	} else {
 		err := instance.cmd.Process.Kill()
 		if err != nil {
-			m.logger.Error("Instance error: %v [%v]", err, instance.ID)
+			m.logger.Error("stopInstance: instance error: %v [%v]", err, instance.ID)
 		}
 	}
 
@@ -1442,7 +1437,7 @@ func (m *Master) stopInstance(instance *Instance) {
 func (m *Master) enhanceURL(instanceURL string, instanceType string) string {
 	parsedURL, err := url.Parse(instanceURL)
 	if err != nil {
-		m.logger.Error("Invalid URL format: %v", err)
+		m.logger.Error("enhanceURL: invalid URL format: %v", err)
 		return instanceURL
 	}
 
