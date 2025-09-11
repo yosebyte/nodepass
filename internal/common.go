@@ -38,7 +38,6 @@ type Common struct {
 	tunnelListener   net.Listener       // 隧道监听器
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
 	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
-	targetTCPConn    *net.TCPConn       // 目标TCP连接
 	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
 	tunnelPool       *pool.Pool         // 隧道连接池
@@ -435,12 +434,6 @@ func (c *Common) stop() {
 		c.logger.Debug("Target connection closed: %v", c.targetUDPConn.LocalAddr())
 	}
 
-	// 关闭目标TCP连接
-	if c.targetTCPConn != nil {
-		c.targetTCPConn.Close()
-		c.logger.Debug("Target connection closed: %v", c.targetTCPConn.LocalAddr())
-	}
-
 	// 关闭隧道UDP连接
 	if c.tunnelUDPConn != nil {
 		c.tunnelUDPConn.Close()
@@ -637,7 +630,6 @@ func (c *Common) commonTCPLoop() {
 		}
 
 		targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-		c.targetTCPConn = targetConn.(*net.TCPConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 		go func(targetConn net.Conn) {
@@ -954,7 +946,6 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	}()
 
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-	c.targetTCPConn = targetConn.(*net.TCPConn)
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 	// 发送PROXY v1
@@ -1174,7 +1165,6 @@ func (c *Common) singleTCPLoop() error {
 		}
 
 		tunnelConn = &conn.StatConn{Conn: tunnelConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
-		c.tunnelTCPConn = tunnelConn.(*net.TCPConn)
 		c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
 
 		go func(tunnelConn net.Conn) {
@@ -1207,7 +1197,6 @@ func (c *Common) singleTCPLoop() error {
 				}
 			}()
 
-			c.targetTCPConn = targetConn.(*net.TCPConn)
 			c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 			// 发送PROXY v1
