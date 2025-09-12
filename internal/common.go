@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
@@ -164,6 +165,20 @@ func (c *Common) xor(data []byte) []byte {
 		data[i] ^= c.tunnelKey[i%len(c.tunnelKey)]
 	}
 	return data
+}
+
+// encode base64编码数据
+func (c *Common) encode(data []byte) []byte {
+	return append([]byte(base64.StdEncoding.EncodeToString(c.xor(data))), '\n')
+}
+
+// decode base64解码数据
+func (c *Common) decode(data []byte) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(string(bytes.TrimSuffix(data, []byte{'\n'})))
+	if err != nil {
+		return nil, fmt.Errorf("decode: base64 decode failed: %w", err)
+	}
+	return c.xor(decoded), nil
 }
 
 // getTunnelKey 从URL中获取隧道密钥
@@ -517,7 +532,19 @@ func (c *Common) commonQueue() error {
 		if err != nil {
 			return fmt.Errorf("commonQueue: readBytes failed: %w", err)
 		}
-		signal := string(c.xor(bytes.TrimSuffix(rawSignal, []byte{'\n'})))
+
+		// 解码信号
+		signalData, err := c.decode(rawSignal)
+		if err != nil {
+			c.logger.Error("commonQueue: decode signal failed: %v", err)
+			select {
+			case <-c.ctx.Done():
+				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
+			case <-time.After(50 * time.Millisecond):
+			}
+			continue
+		}
+		signal := string(signalData)
 
 		// 将信号发送到通道
 		select {
@@ -550,7 +577,7 @@ func (c *Common) healthCheck() error {
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
-			_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(flushURL.String())), '\n'))
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(flushURL.String())))
 			if err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
@@ -569,7 +596,7 @@ func (c *Common) healthCheck() error {
 
 		// 发送PING信号
 		c.checkPoint = time.Now()
-		_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pingURL.String())), '\n'))
+		_, err := c.tunnelTCPConn.Write(c.encode([]byte(pingURL.String())))
 		if err != nil {
 			c.mu.Unlock()
 			return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
@@ -674,7 +701,7 @@ func (c *Common) commonTCPLoop() {
 			}
 
 			c.mu.Lock()
-			_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
+			_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
 			c.mu.Unlock()
 
 			if err != nil {
@@ -800,7 +827,7 @@ func (c *Common) commonUDPLoop() {
 			}
 
 			c.mu.Lock()
-			_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(launchURL.String())), '\n'))
+			_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
 			c.mu.Unlock()
 			if err != nil {
 				c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
@@ -878,7 +905,7 @@ func (c *Common) commonOnce() error {
 				go c.commonUDPOnce(signalURL)
 			case "i": // PING
 				c.mu.Lock()
-				_, err := c.tunnelTCPConn.Write(append(c.xor([]byte(pongURL.String())), '\n'))
+				_, err := c.tunnelTCPConn.Write(c.encode([]byte(pongURL.String())))
 				c.mu.Unlock()
 				if err != nil {
 					return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
