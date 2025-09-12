@@ -3,7 +3,6 @@ package internal
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -168,7 +167,7 @@ func (s *Server) tunnelHandshake() error {
 		tunnelTCPConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 
 		bufReader := bufio.NewReader(tunnelTCPConn)
-		rawTunnelKey, err := bufReader.ReadString('\n')
+		rawTunnelKey, err := bufReader.ReadBytes('\n')
 		if err != nil {
 			s.logger.Warn("tunnelHandshake: handshake timeout: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
@@ -181,7 +180,20 @@ func (s *Server) tunnelHandshake() error {
 		}
 
 		tunnelTCPConn.SetReadDeadline(time.Time{})
-		tunnelKey := string(s.xor(bytes.TrimSuffix([]byte(rawTunnelKey), []byte{'\n'})))
+
+		// 解码隧道密钥
+		tunnelKeyData, err := s.decode(rawTunnelKey)
+		if err != nil {
+			s.logger.Warn("tunnelHandshake: decode tunnel key failed: %v", tunnelTCPConn.RemoteAddr())
+			tunnelTCPConn.Close()
+			select {
+			case <-s.ctx.Done():
+				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
+			case <-time.After(serviceCooldown):
+			}
+			continue
+		}
+		tunnelKey := string(tunnelKeyData)
 
 		if tunnelKey != s.tunnelKey {
 			s.logger.Warn("tunnelHandshake: access denied: %v", tunnelTCPConn.RemoteAddr())
@@ -212,7 +224,7 @@ func (s *Server) tunnelHandshake() error {
 		Fragment: s.tlsCode,
 	}
 
-	_, err := s.tunnelTCPConn.Write(append(s.xor([]byte(tunnelURL.String())), '\n'))
+	_, err := s.tunnelTCPConn.Write(s.encode([]byte(tunnelURL.String())))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)
 	}

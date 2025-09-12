@@ -3,7 +3,6 @@ package internal
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -168,7 +167,7 @@ func (c *Client) tunnelHandshake() error {
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
 	// 发送隧道密钥
-	_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(c.tunnelKey)), '\n'))
+	_, err = c.tunnelTCPConn.Write(c.encode([]byte(c.tunnelKey)))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
 	}
@@ -179,8 +178,14 @@ func (c *Client) tunnelHandshake() error {
 		return fmt.Errorf("tunnelHandshake: readBytes failed: %w", err)
 	}
 
+	// 解码隧道URL
+	tunnelURLData, err := c.decode(rawTunnelURL)
+	if err != nil {
+		return fmt.Errorf("tunnelHandshake: decode tunnel URL failed: %w", err)
+	}
+
 	// 解析隧道URL
-	tunnelURL, err := url.Parse(string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'}))))
+	tunnelURL, err := url.Parse(string(tunnelURLData))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: parse tunnel URL failed: %w", err)
 	}
