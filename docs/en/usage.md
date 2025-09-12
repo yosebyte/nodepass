@@ -327,7 +327,7 @@ NodePass uses tunnel keys to authenticate connections between clients and server
 The handshake process between client and server is as follows:
 
 1. **Client Connection**: Client connects to the server's tunnel address
-2. **Key Authentication**: Client sends XOR-encrypted tunnel key
+2. **Key Authentication**: Client sends encrypted tunnel key
 3. **Server Verification**: Server decrypts and verifies if the key matches
 4. **Configuration Sync**: Upon successful verification, server sends tunnel configuration including:
    - Data flow direction
