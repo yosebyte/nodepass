@@ -467,49 +467,11 @@ func (m *Master) Run() {
 // Shutdown 关闭主控
 func (m *Master) Shutdown(ctx context.Context) error {
 	return m.shutdown(ctx, func() {
-		// 声明一个已关闭通道的集合，避免重复关闭
-		var closedChannels sync.Map
-
-		var wg sync.WaitGroup
-
-		// 给所有订阅者一个关闭通知
-		m.subscribers.Range(func(key, value any) bool {
-			subscriberChan := value.(chan *InstanceEvent)
-			wg.Add(1)
-			go func(ch chan *InstanceEvent) {
-				defer wg.Done()
-				// 非阻塞的方式发送关闭事件
-				select {
-				case ch <- &InstanceEvent{
-					Type: "shutdown",
-					Time: time.Now(),
-				}:
-				default:
-					// 不可用，忽略
-				}
-			}(subscriberChan)
-			return true
-		})
-
-		// 等待所有订阅者处理完关闭事件
-		time.Sleep(baseDuration)
-
-		// 关闭所有订阅者通道
-		m.subscribers.Range(func(key, value any) bool {
-			subscriberChan := value.(chan *InstanceEvent)
-			// 检查通道是否已关闭，如果没有则关闭它
-			if _, loaded := closedChannels.LoadOrStore(subscriberChan, true); !loaded {
-				wg.Add(1)
-				go func(k any, ch chan *InstanceEvent) {
-					defer wg.Done()
-					close(ch)
-					m.subscribers.Delete(k)
-				}(key, subscriberChan)
-			}
-			return true
-		})
+		// 通知并关闭SSE连接
+		m.shutdownSSEConnections()
 
 		// 停止所有运行中的实例
+		var wg sync.WaitGroup
 		m.instances.Range(func(key, value any) bool {
 			instance := value.(*Instance)
 			// 如果实例正在运行，则停止它
@@ -1103,8 +1065,9 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 func (m *Master) regenerateAPIKey(instance *Instance) {
 	instance.URL = generateAPIKey()
 	m.instances.Store(apiKeyID, instance)
-	go m.saveState()
 	m.logger.Info("API Key regenerated: %v", instance.URL)
+	go m.saveState()
+	go m.shutdownSSEConnections()
 }
 
 // processInstanceAction 处理实例操作
@@ -1202,12 +1165,14 @@ func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// 客户端连接关闭标志
 	connectionClosed := make(chan struct{})
 
-	// 监听客户端连接是否关闭，但不关闭通道，留给Shutdown处理
+	// 监听客户端连接是否关闭
 	go func() {
 		<-ctx.Done()
 		close(connectionClosed)
-		// 只从映射表中移除，但不关闭通道
-		m.subscribers.Delete(subscriberID)
+		// 从映射表中移除并关闭通道
+		if ch, exists := m.subscribers.LoadAndDelete(subscriberID); exists {
+			close(ch.(chan *InstanceEvent))
+		}
 	}()
 
 	// 持续发送事件到客户端
@@ -1253,6 +1218,32 @@ func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...stri
 	default:
 		// 通道已满或关闭，忽略
 	}
+}
+
+// shutdownSSEConnections 通知并关闭SSE连接
+func (m *Master) shutdownSSEConnections() {
+	var wg sync.WaitGroup
+
+	// 发送shutdown通知并关闭通道
+	m.subscribers.Range(func(key, value any) bool {
+		ch := value.(chan *InstanceEvent)
+		wg.Add(1)
+		go func(subscriberID any, eventChan chan *InstanceEvent) {
+			defer wg.Done()
+			// 发送shutdown通知
+			select {
+			case eventChan <- &InstanceEvent{Type: "shutdown", Time: time.Now()}:
+			default:
+			}
+			// 从映射表中移除并关闭通道
+			if _, exists := m.subscribers.LoadAndDelete(subscriberID); exists {
+				close(eventChan)
+			}
+		}(key, ch)
+		return true
+	})
+
+	wg.Wait()
 }
 
 // startEventDispatcher 启动事件分发器
