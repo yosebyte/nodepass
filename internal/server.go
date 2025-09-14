@@ -28,7 +28,7 @@ type Server struct {
 }
 
 // NewServer 创建新的服务端实例
-func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Server {
+func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
@@ -37,9 +37,11 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		},
 		tlsConfig: tlsConfig,
 	}
-	server.initConfig(parsedURL)
+	if err := server.initConfig(parsedURL); err != nil {
+		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
+	}
 	server.initRateLimiter()
-	return server
+	return server, nil
 }
 
 // Run 管理服务端生命周期

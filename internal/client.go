@@ -27,7 +27,7 @@ type Client struct {
 }
 
 // NewClient 创建新的客户端实例
-func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
+func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
@@ -35,9 +35,11 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	client.initConfig(parsedURL)
+	if err := client.initConfig(parsedURL); err != nil {
+		return nil, fmt.Errorf("newClient: initConfig failed: %w", err)
+	}
 	client.initRateLimiter()
-	return client
+	return client, nil
 }
 
 // Run 管理客户端生命周期
