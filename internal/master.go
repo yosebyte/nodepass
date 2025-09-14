@@ -274,12 +274,11 @@ func setCorsHeaders(w http.ResponseWriter) {
 }
 
 // NewMaster 创建新的主控实例
-func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger, version string) *Master {
+func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger, version string) (*Master, error) {
 	// 解析主机地址
 	host, err := net.ResolveTCPAddr("tcp", parsedURL.Host)
 	if err != nil {
-		logger.Error("newMaster: resolveTCPAddr failed: %v", err)
-		return nil
+		return nil, fmt.Errorf("newMaster: resolve host failed: %w", err)
 	}
 
 	// 获取隧道名称
@@ -332,7 +331,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动定期备份
 	go master.startPeriodicBackup()
 
-	return master
+	return master, nil
 }
 
 // Run 管理主控生命周期
