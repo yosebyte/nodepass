@@ -181,19 +181,8 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 	return c.xor(decoded), nil
 }
 
-// getTunnelKey 从URL中获取隧道密钥
-func (c *Common) getTunnelKey(parsedURL *url.URL) {
-	if key := parsedURL.User.Username(); key != "" {
-		c.tunnelKey = key
-	} else {
-		hash := fnv.New32a()
-		hash.Write([]byte(parsedURL.Port()))
-		c.tunnelKey = hex.EncodeToString(hash.Sum(nil))
-	}
-}
-
 // getAddress 解析和设置地址信息
-func (c *Common) getAddress(parsedURL *url.URL) {
+func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 解析隧道地址
 	tunnelAddr := parsedURL.Host
 
@@ -201,14 +190,14 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
 		c.tunnelTCPAddr = tunnelTCPAddr
 	} else {
-		c.logger.Error("getAddress: resolveTCPAddr failed: %v", err)
+		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
 	}
 
 	// 解析隧道UDP地址
 	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", tunnelAddr); err == nil {
 		c.tunnelUDPAddr = tunnelUDPAddr
 	} else {
-		c.logger.Error("getAddress: resolveUDPAddr failed: %v", err)
+		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
 	}
 
 	// 处理目标地址
@@ -218,14 +207,27 @@ func (c *Common) getAddress(parsedURL *url.URL) {
 	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
 		c.targetTCPAddr = targetTCPAddr
 	} else {
-		c.logger.Error("getAddress: resolveTCPAddr failed: %v", err)
+		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
 	}
 
 	// 解析目标UDP地址
 	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
 		c.targetUDPAddr = targetUDPAddr
 	} else {
-		c.logger.Error("getAddress: resolveUDPAddr failed: %v", err)
+		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
+	}
+
+	return nil
+}
+
+// getTunnelKey 从URL中获取隧道密钥
+func (c *Common) getTunnelKey(parsedURL *url.URL) {
+	if key := parsedURL.User.Username(); key != "" {
+		c.tunnelKey = key
+	} else {
+		hash := fnv.New32a()
+		hash.Write([]byte(parsedURL.Port()))
+		c.tunnelKey = hex.EncodeToString(hash.Sum(nil))
 	}
 }
 
@@ -300,15 +302,20 @@ func (c *Common) getProxyProtocol(parsedURL *url.URL) {
 }
 
 // initConfig 初始化配置
-func (c *Common) initConfig(parsedURL *url.URL) {
+func (c *Common) initConfig(parsedURL *url.URL) error {
+	if err := c.getAddress(parsedURL); err != nil {
+		return err
+	}
+
 	c.getTunnelKey(parsedURL)
-	c.getAddress(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getReadTimeout(parsedURL)
 	c.getRunMode(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
 	c.getProxyProtocol(parsedURL)
+
+	return nil
 }
 
 // sendProxyV1Header 发送PROXY v1
