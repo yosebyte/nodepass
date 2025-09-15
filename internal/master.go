@@ -875,7 +875,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
-			Restart: false,
+			Restart: true,
 			stopped: make(chan struct{}),
 		}
 		m.instances.Store(id, instance)

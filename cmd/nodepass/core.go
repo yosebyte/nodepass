@@ -52,7 +52,7 @@ func initLogger(level string) *logs.Logger {
 
 // createCore 创建核心
 func createCore(parsedURL *url.URL, logger *logs.Logger) (interface{ Run() }, error) {
-	switch scheme := parsedURL.Scheme; scheme {
+	switch parsedURL.Scheme {
 	case "server":
 		tlsCode, tlsConfig := getTLSProtocol(parsedURL, logger)
 		return internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
