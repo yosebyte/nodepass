@@ -38,6 +38,9 @@ const (
 	apiKeyID       = "********"             // API Key的特殊ID
 	tcpingSemLimit = 10                     // TCPing最大并发数
 	baseDuration   = 100 * time.Millisecond // 基准持续时间
+	maxTagsCount   = 50                     // 最大标签数量
+	maxTagKeyLen   = 100                    // 标签键最大长度
+	maxTagValueLen = 500                    // 标签值最大长度
 )
 
 // Swagger UI HTML模板
@@ -85,37 +88,38 @@ type Master struct {
 
 // Instance 实例信息
 type Instance struct {
-	ID             string             `json:"id"`        // 实例ID
-	Alias          string             `json:"alias"`     // 实例别名
-	Type           string             `json:"type"`      // 实例类型
-	Status         string             `json:"status"`    // 实例状态
-	URL            string             `json:"url"`       // 实例URL
-	Restart        bool               `json:"restart"`   // 是否自启动
-	Mode           int32              `json:"mode"`      // 实例模式
-	Ping           int32              `json:"ping"`      // 端内延迟
-	Pool           int32              `json:"pool"`      // 池连接数
-	TCPS           int32              `json:"tcps"`      // TCP连接数
-	UDPS           int32              `json:"udps"`      // UDP连接数
-	TCPRX          uint64             `json:"tcprx"`     // TCP接收字节数
-	TCPTX          uint64             `json:"tcptx"`     // TCP发送字节数
-	UDPRX          uint64             `json:"udprx"`     // UDP接收字节数
-	UDPTX          uint64             `json:"udptx"`     // UDP发送字节数
-	TCPRXBase      uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
-	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
-	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
-	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
-	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
-	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
-	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
-	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
+	ID             string             `json:"id"`                // 实例ID
+	Alias          string             `json:"alias,omitempty"`   // 实例别名
+	Type           string             `json:"type,omitempty"`    // 实例类型
+	Status         string             `json:"status,omitempty"`  // 实例状态
+	URL            string             `json:"url"`               // 实例URL
+	Restart        bool               `json:"restart,omitempty"` // 是否自启动
+	Tags           map[string]string  `json:"tags,omitempty"`    // 标签键值对
+	Mode           int32              `json:"mode,omitempty"`    // 实例模式
+	Ping           int32              `json:"ping,omitempty"`    // 端内延迟
+	Pool           int32              `json:"pool,omitempty"`    // 池连接数
+	TCPS           int32              `json:"tcps,omitempty"`    // TCP连接数
+	UDPS           int32              `json:"udps,omitempty"`    // UDP连接数
+	TCPRX          uint64             `json:"tcprx,omitempty"`   // TCP接收字节数
+	TCPTX          uint64             `json:"tcptx,omitempty"`   // TCP发送字节数
+	UDPRX          uint64             `json:"udprx,omitempty"`   // UDP接收字节数
+	UDPTX          uint64             `json:"udptx,omitempty"`   // UDP发送字节数
+	TCPRXBase      uint64             `json:"-" gob:"-"`         // TCP接收字节数基线（不序列化）
+	TCPTXBase      uint64             `json:"-" gob:"-"`         // TCP发送字节数基线（不序列化）
+	UDPRXBase      uint64             `json:"-" gob:"-"`         // UDP接收字节数基线（不序列化）
+	UDPTXBase      uint64             `json:"-" gob:"-"`         // UDP发送字节数基线（不序列化）
+	cmd            *exec.Cmd          `json:"-" gob:"-"`         // 命令对象（不序列化）
+	stopped        chan struct{}      `json:"-" gob:"-"`         // 停止信号通道（不序列化）
+	cancelFunc     context.CancelFunc `json:"-" gob:"-"`         // 取消函数（不序列化）
+	lastCheckPoint time.Time          `json:"-" gob:"-"`         // 上次检查点时间（不序列化）
 }
 
 // InstanceEvent 实例事件信息
 type InstanceEvent struct {
-	Type     string    `json:"type"`           // 事件类型：initial, create, update, delete, shutdown, log
-	Time     time.Time `json:"time"`           // 事件时间
-	Instance *Instance `json:"instance"`       // 关联的实例
-	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
+	Type     string    `json:"type"`               // 事件类型：initial, create, update, delete, shutdown, log
+	Time     time.Time `json:"time"`               // 事件时间
+	Instance *Instance `json:"instance,omitempty"` // 关联的实例
+	Logs     string    `json:"logs,omitempty"`     // 日志内容，仅当Type为log时有效
 }
 
 // SystemInfo 系统信息结构体
@@ -137,7 +141,7 @@ type TCPingResult struct {
 	Target    string  `json:"target"`
 	Connected bool    `json:"connected"`
 	Latency   int64   `json:"latency"`
-	Error     *string `json:"error"`
+	Error     *string `json:"error,omitempty"`
 }
 
 // handleTCPing 处理TCPing请求
@@ -189,6 +193,27 @@ func (m *Master) performTCPing(target string) *TCPingResult {
 	result.Latency = time.Since(start).Milliseconds()
 	conn.Close()
 	return result
+}
+
+// validateTags 验证标签的有效性
+func validateTags(tags map[string]string) error {
+	if len(tags) > maxTagsCount {
+		return fmt.Errorf("too many tags: maximum %d allowed", maxTagsCount)
+	}
+
+	for key, value := range tags {
+		if len(key) == 0 {
+			return fmt.Errorf("tag key cannot be empty")
+		}
+		if len(key) > maxTagKeyLen {
+			return fmt.Errorf("tag key '%s' exceeds maximum length %d", key, maxTagKeyLen)
+		}
+		if len(value) > maxTagValueLen {
+			return fmt.Errorf("tag value for key '%s' exceeds maximum length %d", key, maxTagValueLen)
+		}
+	}
+
+	return nil
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -936,9 +961,10 @@ func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
 // handlePatchInstance 处理更新实例状态请求
 func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
 	var reqData struct {
-		Alias   string `json:"alias,omitempty"`
-		Action  string `json:"action,omitempty"`
-		Restart *bool  `json:"restart,omitempty"`
+		Alias   string            `json:"alias,omitempty"`
+		Action  string            `json:"action,omitempty"`
+		Restart *bool             `json:"restart,omitempty"`
+		Tags    map[string]string `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -949,6 +975,38 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
+			// 处理标签更新
+			if reqData.Tags != nil {
+				if err := validateTags(reqData.Tags); err != nil {
+					httpError(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+
+				if instance.Tags == nil {
+					instance.Tags = make(map[string]string)
+				}
+
+				// 更新或删除标签
+				for key, value := range reqData.Tags {
+					if value == "" {
+						delete(instance.Tags, key)
+					} else {
+						instance.Tags[key] = value
+					}
+				}
+
+				if len(instance.Tags) == 0 {
+					instance.Tags = nil
+				}
+
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Tags updated: [%v]", instance.ID)
+
+				// 发送标签变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
 			// 重置流量统计
 			if reqData.Action == "reset" {
 				instance.TCPRX = 0
@@ -1655,6 +1713,7 @@ func generateOpenAPISpec() string {
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Tag key-value pairs"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1676,7 +1735,8 @@ func generateOpenAPISpec() string {
 		"properties": {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-		  "restart": {"type": "boolean", "description": "Instance restart policy"}
+		  "restart": {"type": "boolean", "description": "Instance restart policy"},
+		  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Tag key-value pairs"}
 		}
 	  },
 	  "PutInstanceRequest": {
