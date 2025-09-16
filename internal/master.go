@@ -67,6 +67,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
 // Master 实现主控模式功能
 type Master struct {
 	Common                            // 继承通用功能
+	alias         string              // 主控别名
 	prefix        string              // API前缀
 	version       string              // NP版本
 	hostname      string              // 隧道名称
@@ -677,12 +678,33 @@ func (m *Master) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 
 // handleInfo 处理系统信息请求
 func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, m.getMasterInfo())
 
+	case http.MethodPost:
+		var reqData struct {
+			Alias string `json:"alias"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+			httpError(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// 更新alias字段
+		m.alias = reqData.Alias
+
+		writeJSON(w, http.StatusOK, m.getMasterInfo())
+
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// getMasterInfo 获取完整的主控信息
+func (m *Master) getMasterInfo() map[string]any {
 	info := map[string]any{
+		"alias":      m.alias,
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,
 		"cpu":        -1,
@@ -718,7 +740,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		info["sysup"] = sysInfo.SysUp
 	}
 
-	writeJSON(w, http.StatusOK, info)
+	return info
 }
 
 // getLinuxSysInfo 获取Linux系统信息
@@ -1654,6 +1676,17 @@ func generateOpenAPISpec() string {
 		  "401": {"description": "Unauthorized"},
 		  "405": {"description": "Method not allowed"}
 		}
+	  },
+	  "post": {
+		"summary": "Update master alias",
+		"security": [{"ApiKeyAuth": []}],
+		"requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateMasterAliasRequest"}}}},
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MasterInfo"}}}},
+		  "400": {"description": "Invalid input"},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
 	  }
 	},
 	"/tcping": {
@@ -1747,6 +1780,7 @@ func generateOpenAPISpec() string {
 	  "MasterInfo": {
 		"type": "object",
 		"properties": {
+		  "alias": {"type": "string", "description": "Master alias"},
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
 		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
@@ -1767,6 +1801,11 @@ func generateOpenAPISpec() string {
 		  "crt": {"type": "string", "description": "Certificate path"},
 		  "key": {"type": "string", "description": "Private key path"}
 		}
+	  },
+	  "UpdateMasterAliasRequest": {
+		"type": "object",
+		"required": ["alias"],
+		"properties": {"alias": {"type": "string", "description": "Master alias"}}
 	  },
 	  "TCPingResult": {
 		"type": "object",
