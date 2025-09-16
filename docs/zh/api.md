@@ -65,6 +65,11 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
+  "tags": {
+    "environment": "production",
+    "region": "us-west-2",
+    "project": "web-service"
+  },
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -82,6 +87,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
 - `restart`：自启动策略
+- `tags`：可选的键值对，用于标记和组织实例
 
 ### 实例 URL 格式
 
@@ -513,6 +519,31 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      return data.success;
    }
    
+   // 更新实例标签
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 通过设置空字符串值删除特定标签
+   async function deleteInstanceTags(instanceId, tagKeys) {
+     const tagsToDelete = {};
+     tagKeys.forEach(key => {
+       tagsToDelete[key] = "";  // 空字符串会删除标签
+     });
+     
+     return await updateInstanceTags(instanceId, tagsToDelete);
+   }
+   
    // 更新实例URL配置
    async function updateInstanceURL(instanceId, newURL) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -529,7 +560,45 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
    }
    ```
 
-5. **自启动策略管理**：配置自动启动行为
+5. **标签管理**：使用键值对标记和组织实例
+   ```javascript
+   // 通过PATCH方法更新实例标签
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     return response.json();
+   }
+   
+   // 添加或更新标签 - 提供键值对
+   await updateInstanceTags('abc123', {
+     environment: 'production',
+     region: 'us-west-2',
+     team: 'backend'
+   });
+   
+   // 删除标签 - 设置值为空字符串
+   await updateInstanceTags('abc123', {
+     'old-tag': '',    // 此标签将被删除
+     'temp-tag': ''    // 此标签将被删除
+   });
+   ```
+
+#### 标签管理规则
+
+1. **添加标签**：在`tags`字段中提供新的键值对，将自动添加到实例的标签集合中
+2. **更新标签**：提供已存在标签键的新值，将覆盖原有值
+3. **删除标签**：设置标签值为空字符串(`""`)，该标签将从实例中移除
+4. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
+5. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
+
+6. **自启动策略管理**：配置自动启动行为
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -793,6 +862,11 @@ API响应中的实例对象包含以下字段：
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
   "restart": true,            // 自启动策略
+  "tags": {                   // 标签键值对
+    "environment": "production",
+    "project": "web-service",
+    "region": "us-west-2"
+  },
   "mode": 0,                  // 运行模式
   "tcprx": 1024,              // TCP接收字节数
   "tcptx": 2048,              // TCP发送字节数
@@ -805,6 +879,7 @@ API响应中的实例对象包含以下字段：
 - `alias` 字段为可选，如果未设置则为空字符串
 - `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
+- `tags` 字段为可选，仅在设置标签时存在
 
 ## 系统信息端点
 
@@ -986,13 +1061,12 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **描述**：更新实例状态、别名或执行控制操作
+- **描述**：更新实例状态、别名、标签或执行控制操作
 - **认证**：需要API Key
-- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false }`
-- **特点**：不中断正在运行的实例，仅更新指定字段。`action: "reset"` 可将该实例的流量统计（tcprx、tcptx、udprx、udptx）清零。
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false, "tags": {"键": "值"} }`
 - **示例**：
 ```javascript
-// 更新别名和自启动策略
+// 更新标签
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1000,29 +1074,26 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    alias: 'Web服务器',
-    restart: true 
+    tags: {
+      environment: 'production',
+      region: 'us-west-2'
+    }
   })
 });
 
-// 控制实例操作
+// 删除标签（设置为空字符串）
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ action: 'restart' })
-});
-
-// 清零流量统计
-await fetch(`${API_URL}/instances/abc123`, {
-  method: 'PATCH',
-  headers: { 
-    'Content-Type': 'application/json',
-    'X-API-Key': apiKey 
-  },
-  body: JSON.stringify({ action: 'reset' })
+  body: JSON.stringify({ 
+    tags: {
+      'old-tag': '',  // 将被删除
+      'temp-tag': ''  // 将被删除
+    }
+  })
 });
 ```
 
