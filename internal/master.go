@@ -3,7 +3,6 @@ package internal
 
 import (
 	"bufio"
-	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -292,49 +291,6 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// gzipResponseWriter 实现gzip压缩的http.ResponseWriter
-type gzipResponseWriter struct {
-	http.ResponseWriter
-	gzipWriter *gzip.Writer
-}
-
-func (grw *gzipResponseWriter) Write(data []byte) (int, error) {
-	return grw.gzipWriter.Write(data)
-}
-
-func (grw *gzipResponseWriter) WriteHeader(statusCode int) {
-	grw.Header().Set("Content-Encoding", "gzip")
-	grw.ResponseWriter.WriteHeader(statusCode)
-}
-
-// gzipMiddleware gzip压缩中间件
-func gzipMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// 检查客户端是否支持gzip压缩
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			next(w, r)
-			return
-		}
-
-		// 创建gzip writer
-		gzipWriter := gzip.NewWriter(w)
-		defer gzipWriter.Close()
-
-		// 设置gzip响应头
-		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Set("Vary", "Accept-Encoding")
-
-		// 创建包装的ResponseWriter
-		grw := &gzipResponseWriter{
-			ResponseWriter: w,
-			gzipWriter:     gzipWriter,
-		}
-
-		// 调用下一个处理器
-		next(grw, r)
-	}
-}
-
 // setCorsHeaders 设置跨域响应头
 func setCorsHeaders(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -488,12 +444,12 @@ func (m *Master) Run() {
 
 	// 注册受保护的端点
 	for path, handler := range protectedEndpoints {
-		mux.HandleFunc(path, gzipMiddleware(apiKeyMiddleware(handler)))
+		mux.HandleFunc(path, apiKeyMiddleware(handler))
 	}
 
 	// 注册公共端点
 	for path, handler := range publicEndpoints {
-		mux.HandleFunc(path, gzipMiddleware(corsMiddleware(handler)))
+		mux.HandleFunc(path, corsMiddleware(handler))
 	}
 
 	// 创建HTTP服务器
