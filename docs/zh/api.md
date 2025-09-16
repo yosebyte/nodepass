@@ -42,6 +42,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | 删除实例             |
 | `/events`          | GET    | SSE 实时事件流       |
 | `/info`            | GET    | 获取主控服务信息     |
+| `/info`            | POST   | 更新主控别名         |
 | `/tcping`          | GET    | TCP连接测试          |
 | `/openapi.json`    | GET    | OpenAPI 规范         |
 | `/docs`            | GET    | Swagger UI 文档      |
@@ -899,6 +900,7 @@ GET /info
 
 ```json
 {
+  "alias": "dev",             // 主控别名
   "os": "linux",              // 操作系统类型
   "arch": "amd64",            // 系统架构
   "cpu": 45,                  // CPU使用率百分比（仅Linux系统）
@@ -1143,6 +1145,28 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **描述**：获取主控服务信息
 - **认证**：需要API Key
 - **响应**：包含系统信息、版本、运行时间、CPU和RAM使用率等
+
+#### POST /info
+- **描述**：更新主控别名
+- **认证**：需要API Key
+- **请求体**：`{ "alias": "新别名" }`
+- **响应**：完整的主控信息（与GET /info相同）
+- **示例**：
+```javascript
+// 更新主控别名
+const response = await fetch(`${API_URL}/info`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ alias: '我的NodePass服务器' })
+});
+
+const data = await response.json();
+console.log('更新后的别名:', data.alias);
+// 响应包含完整的系统信息，包括更新后的别名
+```
 
 #### GET /tcping
 - **描述**：TCP连接测试，检测目标地址的连通性和延迟

@@ -42,6 +42,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | Delete instance          |
 | `/events`          | GET    | SSE real-time event stream |
 | `/info`            | GET    | Get master service info  |
+| `/info`            | POST   | Update master alias      |
 | `/tcping`          | GET    | TCP connection test      |
 | `/openapi.json`    | GET    | OpenAPI specification    |
 | `/docs`            | GET    | Swagger UI documentation |
@@ -900,6 +901,7 @@ The response contains the following system information fields:
 
 ```json
 {
+  "alias": "dev",             // Master alias
   "os": "linux",              // Operating system type
   "arch": "amd64",            // System architecture
   "cpu": 45,                  // CPU usage percentage (Linux only)
@@ -1144,6 +1146,28 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **Description**: Get master service information
 - **Authentication**: Requires API Key
 - **Response**: Contains system information, version, uptime, CPU and RAM usage, etc.
+
+#### POST /info
+- **Description**: Update master alias
+- **Authentication**: Requires API Key
+- **Request body**: `{ "alias": "new alias" }`
+- **Response**: Complete master information (same as GET /info)
+- **Example**:
+```javascript
+// Update master alias
+const response = await fetch(`${API_URL}/info`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ alias: 'My NodePass Server' })
+});
+
+const data = await response.json();
+console.log('Updated alias:', data.alias);
+// Response contains full system info with updated alias
+```
 
 #### GET /tcping
 - **Description**: TCP connection test, checks connectivity and latency to target address
