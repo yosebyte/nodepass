@@ -55,15 +55,6 @@ API Key authentication is enabled by default, automatically generated and saved 
 - Authentication method: Add `X-API-Key: <key>` to request headers
 - Reset Key: PATCH `/instances/********`, body `{ "action": "restart" }`
 
-### gzip Compression Support
-
-NodePass API supports gzip compression to significantly reduce network traffic and improve response performance:
-
-- Automatic Activation: Compression is automatically enabled when client sends `Accept-Encoding: gzip` request header
-- Universal Support: All API endpoint responses support gzip compression, including JSON data, HTML documents, and SSE event streams
-- Transparent Usage: Modern browsers and HTTP client libraries automatically handle compression and decompression
-- Performance Improvement: Typical JSON response compression ratios reach 60-80%, significantly reducing bandwidth usage
-
 ### Instance Data Structure
 
 ```json

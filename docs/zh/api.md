@@ -55,15 +55,6 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - 认证方式：请求头加 `X-API-Key: <key>`
 - 重置 Key：PATCH `/instances/********`，body `{ "action": "restart" }`
 
-### gzip 压缩支持
-
-NodePass API 支持 gzip 压缩，可显著减少网络流量并提高响应性能：
-
-- 自动启用：当客户端发送 `Accept-Encoding: gzip` 请求头时自动启用压缩
-- 全面支持：所有 API 端点响应内容均支持 gzip 压缩，包括 JSON 数据、HTML 文档和 SSE 事件流
-- 透明使用：现代浏览器和 HTTP 客户端库自动处理压缩和解压缩
-- 性能提升：典型的 JSON 响应压缩率可达 60-80%，显著降低带宽使用
-
 ### 实例数据结构
 
 ```json
