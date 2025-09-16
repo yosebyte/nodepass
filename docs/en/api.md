@@ -600,14 +600,6 @@ To properly manage lifecycles:
    });
    ```
 
-#### Tag Management Rules
-
-1. **Adding Tags**: Provide new key-value pairs in the `tags` field to add them to the instance's tag collection
-2. **Updating Tags**: Provide new values for existing tag keys to overwrite the original values
-3. **Deleting Tags**: Set tag values to empty string (`""`) to remove them from the instance
-4. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
-5. **Persistence**: All tag operations are automatically saved to disk and restored after restart
-
 6. **Auto-restart Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
@@ -859,6 +851,14 @@ async function configureAutoStartPolicies(instances) {
   }
 }
 ```
+
+### Tag Management Rules
+
+1. **Adding Tags**: Provide new key-value pairs in the `tags` field to add them to the instance's tag collection
+2. **Updating Tags**: Provide new values for existing tag keys to overwrite the original values
+3. **Deleting Tags**: Set tag values to empty string (`""`) to remove them from the instance
+4. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
+5. **Persistence**: All tag operations are automatically saved to disk and restored after restart
 
 ## Instance Data Structure
 
