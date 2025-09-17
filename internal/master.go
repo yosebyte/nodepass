@@ -666,14 +666,14 @@ func (m *Master) loadState() {
 func (m *Master) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	setCorsHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(generateOpenAPISpec()))
+	w.Write([]byte(m.generateOpenAPISpec()))
 }
 
 // handleSwaggerUI 处理Swagger UI请求
 func (m *Master) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	setCorsHeaders(w)
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, swaggerUIHTML, generateOpenAPISpec())
+	fmt.Fprintf(w, swaggerUIHTML, m.generateOpenAPISpec())
 }
 
 // handleInfo 处理系统信息请求
@@ -1567,7 +1567,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, data any) {
 }
 
 // generateOpenAPISpec 生成OpenAPI规范文档
-func generateOpenAPISpec() string {
+func (m *Master) generateOpenAPISpec() string {
 	return fmt.Sprintf(`{
   "openapi": "3.1.1",
   "info": {
@@ -1575,7 +1575,7 @@ func generateOpenAPISpec() string {
 	"description": "API for managing NodePass server and client instances",
 	"version": "%s"
   },
-  "servers": [{"url": "/{prefix}/v1", "variables": {"prefix": {"default": "api", "description": "API prefix path"}}}],
+  "servers": [{"url": "%s"}],
   "security": [{"ApiKeyAuth": []}],
   "paths": {
 	"/instances": {
@@ -1815,5 +1815,5 @@ func generateOpenAPISpec() string {
 	  }
 	}
   }
-}`, openAPIVersion)
+}`, openAPIVersion, m.prefix)
 }
