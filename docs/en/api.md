@@ -66,11 +66,11 @@ API Key authentication is enabled by default, automatically generated and saved 
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
-  "tags": {
-    "environment": "production",
-    "region": "us-west-2",
-    "project": "web-service"
-  },
+  "tags": [
+    {"key": "environment", "value": "production"},
+    {"key": "region", "value": "us-west-2"},
+    {"key": "project", "value": "web-service"}
+  ],
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -578,18 +578,18 @@ To properly manage lifecycles:
      return response.json();
    }
    
-   // Add or update tags - provide key-value pairs
-   await updateInstanceTags('abc123', {
-     environment: 'production',
-     region: 'us-west-2',
-     team: 'backend'
-   });
+   // Add or update tags - provide tag array
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "production"},
+     {"key": "region", "value": "us-west-2"},
+     {"key": "team", "value": "backend"}
+   ]);
    
-   // Delete tags - set values to empty string
-   await updateInstanceTags('abc123', {
-     'old-tag': '',    // This tag will be removed
-     'temp-tag': ''    // This tag will be removed
-   });
+   // Replace all tags (remove existing, set new ones)
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},
+     {"key": "version", "value": "2.0"}
+   ]);
    ```
 
 6. **Auto-restart Policy Management**: Configure automatic startup behavior
@@ -846,11 +846,12 @@ async function configureAutoStartPolicies(instances) {
 
 ### Tag Management Rules
 
-1. **Adding Tags**: Provide new key-value pairs in the `tags` field to add them to the instance's tag collection
-2. **Updating Tags**: Provide new values for existing tag keys to overwrite the original values
-3. **Deleting Tags**: Set tag values to empty string (`""`) to remove them from the instance
-4. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
-5. **Persistence**: All tag operations are automatically saved to disk and restored after restart
+1. **Replace Tags**: Provide tag array in the `tags` field to replace all instance tags
+2. **Array Format**: Tags now use array format `[{"key": "key1", "value": "value1"}]`
+3. **Uniqueness Check**: Duplicate keys are not allowed within the same instance
+4. **Clear Tags**: Provide empty array `[]` to remove all instance tags
+5. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
+6. **Persistence**: All tag operations are automatically saved to disk and restored after restart
 
 ## Instance Data Structure
 
@@ -864,11 +865,11 @@ The instance object in API responses contains the following fields:
   "status": "running",        // Instance status: running, stopped, or error
   "url": "server://...",      // Instance configuration URL
   "restart": true,            // Auto-restart policy
-  "tags": {                   // Tag key-value pairs
-    "environment": "production",
-    "project": "web-service",
-    "region": "us-west-2"
-  },
+  "tags": [                   // Tag array
+    {"key": "environment", "value": "production"},
+    {"key": "project", "value": "web-service"},
+    {"key": "region", "value": "us-west-2"}
+  ],
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
   "tcptx": 2048,              // TCP transmitted bytes
@@ -1066,7 +1067,7 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 #### PATCH /instances/{id}
 - **Description**: Update instance state, alias, tags, or perform control operations
 - **Authentication**: Requires API Key
-- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "tags": {"key": "value"} }`
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "tags": [{"key": "key1", "value": "value1"}] }`
 - **Example**:
 ```javascript
 // Update tags
@@ -1077,14 +1078,14 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: {
-      environment: 'production',
-      region: 'us-west-2'
-    }
+    tags: [
+      {"key": "environment", "value": "production"},
+      {"key": "region", "value": "us-west-2"}
+    ]
   })
 });
 
-// Delete tags (set to empty string)
+// Replace all tags with new ones
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1092,10 +1093,10 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: {
-      'old-tag': '',  // Will be deleted
-      'temp-tag': ''  // Will be deleted
-    }
+    tags: [
+      {"key": "environment", "value": "staging"},
+      {"key": "version", "value": "2.0"}
+    ]
   })
 });
 ```

@@ -66,11 +66,11 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "status": "running|stopped|error",
   "url": "...",
   "restart": true,
-  "tags": {
-    "environment": "production",
-    "region": "us-west-2",
-    "project": "web-service"
-  },
+  "tags": [
+    {"key": "environment", "value": "production"},
+    {"key": "region", "value": "us-west-2"},
+    {"key": "project", "value": "web-service"}
+  ],
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -577,18 +577,18 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      return response.json();
    }
    
-   // 添加或更新标签 - 提供键值对
-   await updateInstanceTags('abc123', {
-     environment: 'production',
-     region: 'us-west-2',
-     team: 'backend'
-   });
+   // 添加或更新标签 - 提供标签数组
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "production"},
+     {"key": "region", "value": "us-west-2"},
+     {"key": "team", "value": "backend"}
+   ]);
    
-   // 删除标签 - 设置值为空字符串
-   await updateInstanceTags('abc123', {
-     'old-tag': '',    // 此标签将被删除
-     'temp-tag': ''    // 此标签将被删除
-   });
+   // 替换所有标签（删除现有，设置新的）
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},
+     {"key": "version", "value": "2.0"}
+   ]);
    ```
 
 6. **自启动策略管理**：配置自动启动行为
@@ -845,9 +845,10 @@ async function configureAutoStartPolicies(instances) {
 
 ### 标签管理规则
 
-1. **添加标签**：在`tags`字段中提供新的键值对，将自动添加到实例的标签集合中
-2. **更新标签**：提供已存在标签键的新值，将覆盖原有值
-3. **删除标签**：设置标签值为空字符串(`""`)，该标签将从实例中移除
+1. **替换标签**：在`tags`字段中提供标签数组，将替换实例的所有标签
+2. **数组格式**：标签现在使用数组格式 `[{"key": "key1", "value": "value1"}]`
+3. **唯一性检查**：同一个实例中不允许重复的键名
+4. **清空标签**：提供空数组`[]`将删除实例的所有标签
 4. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
 5. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
 
@@ -863,11 +864,11 @@ API响应中的实例对象包含以下字段：
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
   "restart": true,            // 自启动策略
-  "tags": {                   // 标签键值对
-    "environment": "production",
-    "project": "web-service",
-    "region": "us-west-2"
-  },
+  "tags": [                   // 标签数组
+    {"key": "environment", "value": "production"},
+    {"key": "project", "value": "web-service"},
+    {"key": "region", "value": "us-west-2"}
+  ],
   "mode": 0,                  // 运行模式
   "tcprx": 1024,              // TCP接收字节数
   "tcptx": 2048,              // TCP发送字节数
@@ -1065,7 +1066,7 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 #### PATCH /instances/{id}
 - **描述**：更新实例状态、别名、标签或执行控制操作
 - **认证**：需要API Key
-- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false, "tags": {"键": "值"} }`
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false, "tags": [{"key": "键", "value": "值"}] }`
 - **示例**：
 ```javascript
 // 更新标签
@@ -1076,14 +1077,14 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: {
-      environment: 'production',
-      region: 'us-west-2'
-    }
+    tags: [
+      {"key": "environment", "value": "production"},
+      {"key": "region", "value": "us-west-2"}
+    ]
   })
 });
 
-// 删除标签（设置为空字符串）
+// 替换所有标签为新标签
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1091,10 +1092,10 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: {
-      'old-tag': '',  // 将被删除
-      'temp-tag': ''  // 将被删除
-    }
+    tags: [
+      {"key": "environment", "value": "staging"},
+      {"key": "version", "value": "2.0"}
+    ]
   })
 });
 ```
