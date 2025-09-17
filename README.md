@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://cdn.yobc.de/assets/np-gopher.png" alt="nodepass" width="300">
+  <img src="https://cdn.yobc.de/assets/np-gopher.png" width="300">
 
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go#networking)
 [![GitHub release](https://img.shields.io/github/v/release/yosebyte/nodepass)](https://github.com/yosebyte/nodepass/releases)
@@ -9,6 +9,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/yosebyte/nodepass.svg)](https://pkg.go.dev/github.com/yosebyte/nodepass)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/yosebyte/nodepass)
 ![GitHub last commit](https://img.shields.io/github/last-commit/yosebyte/nodepass)
+
+  <a href="https://apps.apple.com/us/app/nodepass/id6747930492"><img src="https://cdn.yobc.de/assets/appstore.png" width="120"></a>
 
 English | [简体中文](README_zh.md)
 </div>
@@ -97,6 +99,8 @@ The [NodePassProject](https://github.com/NodePassProject) organization develops 
 - **[NodePanel](https://github.com/NodePassProject/NodePanel)**: A lightweight frontend panel that provides visual tunnel management, deployable on Vercel or Cloudflare Pages.
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: A collection of one-click scripts that provide simple deployment for API or Dashboard with flexible configuration and management.
+
+- **[NodePass-ApplePlatforms](https://github.com/NodePassProject/NodePass-ApplePlatforms)**: An iOS/macOS application that offers a native experience for Apple users.
 
 - **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: Development branch, featuring previews of new functionalities and performance optimizations, suitable for advanced users and developers.
 

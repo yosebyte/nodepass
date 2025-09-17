@@ -10,6 +10,8 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/yosebyte/nodepass)
 ![GitHub last commit](https://img.shields.io/github/last-commit/yosebyte/nodepass)
 
+  <a href="https://apps.apple.com/cn/app/nodepass/id6747930492"><img src="https://cdn.yobc.de/assets/appstore.png" width="120"></a>
+
 [English](README.md) | 简体中文
 </div>
 
@@ -97,6 +99,8 @@ nodepass "master://:10101/api?log=debug&tls=1"
 - **[NodePanel](https://github.com/NodePassProject/NodePanel)**: 轻量化的前端面板，提供可视化的隧道管理功能，在 Vercel 或 Cloudflare Pages 轻松部署。
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: 简单易用的 NodePass 一键脚本合集，包括 API 主控、Dash 面板的安装部署、灵活配置和辅助管理。
+
+- **[NodePass-ApplePlatforms](https://github.com/NodePassProject/NodePass-ApplePlatforms)**: 一款为 Apple 用户提供原生体验的 iOS/macOS 应用程序。
 
 - **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: 开发分支，包含新功能预览和性能优化测试，适合高级用户和开发者。
 
