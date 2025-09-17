@@ -89,38 +89,38 @@ type Master struct {
 
 // Instance 实例信息
 type Instance struct {
-	ID             string             `json:"id"`                // 实例ID
-	Alias          string             `json:"alias,omitempty"`   // 实例别名
-	Type           string             `json:"type,omitempty"`    // 实例类型
-	Status         string             `json:"status,omitempty"`  // 实例状态
-	URL            string             `json:"url"`               // 实例URL
-	Restart        bool               `json:"restart,omitempty"` // 是否自启动
-	Tags           map[string]string  `json:"tags,omitempty"`    // 标签键值对
-	Mode           int32              `json:"mode,omitempty"`    // 实例模式
-	Ping           int32              `json:"ping,omitempty"`    // 端内延迟
-	Pool           int32              `json:"pool,omitempty"`    // 池连接数
-	TCPS           int32              `json:"tcps,omitempty"`    // TCP连接数
-	UDPS           int32              `json:"udps,omitempty"`    // UDP连接数
-	TCPRX          uint64             `json:"tcprx,omitempty"`   // TCP接收字节数
-	TCPTX          uint64             `json:"tcptx,omitempty"`   // TCP发送字节数
-	UDPRX          uint64             `json:"udprx,omitempty"`   // UDP接收字节数
-	UDPTX          uint64             `json:"udptx,omitempty"`   // UDP发送字节数
-	TCPRXBase      uint64             `json:"-" gob:"-"`         // TCP接收字节数基线（不序列化）
-	TCPTXBase      uint64             `json:"-" gob:"-"`         // TCP发送字节数基线（不序列化）
-	UDPRXBase      uint64             `json:"-" gob:"-"`         // UDP接收字节数基线（不序列化）
-	UDPTXBase      uint64             `json:"-" gob:"-"`         // UDP发送字节数基线（不序列化）
-	cmd            *exec.Cmd          `json:"-" gob:"-"`         // 命令对象（不序列化）
-	stopped        chan struct{}      `json:"-" gob:"-"`         // 停止信号通道（不序列化）
-	cancelFunc     context.CancelFunc `json:"-" gob:"-"`         // 取消函数（不序列化）
-	lastCheckPoint time.Time          `json:"-" gob:"-"`         // 上次检查点时间（不序列化）
+	ID             string             `json:"id"`        // 实例ID
+	Alias          string             `json:"alias"`     // 实例别名
+	Type           string             `json:"type"`      // 实例类型
+	Status         string             `json:"status"`    // 实例状态
+	URL            string             `json:"url"`       // 实例URL
+	Restart        bool               `json:"restart"`   // 是否自启动
+	Tags           map[string]string  `json:"tags"`      // 标签键值对
+	Mode           int32              `json:"mode"`      // 实例模式
+	Ping           int32              `json:"ping"`      // 端内延迟
+	Pool           int32              `json:"pool"`      // 池连接数
+	TCPS           int32              `json:"tcps"`      // TCP连接数
+	UDPS           int32              `json:"udps"`      // UDP连接数
+	TCPRX          uint64             `json:"tcprx"`     // TCP接收字节数
+	TCPTX          uint64             `json:"tcptx"`     // TCP发送字节数
+	UDPRX          uint64             `json:"udprx"`     // UDP接收字节数
+	UDPTX          uint64             `json:"udptx"`     // UDP发送字节数
+	TCPRXBase      uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
+	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
+	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
+	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
+	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
+	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
 // InstanceEvent 实例事件信息
 type InstanceEvent struct {
-	Type     string    `json:"type"`               // 事件类型：initial, create, update, delete, shutdown, log
-	Time     time.Time `json:"time"`               // 事件时间
-	Instance *Instance `json:"instance,omitempty"` // 关联的实例
-	Logs     string    `json:"logs,omitempty"`     // 日志内容，仅当Type为log时有效
+	Type     string    `json:"type"`     // 事件类型：initial, create, update, delete, shutdown, log
+	Time     time.Time `json:"time"`     // 事件时间
+	Instance *Instance `json:"instance"` // 关联的实例
+	Logs     string    `json:"logs"`     // 日志内容
 }
 
 // SystemInfo 系统信息结构体
@@ -142,7 +142,7 @@ type TCPingResult struct {
 	Target    string  `json:"target"`
 	Connected bool    `json:"connected"`
 	Latency   int64   `json:"latency"`
-	Error     *string `json:"error,omitempty"`
+	Error     *string `json:"error"`
 }
 
 // handleTCPing 处理TCPing请求
@@ -923,6 +923,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
 			Restart: true,
+			Tags:    make(map[string]string),
 			stopped: make(chan struct{}),
 		}
 		m.instances.Store(id, instance)
@@ -1002,10 +1003,6 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				if err := validateTags(reqData.Tags); err != nil {
 					httpError(w, err.Error(), http.StatusBadRequest)
 					return
-				}
-
-				if instance.Tags == nil {
-					instance.Tags = make(map[string]string)
 				}
 
 				// 更新或删除标签
