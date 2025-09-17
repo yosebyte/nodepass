@@ -95,7 +95,7 @@ type Instance struct {
 	Status         string             `json:"status"`    // 实例状态
 	URL            string             `json:"url"`       // 实例URL
 	Restart        bool               `json:"restart"`   // 是否自启动
-	Tags           map[string]string  `json:"tags"`      // 标签键值对
+	Tags           []Tag              `json:"tags"`      // 标签数组
 	Mode           int32              `json:"mode"`      // 实例模式
 	Ping           int32              `json:"ping"`      // 端内延迟
 	Pool           int32              `json:"pool"`      // 池连接数
@@ -113,6 +113,12 @@ type Instance struct {
 	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
 	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
+}
+
+// Tag 标签结构体
+type Tag struct {
+	Key   string `json:"key"`   // 标签键
+	Value string `json:"value"` // 标签值
 }
 
 // InstanceEvent 实例事件信息
@@ -197,21 +203,28 @@ func (m *Master) performTCPing(target string) *TCPingResult {
 }
 
 // validateTags 验证标签的有效性
-func validateTags(tags map[string]string) error {
+func validateTags(tags []Tag) error {
 	if len(tags) > maxTagsCount {
 		return fmt.Errorf("too many tags: maximum %d allowed", maxTagsCount)
 	}
 
-	for key, value := range tags {
-		if len(key) == 0 {
+	keySet := make(map[string]bool)
+	for _, tag := range tags {
+		if len(tag.Key) == 0 {
 			return fmt.Errorf("tag key cannot be empty")
 		}
-		if len(key) > maxTagKeyLen {
-			return fmt.Errorf("tag key '%s' exceeds maximum length %d", key, maxTagKeyLen)
+		if len(tag.Key) > maxTagKeyLen {
+			return fmt.Errorf("tag key '%s' exceeds maximum length %d", tag.Key, maxTagKeyLen)
 		}
-		if len(value) > maxTagValueLen {
-			return fmt.Errorf("tag value for key '%s' exceeds maximum length %d", key, maxTagValueLen)
+		if len(tag.Value) > maxTagValueLen {
+			return fmt.Errorf("tag value for key '%s' exceeds maximum length %d", tag.Key, maxTagValueLen)
 		}
+
+		// 检查重复的键
+		if keySet[tag.Key] {
+			return fmt.Errorf("duplicate tag key: '%s'", tag.Key)
+		}
+		keySet[tag.Key] = true
 	}
 
 	return nil
@@ -923,7 +936,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
 			Restart: true,
-			Tags:    make(map[string]string),
+			Tags:    []Tag{},
 			stopped: make(chan struct{}),
 		}
 		m.instances.Store(id, instance)
@@ -984,10 +997,10 @@ func (m *Master) handleGetInstance(w http.ResponseWriter, instance *Instance) {
 // handlePatchInstance 处理更新实例状态请求
 func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id string, instance *Instance) {
 	var reqData struct {
-		Alias   string            `json:"alias,omitempty"`
-		Action  string            `json:"action,omitempty"`
-		Restart *bool             `json:"restart,omitempty"`
-		Tags    map[string]string `json:"tags,omitempty"`
+		Alias   string `json:"alias,omitempty"`
+		Action  string `json:"action,omitempty"`
+		Restart *bool  `json:"restart,omitempty"`
+		Tags    []Tag  `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -1005,18 +1018,8 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 					return
 				}
 
-				// 更新或删除标签
-				for key, value := range reqData.Tags {
-					if value == "" {
-						delete(instance.Tags, key)
-					} else {
-						instance.Tags[key] = value
-					}
-				}
-
-				if len(instance.Tags) == 0 {
-					instance.Tags = nil
-				}
+				// 替换整个标签数组
+				instance.Tags = reqData.Tags
 
 				m.instances.Store(id, instance)
 				go m.saveState()
@@ -1743,7 +1746,7 @@ func (m *Master) generateOpenAPISpec() string {
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
-	  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Tag key-value pairs"},
+	  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1766,7 +1769,7 @@ func (m *Master) generateOpenAPISpec() string {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
 		  "restart": {"type": "boolean", "description": "Instance restart policy"},
-		  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Tag key-value pairs"}
+		  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"}
 		}
 	  },
 	  "PutInstanceRequest": {
@@ -1811,6 +1814,14 @@ func (m *Master) generateOpenAPISpec() string {
 		  "connected": {"type": "boolean", "description": "Is connected"},
 		  "latency": {"type": "integer", "format": "int64", "description": "Latency in milliseconds"},
 		  "error": {"type": "string", "nullable": true, "description": "Error message"}
+		}
+	  },
+	  "Tag": {
+		"type": "object",
+		"required": ["key", "value"],
+		"properties": {
+		  "key": {"type": "string", "description": "Tag key"},
+		  "value": {"type": "string", "description": "Tag value"}
 		}
 	  }
 	}
