@@ -134,9 +134,9 @@ type InstanceEvent struct {
 type SystemInfo struct {
 	CPU       int    `json:"cpu"`        // CPU使用率 (%)
 	MemTotal  uint64 `json:"mem_total"`  // 内存容量字节数
-	MemFree   uint64 `json:"mem_free"`   // 内存可用字节数
+	MemUsed   uint64 `json:"mem_used"`   // 内存已用字节数
 	SwapTotal uint64 `json:"swap_total"` // 交换区容量字节数
-	SwapFree  uint64 `json:"swap_free"`  // 交换区可用字节数
+	SwapUsed  uint64 `json:"swap_used"`  // 交换区已用字节数
 	NetRX     uint64 `json:"netrx"`      // 网络接收字节数
 	NetTX     uint64 `json:"nettx"`      // 网络发送字节数
 	DiskR     uint64 `json:"diskr"`      // 磁盘读取字节数
@@ -727,9 +727,9 @@ func (m *Master) getMasterInfo() map[string]any {
 		"arch":       runtime.GOARCH,
 		"cpu":        -1,
 		"mem_total":  uint64(0),
-		"mem_free":   uint64(0),
+		"mem_used":   uint64(0),
 		"swap_total": uint64(0),
-		"swap_free":  uint64(0),
+		"swap_used":  uint64(0),
 		"netrx":      uint64(0),
 		"nettx":      uint64(0),
 		"diskr":      uint64(0),
@@ -748,9 +748,9 @@ func (m *Master) getMasterInfo() map[string]any {
 		sysInfo := getLinuxSysInfo()
 		info["cpu"] = sysInfo.CPU
 		info["mem_total"] = sysInfo.MemTotal
-		info["mem_free"] = sysInfo.MemFree
+		info["mem_used"] = sysInfo.MemUsed
 		info["swap_total"] = sysInfo.SwapTotal
-		info["swap_free"] = sysInfo.SwapFree
+		info["swap_used"] = sysInfo.SwapUsed
 		info["netrx"] = sysInfo.NetRX
 		info["nettx"] = sysInfo.NetTX
 		info["diskr"] = sysInfo.DiskR
@@ -766,9 +766,9 @@ func getLinuxSysInfo() SystemInfo {
 	info := SystemInfo{
 		CPU:       -1,
 		MemTotal:  0,
-		MemFree:   0,
+		MemUsed:   0,
 		SwapTotal: 0,
-		SwapFree:  0,
+		SwapUsed:  0,
 		NetRX:     0,
 		NetTX:     0,
 		DiskR:     0,
@@ -780,7 +780,7 @@ func getLinuxSysInfo() SystemInfo {
 		return info
 	}
 
-	// CPU使用率：解析/proc/stat
+	// CPU占用：解析/proc/stat
 	readStat := func() (idle, total uint64) {
 		data, err := os.ReadFile("/proc/stat")
 		if err != nil {
@@ -809,9 +809,9 @@ func getLinuxSysInfo() SystemInfo {
 		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal/uint64(numCPU)), 100)
 	}
 
-	// RAM使用率：解析/proc/meminfo
+	// RAM占用：解析/proc/meminfo
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
-		var memTotal, memFree, swapTotal, swapFree uint64
+		var memTotal, memAvailable, swapTotal, swapFree uint64
 		for line := range strings.SplitSeq(string(data), "\n") {
 			if fields := strings.Fields(line); len(fields) >= 2 {
 				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
@@ -819,8 +819,8 @@ func getLinuxSysInfo() SystemInfo {
 					switch fields[0] {
 					case "MemTotal:":
 						memTotal = val
-					case "MemFree:":
-						memFree = val
+					case "MemAvailable:":
+						memAvailable = val
 					case "SwapTotal:":
 						swapTotal = val
 					case "SwapFree:":
@@ -830,9 +830,9 @@ func getLinuxSysInfo() SystemInfo {
 			}
 		}
 		info.MemTotal = memTotal
-		info.MemFree = memFree
+		info.MemUsed = memTotal - memAvailable
 		info.SwapTotal = swapTotal
-		info.SwapFree = swapFree
+		info.SwapUsed = swapTotal - swapFree
 	}
 
 	// 网络I/O：解析/proc/net/dev
@@ -1814,9 +1814,9 @@ func (m *Master) generateOpenAPISpec() string {
 		  "arch": {"type": "string", "description": "System architecture"},
 		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
 		  "mem_total": {"type": "integer", "format": "int64", "description": "Total memory in bytes"},
-		  "mem_free": {"type": "integer", "format": "int64", "description": "Free memory in bytes"},
+		  "mem_used": {"type": "integer", "format": "int64", "description": "Used memory in bytes"},
 		  "swap_total": {"type": "integer", "format": "int64", "description": "Total swap space in bytes"},
-		  "swap_free": {"type": "integer", "format": "int64", "description": "Free swap space in bytes"},
+		  "swap_used": {"type": "integer", "format": "int64", "description": "Used swap space in bytes"},
 		  "netrx": {"type": "integer", "format": "int64", "description": "Network received bytes"},
 		  "nettx": {"type": "integer", "format": "int64", "description": "Network transmitted bytes"},
 		  "diskr": {"type": "integer", "format": "int64", "description": "Disk read bytes"},
