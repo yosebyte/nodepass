@@ -111,6 +111,7 @@ type Instance struct {
 	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
 	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	deleted        bool               `json:"-" gob:"-"` // 删除标志（不序列化）
 	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
 	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
@@ -285,9 +286,11 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			}
 
 			w.instance.lastCheckPoint = time.Now()
-			w.master.instances.Store(w.instanceID, w.instance)
-			// 发送检查点更新事件
-			w.master.sendSSEEvent("update", w.instance)
+			// 仅当实例未被删除时才存储和发送更新事件
+			if !w.instance.deleted {
+				w.master.instances.Store(w.instanceID, w.instance)
+				w.master.sendSSEEvent("update", w.instance)
+			}
 			// 过滤检查点日志
 			continue
 		}
@@ -295,8 +298,10 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 
-		// 发送日志事件
-		w.master.sendSSEEvent("log", w.instance, line)
+		// 仅当实例未被删除时才发送日志事件
+		if !w.instance.deleted {
+			w.master.sendSSEEvent("log", w.instance, line)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -1200,6 +1205,10 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 		httpError(w, "Forbidden: API Key", http.StatusForbidden)
 		return
 	}
+
+	// 标记实例为已删除
+	instance.deleted = true
+	m.instances.Store(id, instance)
 
 	if instance.Status == "running" {
 		m.stopInstance(instance)
