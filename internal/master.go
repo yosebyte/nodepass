@@ -1018,9 +1018,29 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 					return
 				}
 
-				// 替换整个标签数组
-				instance.Tags = reqData.Tags
+				// 创建现有标签的映射表
+				existingTags := make(map[string]Tag)
+				for _, tag := range instance.Tags {
+					existingTags[tag.Key] = tag
+				}
 
+				for _, tag := range reqData.Tags {
+					if tag.Value == "" {
+						// value为空，删除key
+						delete(existingTags, tag.Key)
+					} else {
+						// value非空，更新或添加key
+						existingTags[tag.Key] = tag
+					}
+				}
+
+				// 将映射表转换回标签数组
+				newTags := make([]Tag, 0, len(existingTags))
+				for _, tag := range existingTags {
+					newTags = append(newTags, tag)
+				}
+
+				instance.Tags = newTags
 				m.instances.Store(id, instance)
 				go m.saveState()
 				m.logger.Info("Tags updated: [%v]", instance.ID)
