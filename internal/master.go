@@ -84,7 +84,7 @@ type Master struct {
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	tcpingSem     chan struct{}       // TCPing并发控制
 	startTime     time.Time           // 启动时间
-	backupDone    chan struct{}       // 备份停止信号
+	periodicDone  chan struct{}       // 定期任务停止信号
 }
 
 // Instance 实例信息
@@ -362,7 +362,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		notifyChannel: make(chan *InstanceEvent, semaphoreLimit),
 		tcpingSem:     make(chan struct{}, tcpingSemLimit),
 		startTime:     time.Now(),
-		backupDone:    make(chan struct{}),
+		periodicDone:  make(chan struct{}),
 	}
 	master.tunnelTCPAddr = host
 
@@ -374,6 +374,9 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 
 	// 启动定期备份
 	go master.startPeriodicBackup()
+
+	// 启动定期更新
+	go master.startPeriodicUpdate()
 
 	return master, nil
 }
@@ -530,8 +533,8 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
-		// 关闭定期备份
-		close(m.backupDone)
+		// 关闭定期任务
+		close(m.periodicDone)
 
 		// 关闭事件通知通道，停止事件分发器
 		close(m.notifyChannel)
@@ -636,7 +639,7 @@ func (m *Master) startPeriodicBackup() {
 			} else {
 				m.logger.Info("State backup saved: %v", backupPath)
 			}
-		case <-m.backupDone:
+		case <-m.periodicDone:
 			return
 		}
 	}
@@ -1566,6 +1569,133 @@ func (m *Master) enhanceURL(instanceURL string, instanceType string) string {
 
 	parsedURL.RawQuery = query.Encode()
 	return parsedURL.String()
+}
+
+// generateConfigURL 生成实例的完整URL
+func (m *Master) generateConfigURL(instance *Instance) string {
+	parsedURL, err := url.Parse(instance.URL)
+	if err != nil {
+		m.logger.Error("generateConfigURL: invalid URL format: %v", err)
+		return instance.URL
+	}
+
+	query := parsedURL.Query()
+
+	// 设置日志级别
+	if m.logLevel != "" && query.Get("log") == "" {
+		query.Set("log", m.logLevel)
+	}
+
+	// 设置TLS配置
+	if instance.Type == "server" && m.tlsCode != "0" {
+		if query.Get("tls") == "" {
+			query.Set("tls", m.tlsCode)
+		}
+
+		// 为TLS code-2设置证书和密钥
+		if m.tlsCode == "2" {
+			if m.crtPath != "" && query.Get("crt") == "" {
+				query.Set("crt", m.crtPath)
+			}
+			if m.keyPath != "" && query.Get("key") == "" {
+				query.Set("key", m.keyPath)
+			}
+		}
+	}
+
+	// 根据实例类型设置默认参数
+	switch instance.Type {
+	case "client":
+		// client参数: min, mode, read, rate, slot, proxy
+		if query.Get("min") == "" {
+			query.Set("min", strconv.Itoa(defaultMinPool))
+		}
+		if query.Get("mode") == "" {
+			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("read") == "" {
+			query.Set("read", defaultReadTimeout.String())
+		}
+		if query.Get("rate") == "" {
+			query.Set("rate", strconv.Itoa(defaultRateLimit))
+		}
+		if query.Get("slot") == "" {
+			query.Set("slot", strconv.Itoa(defaultSlotLimit))
+		}
+		if query.Get("proxy") == "" {
+			query.Set("proxy", defaultProxyProtocol)
+		}
+	case "server":
+		// server参数: max, mode, read, rate, slot, proxy
+		if query.Get("max") == "" {
+			query.Set("max", strconv.Itoa(defaultMaxPool))
+		}
+		if query.Get("mode") == "" {
+			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("read") == "" {
+			query.Set("read", defaultReadTimeout.String())
+		}
+		if query.Get("rate") == "" {
+			query.Set("rate", strconv.Itoa(defaultRateLimit))
+		}
+		if query.Get("slot") == "" {
+			query.Set("slot", strconv.Itoa(defaultSlotLimit))
+		}
+		if query.Get("proxy") == "" {
+			query.Set("proxy", defaultProxyProtocol)
+		}
+	}
+
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String()
+}
+
+// updateInstanceConfigTag 更新实例的标签
+func (m *Master) updateInstanceConfigTag(instance *Instance) {
+	// 生成完整URL
+	configURL := m.generateConfigURL(instance)
+
+	// 创建现有标签映射表
+	existingTags := make(map[string]Tag)
+	for _, tag := range instance.Tags {
+		existingTags[tag.Key] = tag
+	}
+
+	// 更新或添加config标签
+	existingTags["config"] = Tag{
+		Key:   "config",
+		Value: configURL,
+	}
+
+	// 将映射表转换回标签数组
+	newTags := make([]Tag, 0, len(existingTags))
+	for _, tag := range existingTags {
+		newTags = append(newTags, tag)
+	}
+
+	instance.Tags = newTags
+	m.instances.Store(instance.ID, instance)
+}
+
+// startPeriodicUpdate 启动定期更新
+func (m *Master) startPeriodicUpdate() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 遍历所有实例并更新标签
+			m.instances.Range(func(key, value any) bool {
+				instance := value.(*Instance)
+				// 跳过API Key实例
+				if instance.ID != apiKeyID {
+					m.updateInstanceConfigTag(instance)
+				}
+				return true
+			})
+		case <-m.periodicDone:
+			return
+		}
+	}
 }
 
 // generateID 生成随机ID
