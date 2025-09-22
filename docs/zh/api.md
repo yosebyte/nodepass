@@ -577,17 +577,24 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      return response.json();
    }
    
-   // 添加或更新标签 - 提供标签数组
+   // 添加或更新标签 - 现有标签会保留，除非被显式指定
    await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "production"},
-     {"key": "region", "value": "us-west-2"},
-     {"key": "team", "value": "backend"}
+     {"key": "environment", "value": "production"},  // 添加/更新
+     {"key": "region", "value": "us-west-2"},        // 添加/更新
+     {"key": "team", "value": "backend"}             // 添加/更新
    ]);
    
-   // 替换所有标签（删除现有，设置新的）
+   // 通过设置空值删除特定标签
    await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "staging"},
-     {"key": "version", "value": "2.0"}
+     {"key": "old-tag", "value": ""},               // 删除此标签
+     {"key": "temp-env", "value": ""}               // 删除此标签
+   ]);
+   
+   // 混合操作：添加/更新某些标签，删除其他标签
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},    // 更新现有
+     {"key": "version", "value": "2.0"},            // 添加新的
+     {"key": "deprecated", "value": ""}             // 删除现有
    ]);
    ```
 
@@ -845,10 +852,13 @@ async function configureAutoStartPolicies(instances) {
 
 ### 标签管理规则
 
-1. **替换标签**：在`tags`字段中提供标签数组，将替换实例的所有标签
-2. **数组格式**：标签现在使用数组格式 `[{"key": "key1", "value": "value1"}]`
-3. **唯一性检查**：同一个实例中不允许重复的键名
-4. **清空标签**：提供空数组`[]`将删除实例的所有标签
+1. **合并式更新**：标签采用合并逻辑处理 - 现有标签会保留，除非被显式更新或删除
+2. **数组格式**：标签使用数组格式 `[{"key": "key1", "value": "value1"}]`
+3. **键过滤**：空键会被自动过滤并被验证拒绝
+4. **空值删除**：设置 `value: ""` （空字符串）可删除现有标签键
+5. **添加/更新逻辑**：非空值会添加新标签或更新现有标签
+6. **唯一性检查**：同一标签操作中不允许重复的键名
+7. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
 4. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
 5. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
 
@@ -1084,7 +1094,7 @@ await fetch(`${API_URL}/instances/abc123`, {
   })
 });
 
-// 替换所有标签为新标签
+// 一次操作中更新和删除标签
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1093,8 +1103,9 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ 
     tags: [
-      {"key": "environment", "value": "staging"},
-      {"key": "version", "value": "2.0"}
+      {"key": "environment", "value": "staging"},    // 更新现有
+      {"key": "version", "value": "2.0"},            // 添加新的
+      {"key": "old-tag", "value": ""}                // 删除现有
     ]
   })
 });

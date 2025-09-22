@@ -578,17 +578,24 @@ To properly manage lifecycles:
      return response.json();
    }
    
-   // Add or update tags - provide tag array
+   // Add or update tags - existing tags are preserved unless specified
    await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "production"},
-     {"key": "region", "value": "us-west-2"},
-     {"key": "team", "value": "backend"}
+     {"key": "environment", "value": "production"},  // Add/update
+     {"key": "region", "value": "us-west-2"},        // Add/update
+     {"key": "team", "value": "backend"}             // Add/update
    ]);
    
-   // Replace all tags (remove existing, set new ones)
+   // Delete specific tags by setting empty values
    await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "staging"},
-     {"key": "version", "value": "2.0"}
+     {"key": "old-tag", "value": ""},               // Delete this tag
+     {"key": "temp-env", "value": ""}               // Delete this tag
+   ]);
+   
+   // Mix operations: add/update some tags, delete others
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},    // Update existing
+     {"key": "version", "value": "2.0"},            // Add new
+     {"key": "deprecated", "value": ""}             // Delete existing
    ]);
    ```
 
@@ -846,11 +853,13 @@ async function configureAutoStartPolicies(instances) {
 
 ### Tag Management Rules
 
-1. **Replace Tags**: Provide tag array in the `tags` field to replace all instance tags
-2. **Array Format**: Tags now use array format `[{"key": "key1", "value": "value1"}]`
-3. **Uniqueness Check**: Duplicate keys are not allowed within the same instance
-4. **Clear Tags**: Provide empty array `[]` to remove all instance tags
-5. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
+1. **Merge-based Updates**: Tags are processed with merge logic - existing tags are preserved unless explicitly updated or deleted
+2. **Array Format**: Tags use array format `[{"key": "key1", "value": "value1"}]`
+3. **Key Filtering**: Empty keys are automatically filtered out and rejected by validation
+4. **Delete by Empty Value**: Set `value: ""` (empty string) to delete an existing tag key
+5. **Add/Update Logic**: Non-empty values will add new tags or update existing ones
+6. **Uniqueness Check**: Duplicate keys are not allowed within the same tag operation
+7. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
 6. **Persistence**: All tag operations are automatically saved to disk and restored after restart
 
 ## Instance Data Structure
@@ -1085,7 +1094,7 @@ await fetch(`${API_URL}/instances/abc123`, {
   })
 });
 
-// Replace all tags with new ones
+// Update and delete tags in one operation
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1094,8 +1103,9 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ 
     tags: [
-      {"key": "environment", "value": "staging"},
-      {"key": "version", "value": "2.0"}
+      {"key": "environment", "value": "staging"}, // Update existing
+      {"key": "version", "value": "2.0"},         // Add new
+      {"key": "old-tag", "value": ""}             // Delete existing
     ]
   })
 });
