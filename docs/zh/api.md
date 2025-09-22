@@ -916,9 +916,9 @@ GET /info
   "arch": "amd64",            // 系统架构
   "cpu": 45,                  // CPU使用率百分比（仅Linux系统）
   "mem_total": 8589934592,    // 内存容量（字节，仅Linux系统）
-  "mem_free": 2684354560,     // 内存可用（字节，仅Linux系统）
+  "mem_used": 2684354560,     // 内存已用（字节，仅Linux系统）
   "swap_total": 3555328000,   // 交换区总量（字节，仅Linux系统）
-  "swap_free": 3555328000,    // 交换区可用（字节，仅Linux系统）
+  "swap_used": 3555328000,    // 交换区已用（字节，仅Linux系统）
   "netrx": 1048576000,        // 网络接收字节数（累计值，仅Linux）
   "nettx": 2097152000,        // 网络发送字节数（累计值，仅Linux）
   "diskr": 4194304000,        // 磁盘读取字节数（累计值，仅Linux）
@@ -966,12 +966,16 @@ function displaySystemStatus() {
         console.log(`CPU使用率: ${info.cpu}%`);
       }
       if (info.mem_total > 0) {
-        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
-        console.log(`内存使用率: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+        const memUsagePercent = (info.mem_used / info.mem_total * 100).toFixed(1);
+        const memFreeGB = ((info.mem_total - info.mem_used) / 1024 / 1024 / 1024).toFixed(1);
+        const memTotalGB = (info.mem_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`内存使用率: ${memUsagePercent}% (${memFreeGB}GB 可用，共 ${memTotalGB}GB)`);
       }
       if (info.swap_total > 0) {
-        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
-        console.log(`交换区使用率: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+        const swapUsagePercent = (info.swap_used / info.swap_total * 100).toFixed(1);
+        const swapFreeGB = ((info.swap_total - info.swap_used) / 1024 / 1024 / 1024).toFixed(1);
+        const swapTotalGB = (info.swap_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`交换区使用率: ${swapUsagePercent}% (${swapFreeGB}GB 可用，共 ${swapTotalGB}GB)`);
       }
     } else {
       console.log('CPU、内存、交换区、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
@@ -997,8 +1001,8 @@ function displaySystemStatus() {
 - **日志级别验证**：确认当前日志级别符合预期
 - **资源监控**：在Linux系统上，监控CPU、内存、交换区、网络I/O、磁盘I/O使用情况以确保最佳性能
   - CPU使用率通过解析`/proc/stat`计算（非空闲时间百分比）
-  - 内存信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
-  - 交换区信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
+  - 内存信息通过解析`/proc/meminfo`获取（总量和已用量，单位为字节，已用量计算为总量减去可用量）
+  - 交换区信息通过解析`/proc/meminfo`获取（总量和已用量，单位为字节，已用量计算为总量减去空闲量）
   - 网络I/O通过解析`/proc/net/dev`计算（累计字节数，排除虚拟接口）
   - 磁盘I/O通过解析`/proc/diskstats`计算（累计字节数，仅统计主设备）
   - 系统运行时间通过解析`/proc/uptime`获取

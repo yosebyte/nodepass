@@ -916,9 +916,9 @@ The response contains the following system information fields:
   "arch": "amd64",            // System architecture
   "cpu": 45,                  // CPU usage percentage (Linux only)
   "mem_total": 8589934592,    // Total memory in bytes (Linux only)
-  "mem_free": 2684354560,     // Free memory in bytes (Linux only)
+  "mem_used": 2684354560,     // Used memory in bytes (Linux only)
   "swap_total": 3555328000,   // Total swap space in bytes (Linux only)
-  "swap_free": 3555328000,    // Free swap space in bytes (Linux only)
+  "swap_used": 3555328000,    // Used swap space in bytes (Linux only)
   "netrx": 1048576000,        // Network received bytes (cumulative, Linux only)
   "nettx": 2097152000,        // Network transmitted bytes (cumulative, Linux only)
   "diskr": 4194304000,        // Disk read bytes (cumulative, Linux only)
@@ -966,12 +966,16 @@ function displaySystemStatus() {
         console.log(`CPU usage: ${info.cpu}%`);
       }
       if (info.mem_total > 0) {
-        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
-        console.log(`Memory usage: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+        const memUsagePercent = (info.mem_used / info.mem_total * 100).toFixed(1);
+        const memFreeGB = ((info.mem_total - info.mem_used) / 1024 / 1024 / 1024).toFixed(1);
+        const memTotalGB = (info.mem_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`Memory usage: ${memUsagePercent}% (${memFreeGB}GB free of ${memTotalGB}GB total)`);
       }
       if (info.swap_total > 0) {
-        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
-        console.log(`Swap usage: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+        const swapUsagePercent = (info.swap_used / info.swap_total * 100).toFixed(1);
+        const swapFreeGB = ((info.swap_total - info.swap_used) / 1024 / 1024 / 1024).toFixed(1);
+        const swapTotalGB = (info.swap_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`Swap usage: ${swapUsagePercent}% (${swapFreeGB}GB free of ${swapTotalGB}GB total)`);
       }
     } else {
       console.log('CPU, memory, swap space, network I/O, disk I/O, and system uptime monitoring is only available on Linux systems');
@@ -997,8 +1001,8 @@ function displaySystemStatus() {
 - **Log level verification**: Ensure current log level meets expectations
 - **Resource monitoring**: On Linux systems, monitor CPU, memory, swap space, network I/O, disk I/O usage to ensure optimal performance
   - CPU usage is calculated by parsing `/proc/stat` (percentage of non-idle time)
-  - Memory information is obtained by parsing `/proc/meminfo` (total and free memory in bytes)
-  - Swap space information is obtained by parsing `/proc/meminfo` (total and free swap space in bytes)
+  - Memory information is obtained by parsing `/proc/meminfo` (total and used memory in bytes, calculated as total minus available)
+  - Swap space information is obtained by parsing `/proc/meminfo` (total and used swap space in bytes, calculated as total minus free)
   - Network I/O is calculated by parsing `/proc/net/dev` (cumulative bytes, excluding virtual interfaces)
   - Disk I/O is calculated by parsing `/proc/diskstats` (cumulative bytes, major devices only)
   - System uptime is obtained by parsing `/proc/uptime`
