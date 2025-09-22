@@ -69,7 +69,8 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "tags": [
     {"key": "environment", "value": "production"},
     {"key": "region", "value": "us-west-2"},
-    {"key": "project", "value": "web-service"}
+    {"key": "project", "value": "web-service"},
+    {"key": "config", "value": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0"}
   ],
   "mode": 0,
   "ping": 0,
@@ -859,8 +860,29 @@ async function configureAutoStartPolicies(instances) {
 5. **添加/更新逻辑**：非空值会添加新标签或更新现有标签
 6. **唯一性检查**：同一标签操作中不允许重复的键名
 7. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
-4. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
-5. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
+8. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
+9. **自动标签**：系统会自动维护 `config` 标签，包含实例的完整URL配置
+
+#### 自动生成的 config 标签
+
+NodePass主控会自动为每个实例维护一个特殊的 `config` 标签：
+
+- **自动更新**：每5秒自动更新一次，无需手动维护
+- **完整配置**：包含实例的完整URL，带有所有默认参数
+- **配置继承**：log和tls配置继承自主控设置
+- **默认参数**：其他参数使用系统默认值
+- **只读性质**：不建议手动修改此标签，因为会被系统自动覆盖
+
+**示例 config 标签值：**
+```
+server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
+```
+
+此功能特别适用于：
+- 配置备份和导出
+- 实例配置的完整性检查
+- 自动化部署脚本
+- 配置文档生成
 
 ## 实例数据结构
 

@@ -69,7 +69,8 @@ API Key authentication is enabled by default, automatically generated and saved 
   "tags": [
     {"key": "environment", "value": "production"},
     {"key": "region", "value": "us-west-2"},
-    {"key": "project", "value": "web-service"}
+    {"key": "project", "value": "web-service"},
+    {"key": "config", "value": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0"}
   ],
   "mode": 0,
   "ping": 0,
@@ -860,7 +861,29 @@ async function configureAutoStartPolicies(instances) {
 5. **Add/Update Logic**: Non-empty values will add new tags or update existing ones
 6. **Uniqueness Check**: Duplicate keys are not allowed within the same tag operation
 7. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
-6. **Persistence**: All tag operations are automatically saved to disk and restored after restart
+8. **Persistence**: All tag operations are automatically saved to disk and restored after restart
+9. **Auto Tags**: The system automatically maintains a `config` tag containing the instance's complete URL configuration
+
+#### Auto-Generated config Tag
+
+NodePass Master automatically maintains a special `config` tag for each instance:
+
+- **Auto Update**: Automatically updated every 5 seconds, no manual maintenance required
+- **Complete Configuration**: Contains the instance's complete URL with all default parameters
+- **Configuration Inheritance**: log and tls configurations are inherited from master settings
+- **Default Parameters**: Other parameters use system defaults
+- **Read-Only Nature**: Not recommended to manually modify this tag as it will be automatically overwritten by the system
+
+**Example config tag value:**
+```
+server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
+```
+
+This feature is particularly useful for:
+- Configuration backup and export
+- Instance configuration integrity checks
+- Automated deployment scripts
+- Configuration documentation generation
 
 ## Instance Data Structure
 
@@ -877,7 +900,8 @@ The instance object in API responses contains the following fields:
   "tags": [                   // Tag array
     {"key": "environment", "value": "production"},
     {"key": "project", "value": "web-service"},
-    {"key": "region", "value": "us-west-2"}
+    {"key": "region", "value": "us-west-2"},
+    {"key": "config", "value": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0"}
   ],
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
