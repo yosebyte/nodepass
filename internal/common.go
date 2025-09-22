@@ -78,6 +78,17 @@ var (
 	ReloadInterval   = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
+// 默认配置
+const (
+	defaultMinPool       = 64            // 默认最小池容量
+	defaultMaxPool       = 1024          // 默认最大池容量
+	defaultRunMode       = "0"           // 默认运行模式
+	defaultReadTimeout   = 1 * time.Hour // 默认读取超时
+	defaultRateLimit     = 0             // 默认速率限制
+	defaultSlotLimit     = 65536         // 默认槽位限制
+	defaultProxyProtocol = "0"           // 默认代理协议
+)
+
 // UDP缓冲区池
 var udpBufferPool = sync.Pool{
 	New: func() any {
@@ -238,7 +249,7 @@ func (c *Common) getPoolCapacity(parsedURL *url.URL) {
 			c.minPoolCapacity = value
 		}
 	} else {
-		c.minPoolCapacity = 64
+		c.minPoolCapacity = defaultMinPool
 	}
 
 	if max := parsedURL.Query().Get("max"); max != "" {
@@ -246,7 +257,16 @@ func (c *Common) getPoolCapacity(parsedURL *url.URL) {
 			c.maxPoolCapacity = value
 		}
 	} else {
-		c.maxPoolCapacity = 1024
+		c.maxPoolCapacity = defaultMaxPool
+	}
+}
+
+// getRunMode 获取运行模式
+func (c *Common) getRunMode(parsedURL *url.URL) {
+	if mode := parsedURL.Query().Get("mode"); mode != "" {
+		c.runMode = mode
+	} else {
+		c.runMode = defaultRunMode
 	}
 }
 
@@ -257,16 +277,7 @@ func (c *Common) getReadTimeout(parsedURL *url.URL) {
 			c.readTimeout = value
 		}
 	} else {
-		c.readTimeout = 1 * time.Hour
-	}
-}
-
-// getRunMode 获取运行模式
-func (c *Common) getRunMode(parsedURL *url.URL) {
-	if mode := parsedURL.Query().Get("mode"); mode != "" {
-		c.runMode = mode
-	} else {
-		c.runMode = "0"
+		c.readTimeout = defaultReadTimeout
 	}
 }
 
@@ -277,7 +288,7 @@ func (c *Common) getRateLimit(parsedURL *url.URL) {
 			c.rateLimit = value * 125000
 		}
 	} else {
-		c.rateLimit = 0
+		c.rateLimit = defaultRateLimit
 	}
 }
 
@@ -288,7 +299,7 @@ func (c *Common) getSlotLimit(parsedURL *url.URL) {
 			c.slotLimit = int32(value)
 		}
 	} else {
-		c.slotLimit = 65536
+		c.slotLimit = defaultSlotLimit
 	}
 }
 
@@ -297,7 +308,7 @@ func (c *Common) getProxyProtocol(parsedURL *url.URL) {
 	if protocol := parsedURL.Query().Get("proxy"); protocol != "" {
 		c.proxyProtocol = protocol
 	} else {
-		c.proxyProtocol = "0"
+		c.proxyProtocol = defaultProxyProtocol
 	}
 }
 
@@ -309,8 +320,8 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 
 	c.getTunnelKey(parsedURL)
 	c.getPoolCapacity(parsedURL)
-	c.getReadTimeout(parsedURL)
 	c.getRunMode(parsedURL)
+	c.getReadTimeout(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
 	c.getProxyProtocol(parsedURL)
