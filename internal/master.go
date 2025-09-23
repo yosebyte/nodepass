@@ -376,6 +376,9 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动定期更新
 	go master.startPeriodicUpdate()
 
+	// 启动定期清理
+	go master.startPeriodicCleanup()
+
 	return master, nil
 }
 
@@ -1682,6 +1685,52 @@ func (m *Master) startPeriodicUpdate() {
 				}
 				return true
 			})
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicCleanup 启动定期清理重复ID的实例
+func (m *Master) startPeriodicCleanup() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集实例并按ID分组
+			idInstances := make(map[string][]*Instance)
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					idInstances[id] = append(idInstances[id], value.(*Instance))
+				}
+				return true
+			})
+
+			// 清理重复实例
+			for _, instances := range idInstances {
+				if len(instances) <= 1 {
+					continue
+				}
+
+				// 选择保留实例
+				keepIdx := 0
+				for i, inst := range instances {
+					if inst.Status == "running" && instances[keepIdx].Status != "running" {
+						keepIdx = i
+					}
+				}
+
+				// 清理多余实例
+				for i, inst := range instances {
+					if i == keepIdx {
+						continue
+					}
+					inst.deleted = true
+					if inst.Status == "running" {
+						m.stopInstance(inst)
+					}
+					m.instances.Delete(inst.ID)
+				}
+			}
 		case <-m.periodicDone:
 			return
 		}
