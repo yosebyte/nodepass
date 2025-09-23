@@ -89,31 +89,30 @@ type Master struct {
 
 // Instance 实例信息
 type Instance struct {
-	ID             string             `json:"id"`        // 实例ID
-	Alias          string             `json:"alias"`     // 实例别名
-	Type           string             `json:"type"`      // 实例类型
-	Status         string             `json:"status"`    // 实例状态
-	URL            string             `json:"url"`       // 实例URL
-	Restart        bool               `json:"restart"`   // 是否自启动
-	Tags           []Tag              `json:"tags"`      // 标签数组
-	Mode           int32              `json:"mode"`      // 实例模式
-	Ping           int32              `json:"ping"`      // 端内延迟
-	Pool           int32              `json:"pool"`      // 池连接数
-	TCPS           int32              `json:"tcps"`      // TCP连接数
-	UDPS           int32              `json:"udps"`      // UDP连接数
-	TCPRX          uint64             `json:"tcprx"`     // TCP接收字节数
-	TCPTX          uint64             `json:"tcptx"`     // TCP发送字节数
-	UDPRX          uint64             `json:"udprx"`     // UDP接收字节数
-	UDPTX          uint64             `json:"udptx"`     // UDP发送字节数
-	TCPRXBase      uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
-	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
-	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
-	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
-	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
-	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
-	deleted        bool               `json:"-" gob:"-"` // 删除标志（不序列化）
-	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
-	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
+	ID         string             `json:"id"`        // 实例ID
+	Alias      string             `json:"alias"`     // 实例别名
+	Type       string             `json:"type"`      // 实例类型
+	Status     string             `json:"status"`    // 实例状态
+	URL        string             `json:"url"`       // 实例URL
+	Restart    bool               `json:"restart"`   // 是否自启动
+	Tags       []Tag              `json:"tags"`      // 标签数组
+	Mode       int32              `json:"mode"`      // 实例模式
+	Ping       int32              `json:"ping"`      // 端内延迟
+	Pool       int32              `json:"pool"`      // 池连接数
+	TCPS       int32              `json:"tcps"`      // TCP连接数
+	UDPS       int32              `json:"udps"`      // UDP连接数
+	TCPRX      uint64             `json:"tcprx"`     // TCP接收字节数
+	TCPTX      uint64             `json:"tcptx"`     // TCP发送字节数
+	UDPRX      uint64             `json:"udprx"`     // UDP接收字节数
+	UDPTX      uint64             `json:"udptx"`     // UDP发送字节数
+	TCPRXBase  uint64             `json:"-" gob:"-"` // TCP接收字节数基线（不序列化）
+	TCPTXBase  uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
+	UDPRXBase  uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
+	UDPTXBase  uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	cmd        *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
+	stopped    chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	deleted    bool               `json:"-" gob:"-"` // 删除标志（不序列化）
+	cancelFunc context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
 }
 
 // Tag 标签结构体
@@ -285,7 +284,6 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 				}
 			}
 
-			w.instance.lastCheckPoint = time.Now()
 			// 仅当实例未被删除时才存储和发送更新事件
 			if !w.instance.deleted {
 				w.master.instances.Store(w.instanceID, w.instance)
@@ -1447,9 +1445,7 @@ func (m *Master) startInstance(instance *Instance) {
 // monitorInstance 监控实例状态
 func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
+	go func() { done <- cmd.Wait() }()
 
 	for {
 		select {
@@ -1472,12 +1468,6 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 				}
 			}
 			return
-		case <-time.After(reportInterval):
-			if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 5*reportInterval {
-				instance.Status = "error"
-				m.instances.Store(instance.ID, instance)
-				m.sendSSEEvent("update", instance)
-			}
 		}
 	}
 }
