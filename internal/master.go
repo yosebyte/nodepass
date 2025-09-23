@@ -648,6 +648,13 @@ func (m *Master) startPeriodicBackup() {
 
 // loadState 从文件加载实例状态
 func (m *Master) loadState() {
+	// 清理旧的临时文件
+	if tmpFiles, _ := filepath.Glob(filepath.Join(filepath.Dir(m.statePath), "np-*.tmp")); tmpFiles != nil {
+		for _, f := range tmpFiles {
+			os.Remove(f)
+		}
+	}
+
 	// 检查文件是否存在
 	if _, err := os.Stat(m.statePath); os.IsNotExist(err) {
 		return
