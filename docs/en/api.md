@@ -1264,9 +1264,10 @@ Examples:
 | `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
 | `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None | Server only |
-| `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
+| `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `10m` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
+| `slot` | Connection slot count | Integer (1-65536) | `65536` | Both |
 | `proxy` | PROXY protocol support | `0`(disabled), `1`(enabled) | `0` | Both |
