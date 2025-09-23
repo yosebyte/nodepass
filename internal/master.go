@@ -521,8 +521,8 @@ func (m *Master) Shutdown(ctx context.Context) error {
 		var wg sync.WaitGroup
 		m.instances.Range(func(key, value any) bool {
 			instance := value.(*Instance)
-			// 如果实例正在运行，则停止它
-			if instance.Status == "running" && instance.cmd != nil && instance.cmd.Process != nil {
+			// 如果实例需要停止，则停止它
+			if instance.Status != "stopped" && instance.cmd != nil && instance.cmd.Process != nil {
 				wg.Add(1)
 				go func(inst *Instance) {
 					defer wg.Done()
@@ -1142,8 +1142,8 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	// 如果实例正在运行，先停止它
-	if instance.Status == "running" {
+	// 如果实例需要停止，先停止它
+	if instance.Status != "stopped" {
 		m.stopInstance(instance)
 		time.Sleep(baseDuration)
 	}
@@ -1186,19 +1186,15 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 			go m.startInstance(instance)
 		}
 	case "stop":
-		if instance.Status == "running" {
+		if instance.Status != "stopped" {
 			go m.stopInstance(instance)
 		}
 	case "restart":
-		if instance.Status == "running" {
-			go func() {
-				m.stopInstance(instance)
-				time.Sleep(baseDuration)
-				m.startInstance(instance)
-			}()
-		} else {
-			go m.startInstance(instance)
-		}
+		go func() {
+			m.stopInstance(instance)
+			time.Sleep(baseDuration)
+			m.startInstance(instance)
+		}()
 	}
 }
 
@@ -1214,7 +1210,7 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 	instance.deleted = true
 	m.instances.Store(id, instance)
 
-	if instance.Status == "running" {
+	if instance.Status != "stopped" {
 		m.stopInstance(instance)
 	}
 	m.instances.Delete(id)
@@ -1725,7 +1721,7 @@ func (m *Master) startPeriodicCleanup() {
 						continue
 					}
 					inst.deleted = true
-					if inst.Status == "running" {
+					if inst.Status != "stopped" {
 						m.stopInstance(inst)
 					}
 					m.instances.Delete(inst.ID)
