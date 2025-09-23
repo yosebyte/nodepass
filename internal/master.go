@@ -214,10 +214,10 @@ func validateTags(tags []Tag) error {
 			return fmt.Errorf("tag key cannot be empty")
 		}
 		if len(tag.Key) > maxTagKeyLen {
-			return fmt.Errorf("tag key '%s' exceeds maximum length %d", tag.Key, maxTagKeyLen)
+			return fmt.Errorf("tag key exceeds maximum length %d", maxTagKeyLen)
 		}
 		if len(tag.Value) > maxTagValueLen {
-			return fmt.Errorf("tag value for key '%s' exceeds maximum length %d", tag.Key, maxTagValueLen)
+			return fmt.Errorf("tag value for key exceeds maximum length %d", maxTagValueLen)
 		}
 
 		// 检查重复的键
@@ -720,7 +720,11 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 更新alias字段
+		// 更新主控别名
+		if len(reqData.Alias) > maxTagKeyLen {
+			httpError(w, fmt.Sprintf("Master alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+			return
+		}
 		m.alias = reqData.Alias
 
 		writeJSON(w, http.StatusOK, m.getMasterInfo())
@@ -1092,6 +1096,10 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 
 			// 更新实例别名
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
+				if len(reqData.Alias) > maxTagKeyLen {
+					httpError(w, fmt.Sprintf("Instance alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+					return
+				}
 				instance.Alias = reqData.Alias
 				m.instances.Store(id, instance)
 				go m.saveState()
