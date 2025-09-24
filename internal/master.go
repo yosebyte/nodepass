@@ -381,6 +381,9 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动定期清理
 	go master.startPeriodicCleanup()
 
+	// 启动定期重启
+	go master.startPeriodicErrorRestart()
+
 	return master, nil
 }
 
@@ -1749,6 +1752,35 @@ func (m *Master) startPeriodicCleanup() {
 					}
 					m.instances.Delete(inst.ID)
 				}
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicErrorRestart 启动定期错误实例重启
+func (m *Master) startPeriodicErrorRestart() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集所有error状态的实例
+			var errorInstances []*Instance
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					instance := value.(*Instance)
+					if instance.Status == "error" && !instance.deleted {
+						errorInstances = append(errorInstances, instance)
+					}
+				}
+				return true
+			})
+
+			// 重启所有error状态的实例
+			for _, instance := range errorInstances {
+				m.stopInstance(instance)
+				time.Sleep(baseDuration)
+				m.startInstance(instance)
 			}
 		case <-m.periodicDone:
 			return
