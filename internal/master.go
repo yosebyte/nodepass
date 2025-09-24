@@ -372,18 +372,6 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动事件分发器
 	go master.startEventDispatcher()
 
-	// 启动定期备份
-	go master.startPeriodicBackup()
-
-	// 启动定期更新
-	go master.startPeriodicUpdate()
-
-	// 启动定期清理
-	go master.startPeriodicCleanup()
-
-	// 启动定期重启
-	go master.startPeriodicErrorRestart()
-
 	return master, nil
 }
 
@@ -501,6 +489,9 @@ func (m *Master) Run() {
 		}
 	}()
 
+	// 启动定期任务
+	go m.startPeriodicTasks()
+
 	// 处理系统信号
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
@@ -557,6 +548,128 @@ func (m *Master) Shutdown(ctx context.Context) error {
 			m.logger.Error("shutdown: api shutdown error: %v", err)
 		}
 	})
+}
+
+// startPeriodicTasks 启动所有定期任务
+func (m *Master) startPeriodicTasks() {
+	go m.startPeriodicBackup()
+	go m.startPeriodicUpdate()
+	go m.startPeriodicCleanup()
+	go m.startPeriodicRestart()
+}
+
+// startPeriodicBackup 启动定期备份
+func (m *Master) startPeriodicBackup() {
+	for {
+		select {
+		case <-time.After(ReloadInterval):
+			// 固定备份文件名
+			backupPath := fmt.Sprintf("%s.backup", m.statePath)
+
+			if err := m.saveStateToPath(backupPath); err != nil {
+				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
+			} else {
+				m.logger.Info("State backup saved: %v", backupPath)
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicUpdate 启动定期更新
+func (m *Master) startPeriodicUpdate() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 遍历所有实例并更新标签
+			m.instances.Range(func(key, value any) bool {
+				instance := value.(*Instance)
+				// 跳过API Key实例
+				if instance.ID != apiKeyID {
+					m.updateInstanceConfigTag(instance)
+				}
+				return true
+			})
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicCleanup 启动定期清理重复ID的实例
+func (m *Master) startPeriodicCleanup() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集实例并按ID分组
+			idInstances := make(map[string][]*Instance)
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					idInstances[id] = append(idInstances[id], value.(*Instance))
+				}
+				return true
+			})
+
+			// 清理重复实例
+			for _, instances := range idInstances {
+				if len(instances) <= 1 {
+					continue
+				}
+
+				// 选择保留实例
+				keepIdx := 0
+				for i, inst := range instances {
+					if inst.Status == "running" && instances[keepIdx].Status != "running" {
+						keepIdx = i
+					}
+				}
+
+				// 清理多余实例
+				for i, inst := range instances {
+					if i == keepIdx {
+						continue
+					}
+					inst.deleted = true
+					if inst.Status != "stopped" {
+						m.stopInstance(inst)
+					}
+					m.instances.Delete(inst.ID)
+				}
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicRestart 启动定期错误实例重启
+func (m *Master) startPeriodicRestart() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集所有error状态的实例
+			var errorInstances []*Instance
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					instance := value.(*Instance)
+					if instance.Status == "error" && !instance.deleted {
+						errorInstances = append(errorInstances, instance)
+					}
+				}
+				return true
+			})
+
+			// 重启所有error状态的实例
+			for _, instance := range errorInstances {
+				m.stopInstance(instance)
+				time.Sleep(baseDuration)
+				m.startInstance(instance)
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
 }
 
 // saveState 保存实例状态到文件
@@ -630,25 +743,6 @@ func (m *Master) saveStateToPath(filePath string) error {
 	}
 
 	return nil
-}
-
-// startPeriodicBackup 启动定期备份
-func (m *Master) startPeriodicBackup() {
-	for {
-		select {
-		case <-time.After(ReloadInterval):
-			// 固定备份文件名
-			backupPath := fmt.Sprintf("%s.backup", m.statePath)
-
-			if err := m.saveStateToPath(backupPath); err != nil {
-				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
-			} else {
-				m.logger.Info("State backup saved: %v", backupPath)
-			}
-		case <-m.periodicDone:
-			return
-		}
-	}
 }
 
 // loadState 从文件加载实例状态
@@ -1691,101 +1785,6 @@ func (m *Master) updateInstanceConfigTag(instance *Instance) {
 
 	instance.Tags = newTags
 	m.instances.Store(instance.ID, instance)
-}
-
-// startPeriodicUpdate 启动定期更新
-func (m *Master) startPeriodicUpdate() {
-	for {
-		select {
-		case <-time.After(reportInterval):
-			// 遍历所有实例并更新标签
-			m.instances.Range(func(key, value any) bool {
-				instance := value.(*Instance)
-				// 跳过API Key实例
-				if instance.ID != apiKeyID {
-					m.updateInstanceConfigTag(instance)
-				}
-				return true
-			})
-		case <-m.periodicDone:
-			return
-		}
-	}
-}
-
-// startPeriodicCleanup 启动定期清理重复ID的实例
-func (m *Master) startPeriodicCleanup() {
-	for {
-		select {
-		case <-time.After(reportInterval):
-			// 收集实例并按ID分组
-			idInstances := make(map[string][]*Instance)
-			m.instances.Range(func(key, value any) bool {
-				if id := key.(string); id != apiKeyID {
-					idInstances[id] = append(idInstances[id], value.(*Instance))
-				}
-				return true
-			})
-
-			// 清理重复实例
-			for _, instances := range idInstances {
-				if len(instances) <= 1 {
-					continue
-				}
-
-				// 选择保留实例
-				keepIdx := 0
-				for i, inst := range instances {
-					if inst.Status == "running" && instances[keepIdx].Status != "running" {
-						keepIdx = i
-					}
-				}
-
-				// 清理多余实例
-				for i, inst := range instances {
-					if i == keepIdx {
-						continue
-					}
-					inst.deleted = true
-					if inst.Status != "stopped" {
-						m.stopInstance(inst)
-					}
-					m.instances.Delete(inst.ID)
-				}
-			}
-		case <-m.periodicDone:
-			return
-		}
-	}
-}
-
-// startPeriodicErrorRestart 启动定期错误实例重启
-func (m *Master) startPeriodicErrorRestart() {
-	for {
-		select {
-		case <-time.After(reportInterval):
-			// 收集所有error状态的实例
-			var errorInstances []*Instance
-			m.instances.Range(func(key, value any) bool {
-				if id := key.(string); id != apiKeyID {
-					instance := value.(*Instance)
-					if instance.Status == "error" && !instance.deleted {
-						errorInstances = append(errorInstances, instance)
-					}
-				}
-				return true
-			})
-
-			// 重启所有error状态的实例
-			for _, instance := range errorInstances {
-				m.stopInstance(instance)
-				time.Sleep(baseDuration)
-				m.startInstance(instance)
-			}
-		case <-m.periodicDone:
-			return
-		}
-	}
 }
 
 // generateID 生成随机ID
