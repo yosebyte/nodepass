@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/url"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/NodePassProject/cert"
@@ -11,18 +13,26 @@ import (
 	"github.com/yosebyte/nodepass/internal"
 )
 
-// runCore 运行核心
-func runCore(parsedURL *url.URL) {
+// start 启动核心逻辑
+func start(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("start: empty URL command")
+	}
+
+	parsedURL, err := url.Parse(args[1])
+	if err != nil {
+		return fmt.Errorf("start: parse URL failed: %v", err)
+	}
+
 	logger := initLogger(parsedURL.Query().Get("log"))
 
 	core, err := createCore(parsedURL, logger)
 	if err != nil {
-		logger.Error("Core init failed: %v", err)
-		printExitInfo()
-		return
+		return fmt.Errorf("start: create core failed: %v", err)
 	}
 
 	core.Run()
+	return nil
 }
 
 // initLogger 初始化日志记录器
@@ -44,8 +54,6 @@ func initLogger(level string) *logs.Logger {
 		logger.SetLogLevel(logs.Event)
 		logger.Event("Init log level: EVENT")
 	default:
-		logger.SetLogLevel(logs.Info)
-		logger.Info("Init log level: INFO")
 	}
 	return logger
 }
@@ -133,4 +141,41 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		logger.Warn("TLS code-0: unencrypted")
 		return "0", nil
 	}
+}
+
+// exit 退出程序并显示帮助信息
+func exit(err error) {
+	errMsg1, errMsg2 := "", ""
+	if err != nil {
+		errStr := "FAILED: " + err.Error()
+		if len(errStr) > 35 {
+			errMsg1 = errStr[:35]
+			if len(errStr) > 70 {
+				errMsg2 = errStr[35:67] + "..."
+			} else {
+				errMsg2 = errStr[35:]
+			}
+		} else {
+			errMsg1 = errStr
+		}
+	}
+	fmt.Printf(`
+╭─────────────────────────────────────╮
+│ ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░ │
+│ ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░ │
+│ ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░ │
+├─────────────────────────────────────┤
+│%*s │
+│%*s │
+├─────────────────────────────────────┤
+│ server://password@host/host?<query> │
+│ client://password@host/host?<query> │
+│ master://hostname:port/path?<query> │
+├─────────────────────────────────────┤
+│ %-35s │
+│ %-35s │
+╰─────────────────────────────────────╯
+
+`, 36, version, 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), errMsg1, errMsg2)
+	os.Exit(1)
 }
