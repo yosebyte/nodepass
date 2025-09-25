@@ -94,6 +94,7 @@ type Instance struct {
 	Type           string             `json:"type"`      // 实例类型
 	Status         string             `json:"status"`    // 实例状态
 	URL            string             `json:"url"`       // 实例URL
+	Config         string             `json:"config"`    // 实例配置
 	Restart        bool               `json:"restart"`   // 是否自启动
 	Tags           []Tag              `json:"tags"`      // 标签数组
 	Mode           int32              `json:"mode"`      // 实例模式
@@ -553,7 +554,6 @@ func (m *Master) Shutdown(ctx context.Context) error {
 // startPeriodicTasks 启动所有定期任务
 func (m *Master) startPeriodicTasks() {
 	go m.startPeriodicBackup()
-	go m.startPeriodicUpdate()
 	go m.startPeriodicCleanup()
 	go m.startPeriodicRestart()
 }
@@ -571,26 +571,6 @@ func (m *Master) startPeriodicBackup() {
 			} else {
 				m.logger.Info("State backup saved: %v", backupPath)
 			}
-		case <-m.periodicDone:
-			return
-		}
-	}
-}
-
-// startPeriodicUpdate 启动定期更新
-func (m *Master) startPeriodicUpdate() {
-	for {
-		select {
-		case <-time.After(reportInterval):
-			// 遍历所有实例并更新标签
-			m.instances.Range(func(key, value any) bool {
-				instance := value.(*Instance)
-				// 跳过API Key实例
-				if instance.ID != apiKeyID {
-					m.updateInstanceConfigTag(instance)
-				}
-				return true
-			})
 		case <-m.periodicDone:
 			return
 		}
@@ -778,6 +758,12 @@ func (m *Master) loadState() {
 	// 恢复实例
 	for id, instance := range persistentData {
 		instance.stopped = make(chan struct{})
+
+		// 生成完整配置
+		if instance.Config == "" && instance.ID != apiKeyID {
+			instance.Config = m.generateConfigURL(instance)
+		}
+
 		m.instances.Store(id, instance)
 
 		// 处理自启动
@@ -1058,6 +1044,8 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Tags:    []Tag{},
 			stopped: make(chan struct{}),
 		}
+
+		instance.Config = m.generateConfigURL(instance)
 		m.instances.Store(id, instance)
 
 		// 启动实例
@@ -1265,6 +1253,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	// 更新实例URL和类型
 	instance.URL = enhancedURL
 	instance.Type = instanceType
+	instance.Config = m.generateConfigURL(instance)
 
 	// 更新实例状态
 	instance.Status = "stopped"
@@ -1760,33 +1749,6 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	return parsedURL.String()
 }
 
-// updateInstanceConfigTag 更新实例的标签
-func (m *Master) updateInstanceConfigTag(instance *Instance) {
-	// 生成完整URL
-	configURL := m.generateConfigURL(instance)
-
-	// 创建现有标签映射表
-	existingTags := make(map[string]Tag)
-	for _, tag := range instance.Tags {
-		existingTags[tag.Key] = tag
-	}
-
-	// 更新或添加config标签
-	existingTags["config"] = Tag{
-		Key:   "config",
-		Value: configURL,
-	}
-
-	// 将映射表转换回标签数组
-	newTags := make([]Tag, 0, len(existingTags))
-	for _, tag := range existingTags {
-		newTags = append(newTags, tag)
-	}
-
-	instance.Tags = newTags
-	m.instances.Store(instance.ID, instance)
-}
-
 // generateID 生成随机ID
 func generateID() string {
 	bytes := make([]byte, 4)
@@ -1993,6 +1955,7 @@ func (m *Master) generateOpenAPISpec() string {
 	  "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
+	  "config": {"type": "string", "description": "Instance configuration URL"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
 	  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
