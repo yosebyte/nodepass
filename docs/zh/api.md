@@ -65,12 +65,12 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
   "tags": [
     {"key": "environment", "value": "production"},
     {"key": "region", "value": "us-west-2"},
-    {"key": "project", "value": "web-service"},
-    {"key": "config", "value": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0"}
+    {"key": "project", "value": "web-service"}
   ],
   "mode": 0,
   "ping": 0,
@@ -88,6 +88,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `ping`/`pool`：健康检查数据
 - `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
+- `config`：实例配置URL，包含完整的启动配置
 - `restart`：自启动策略
 - `tags`：可选的键值对，用于标记和组织实例
 
@@ -120,6 +121,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 所有实例、流量、健康检查、别名、自启动策略均持久化存储，重启后自动恢复
 - API 详细规范见 `/openapi.json`，Swagger UI 见 `/docs`
+
 ```javascript
 // 重新生成API Key（需要知道当前的API Key）
 async function regenerateApiKey() {
@@ -861,28 +863,6 @@ async function configureAutoStartPolicies(instances) {
 6. **唯一性检查**：同一标签操作中不允许重复的键名
 7. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
 8. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
-9. **自动标签**：系统会自动维护 `config` 标签，包含实例的完整URL配置
-
-#### 自动生成的 config 标签
-
-NodePass主控会自动为每个实例维护一个特殊的 `config` 标签：
-
-- **自动更新**：每5秒自动更新一次，无需手动维护
-- **完整配置**：包含实例的完整URL，带有所有默认参数
-- **配置继承**：log和tls配置继承自主控设置
-- **默认参数**：其他参数使用系统默认值
-- **只读性质**：不建议手动修改此标签，因为会被系统自动覆盖
-
-**示例 config 标签值：**
-```
-server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
-```
-
-此功能特别适用于：
-- 配置备份和导出
-- 实例配置的完整性检查
-- 自动化部署脚本
-- 配置文档生成
 
 ## 实例数据结构
 
@@ -895,6 +875,7 @@ API响应中的实例对象包含以下字段：
   "type": "server",           // 实例类型：server 或 client
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // 完整配置URL
   "restart": true,            // 自启动策略
   "tags": [                   // 标签数组
     {"key": "environment", "value": "production"},
@@ -911,9 +892,31 @@ API响应中的实例对象包含以下字段：
 
 **注意：** 
 - `alias` 字段为可选，如果未设置则为空字符串
+- `config` 字段包含实例的完整配置URL，由系统自动生成
 - `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
 - `tags` 字段为可选，仅在设置标签时存在
+
+### 实例配置字段
+
+NodePass主控会自动为每个实例维护 `config` 字段：
+
+- **自动生成**：在实例创建和更新时自动生成，无需手动维护
+- **完整配置**：包含实例的完整URL，带有所有默认参数
+- **配置继承**：log和tls配置继承自主控设置
+- **默认参数**：其他参数使用系统默认值
+- **只读性质**：自动生成的字段，通过API无法直接修改
+
+**示例 config 字段值：**
+```
+server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
+```
+
+此功能特别适用于：
+- 配置备份和导出
+- 实例配置的完整性检查
+- 自动化部署脚本
+- 配置文档生成
 
 ## 系统信息端点
 
