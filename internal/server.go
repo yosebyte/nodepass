@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -34,6 +35,12 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsCode:    tlsCode,
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
+			bufferPool: &sync.Pool{
+				New: func() any {
+					b := make([]byte, 1048576) // 1MB
+					return &b
+				},
+			},
 		},
 		tlsConfig: tlsConfig,
 	}

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,12 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		Common: Common{
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
+			bufferPool: &sync.Pool{
+				New: func() any {
+					b := make([]byte, 1048576) // 1MB
+					return &b
+				},
+			},
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
