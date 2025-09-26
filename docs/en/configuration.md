@@ -285,6 +285,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -348,6 +349,11 @@ For applications relying heavily on UDP traffic:
 
 For optimizing TCP connections:
 
+- `NP_TCP_DATA_BUF_SIZE`: Buffer size for TCP data transfer
+  - Default (32768) provides good balance for most applications
+  - Increase for high-throughput applications requiring larger buffers
+  - Consider increasing to 65536 or higher for bulk data transfers and streaming
+
 - `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
   - Default (30s) is suitable for most network conditions
   - Increase for unstable network conditions
@@ -401,6 +407,7 @@ Environment variables:
 export NP_MIN_POOL_INTERVAL=50ms
 export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
+export NP_TCP_DATA_BUF_SIZE=65536
 export NP_UDP_DATA_BUF_SIZE=32768
 export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s

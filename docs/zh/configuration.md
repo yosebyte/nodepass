@@ -286,6 +286,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -349,6 +350,11 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 对于TCP连接的优化：
 
+- `NP_TCP_DATA_BUF_SIZE`：TCP数据传输缓冲区大小
+  - 默认值(32768)为大多数应用提供良好平衡
+  - 对于需要大缓冲区的高吞吐量应用增加此值
+  - 考虑为批量数据传输和流媒体增加到65536或更高
+
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
   - 默认值(30s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
@@ -402,6 +408,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500&slot
 export NP_MIN_POOL_INTERVAL=50ms
 export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
+export NP_TCP_DATA_BUF_SIZE=65536
 export NP_UDP_DATA_BUF_SIZE=32768
 export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s
