@@ -49,7 +49,8 @@ type Common struct {
 	rateLimiter      *conn.RateLimiter  // 全局限速器
 	readTimeout      time.Duration      // 读取超时
 	bufReader        *bufio.Reader      // 缓冲读取器
-	bufferPool       *sync.Pool         // 缓冲区池
+	tcpBufferPool    *sync.Pool         // TCP缓冲区池
+	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
 	checkPoint       time.Time          // 检查点时间
 	slotLimit        int32              // 槽位限制
@@ -91,19 +92,29 @@ const (
 	defaultProxyProtocol = "0"           // 默认代理协议
 )
 
-// getCommonBuffer 获取共用缓冲区
-func (c *Common) getCommonBuffer(size int) []byte {
-	buf := c.bufferPool.Get().(*[]byte)
-	if cap(*buf) < size {
-		return make([]byte, size)
-	}
-	return (*buf)[:size]
+// getTCPBuffer 获取TCP缓冲区
+func (c *Common) getTCPBuffer() []byte {
+	buf := c.tcpBufferPool.Get().(*[]byte)
+	return (*buf)[:tcpDataBufSize]
 }
 
-// putCommonBuffer 归还共用缓冲区
-func (c *Common) putCommonBuffer(buf []byte) {
-	if buf != nil {
-		c.bufferPool.Put(&buf)
+// putTCPBuffer 归还TCP缓冲区
+func (c *Common) putTCPBuffer(buf []byte) {
+	if buf != nil && cap(buf) >= tcpDataBufSize {
+		c.tcpBufferPool.Put(&buf)
+	}
+}
+
+// getUDPBuffer 获取UDP缓冲区
+func (c *Common) getUDPBuffer() []byte {
+	buf := c.udpBufferPool.Get().(*[]byte)
+	return (*buf)[:udpDataBufSize]
+}
+
+// putUDPBuffer 归还UDP缓冲区
+func (c *Common) putUDPBuffer(buf []byte) {
+	if buf != nil && cap(buf) >= udpDataBufSize {
+		c.udpBufferPool.Put(&buf)
 	}
 }
 
@@ -722,9 +733,16 @@ func (c *Common) commonTCPLoop() {
 
 			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 
+			buffer1 := c.getTCPBuffer()
+			buffer2 := c.getTCPBuffer()
+			defer func() {
+				c.putTCPBuffer(buffer1)
+				c.putTCPBuffer(buffer2)
+			}()
+
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-			c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, c.getCommonBuffer(tcpDataBufSize)))
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, buffer1, buffer2))
 		}(targetConn)
 	}
 }
@@ -736,17 +754,17 @@ func (c *Common) commonUDPLoop() {
 			return
 		}
 
-		buffer := c.getCommonBuffer(udpDataBufSize)
+		buffer := c.getUDPBuffer()
 
 		// 读取来自目标的UDP数据
 		x, clientAddr, err := c.targetUDPConn.ReadFromUDP(buffer)
 		if err != nil {
 			if c.ctx.Err() != nil || err == net.ErrClosed {
-				c.putCommonBuffer(buffer)
+				c.putUDPBuffer(buffer)
 				return
 			}
 			c.logger.Error("commonUDPLoop: readFromUDP failed: %v", err)
-			c.putCommonBuffer(buffer)
+			c.putUDPBuffer(buffer)
 
 			select {
 			case <-c.ctx.Done():
@@ -771,7 +789,7 @@ func (c *Common) commonUDPLoop() {
 			// 尝试获取UDP连接槽位
 			if !c.tryAcquireSlot(true) {
 				c.logger.Error("commonUDPLoop: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
-				c.putCommonBuffer(buffer)
+				c.putUDPBuffer(buffer)
 				continue
 			}
 
@@ -798,8 +816,8 @@ func (c *Common) commonUDPLoop() {
 					c.releaseSlot(true)
 				}()
 
-				buffer := c.getCommonBuffer(udpDataBufSize)
-				defer c.putCommonBuffer(buffer)
+				buffer := c.getUDPBuffer()
+				defer c.putUDPBuffer(buffer)
 				reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 
 				for {
@@ -855,13 +873,13 @@ func (c *Common) commonUDPLoop() {
 			c.logger.Error("commonUDPLoop: write to tunnel failed: %v", err)
 			c.targetUDPSession.Delete(sessionKey)
 			remoteConn.Close()
-			c.putCommonBuffer(buffer)
+			c.putUDPBuffer(buffer)
 			continue
 		}
 
 		// 传输完成
 		c.logger.Debug("Transfer complete: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
-		c.putCommonBuffer(buffer)
+		c.putUDPBuffer(buffer)
 	}
 }
 
@@ -992,9 +1010,16 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		return
 	}
 
+	buffer1 := c.getTCPBuffer()
+	buffer2 := c.getTCPBuffer()
+	defer func() {
+		c.putTCPBuffer(buffer1)
+		c.putTCPBuffer(buffer2)
+	}()
+
 	// 交换数据
 	c.logger.Debug("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
-	c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, c.getCommonBuffer(tcpDataBufSize)))
+	c.logger.Debug("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, buffer1, buffer2))
 }
 
 // commonUDPOnce 共用处理单个UDP请求
@@ -1051,8 +1076,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 
-		buffer := c.getCommonBuffer(udpDataBufSize)
-		defer c.putCommonBuffer(buffer)
+		buffer := c.getUDPBuffer()
+		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
 		for {
 			if c.ctx.Err() != nil {
@@ -1085,8 +1110,8 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	go func() {
 		defer func() { done <- struct{}{} }()
 
-		buffer := c.getCommonBuffer(udpDataBufSize)
-		defer c.putCommonBuffer(buffer)
+		buffer := c.getUDPBuffer()
+		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 		for {
 			if c.ctx.Err() != nil {
@@ -1242,10 +1267,16 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Error("singleTCPLoop: sendProxyV1Header failed: %v", err)
 				return
 			}
+			buffer1 := c.getTCPBuffer()
+			buffer2 := c.getTCPBuffer()
+			defer func() {
+				c.putTCPBuffer(buffer1)
+				c.putTCPBuffer(buffer2)
+			}()
 
 			// 交换数据
 			c.logger.Debug("Starting exchange: %v <-> %v", tunnelConn.LocalAddr(), targetConn.LocalAddr())
-			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout, c.getCommonBuffer(tcpDataBufSize)))
+			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout, buffer1, buffer2))
 		}(tunnelConn)
 	}
 }
@@ -1257,18 +1288,18 @@ func (c *Common) singleUDPLoop() error {
 			return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
 		}
 
-		buffer := c.getCommonBuffer(udpDataBufSize)
+		buffer := c.getUDPBuffer()
 
 		// 读取来自隧道的UDP数据
 		x, clientAddr, err := c.tunnelUDPConn.ReadFromUDP(buffer)
 		if err != nil {
 			if c.ctx.Err() != nil || err == net.ErrClosed {
-				c.putCommonBuffer(buffer)
+				c.putUDPBuffer(buffer)
 				return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
 			}
 			c.logger.Error("singleUDPLoop: ReadFromUDP failed: %v", err)
 
-			c.putCommonBuffer(buffer)
+			c.putUDPBuffer(buffer)
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
@@ -1291,7 +1322,7 @@ func (c *Common) singleUDPLoop() error {
 			// 尝试获取UDP连接槽位
 			if !c.tryAcquireSlot(true) {
 				c.logger.Error("singleUDPLoop: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
-				c.putCommonBuffer(buffer)
+				c.putUDPBuffer(buffer)
 				continue
 			}
 
@@ -1300,7 +1331,7 @@ func (c *Common) singleUDPLoop() error {
 			if err != nil {
 				c.logger.Error("singleUDPLoop: dialTimeout failed: %v", err)
 				c.releaseSlot(true)
-				c.putCommonBuffer(buffer)
+				c.putUDPBuffer(buffer)
 				continue
 			}
 			targetConn = newSession
@@ -1315,8 +1346,8 @@ func (c *Common) singleUDPLoop() error {
 					c.releaseSlot(true)
 				}()
 
-				buffer := c.getCommonBuffer(udpDataBufSize)
-				defer c.putCommonBuffer(buffer)
+				buffer := c.getUDPBuffer()
+				defer c.putUDPBuffer(buffer)
 				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
 
 				for {
@@ -1364,12 +1395,12 @@ func (c *Common) singleUDPLoop() error {
 			if targetConn != nil {
 				targetConn.Close()
 			}
-			c.putCommonBuffer(buffer)
+			c.putUDPBuffer(buffer)
 			return fmt.Errorf("singleUDPLoop: write to target failed: %w", err)
 		}
 
 		// 传输完成
 		c.logger.Debug("Transfer complete: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
-		c.putCommonBuffer(buffer)
+		c.putUDPBuffer(buffer)
 	}
 }
