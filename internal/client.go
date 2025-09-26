@@ -33,10 +33,16 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		Common: Common{
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
-			bufferPool: &sync.Pool{
+			tcpBufferPool: &sync.Pool{
 				New: func() any {
-					b := make([]byte, 1048576) // 1MB
-					return &b
+					buf := make([]byte, tcpDataBufSize)
+					return &buf
+				},
+			},
+			udpBufferPool: &sync.Pool{
+				New: func() any {
+					buf := make([]byte, udpDataBufSize)
+					return &buf
 				},
 			},
 		},
