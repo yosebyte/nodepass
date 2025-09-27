@@ -3,7 +3,6 @@ package internal
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,25 +28,39 @@ type Client struct {
 }
 
 // NewClient 创建新的客户端实例
-func NewClient(parsedURL *url.URL, logger *logs.Logger) *Client {
+func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 	client := &Client{
 		Common: Common{
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
+			tcpBufferPool: &sync.Pool{
+				New: func() any {
+					buf := make([]byte, tcpDataBufSize)
+					return &buf
+				},
+			},
+			udpBufferPool: &sync.Pool{
+				New: func() any {
+					buf := make([]byte, udpDataBufSize)
+					return &buf
+				},
+			},
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	client.initConfig(parsedURL)
+	if err := client.initConfig(parsedURL); err != nil {
+		return nil, fmt.Errorf("newClient: initConfig failed: %w", err)
+	}
 	client.initRateLimiter()
-	return client
+	return client, nil
 }
 
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: %v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v",
+		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v",
 			prefix, c.tunnelKey, c.tunnelTCPAddr, c.targetTCPAddr,
-			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit)
+			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol)
 	}
 	logInfo("Client started")
 
@@ -168,7 +182,7 @@ func (c *Client) tunnelHandshake() error {
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 
 	// 发送隧道密钥
-	_, err = c.tunnelTCPConn.Write(append(c.xor([]byte(c.tunnelKey)), '\n'))
+	_, err = c.tunnelTCPConn.Write(c.encode([]byte(c.tunnelKey)))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
 	}
@@ -179,8 +193,14 @@ func (c *Client) tunnelHandshake() error {
 		return fmt.Errorf("tunnelHandshake: readBytes failed: %w", err)
 	}
 
+	// 解码隧道URL
+	tunnelURLData, err := c.decode(rawTunnelURL)
+	if err != nil {
+		return fmt.Errorf("tunnelHandshake: decode tunnel URL failed: %w", err)
+	}
+
 	// 解析隧道URL
-	tunnelURL, err := url.Parse(string(c.xor(bytes.TrimSuffix(rawTunnelURL, []byte{'\n'}))))
+	tunnelURL, err := url.Parse(string(tunnelURLData))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: parse tunnel URL failed: %w", err)
 	}

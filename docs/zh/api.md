@@ -42,6 +42,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | 删除实例             |
 | `/events`          | GET    | SSE 实时事件流       |
 | `/info`            | GET    | 获取主控服务信息     |
+| `/info`            | POST   | 更新主控别名         |
 | `/tcping`          | GET    | TCP连接测试          |
 | `/openapi.json`    | GET    | OpenAPI 规范         |
 | `/docs`            | GET    | Swagger UI 文档      |
@@ -64,7 +65,13 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
+  "tags": [
+    {"key": "environment", "value": "production"},
+    {"key": "region", "value": "us-west-2"},
+    {"key": "project", "value": "web-service"}
+  ],
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -81,7 +88,9 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `ping`/`pool`：健康检查数据
 - `tcps`/`udps`：当前活动连接数统计
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
+- `config`：实例配置URL，包含完整的启动配置
 - `restart`：自启动策略
+- `tags`：可选的键值对，用于标记和组织实例
 
 ### 实例 URL 格式
 
@@ -112,6 +121,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 所有实例、流量、健康检查、别名、自启动策略均持久化存储，重启后自动恢复
 - API 详细规范见 `/openapi.json`，Swagger UI 见 `/docs`
+
 ```javascript
 // 重新生成API Key（需要知道当前的API Key）
 async function regenerateApiKey() {
@@ -513,6 +523,31 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      return data.success;
    }
    
+   // 更新实例标签
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 通过设置空字符串值删除特定标签
+   async function deleteInstanceTags(instanceId, tagKeys) {
+     const tagsToDelete = {};
+     tagKeys.forEach(key => {
+       tagsToDelete[key] = "";  // 空字符串会删除标签
+     });
+     
+     return await updateInstanceTags(instanceId, tagsToDelete);
+   }
+   
    // 更新实例URL配置
    async function updateInstanceURL(instanceId, newURL) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -529,7 +564,44 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
    }
    ```
 
-5. **自启动策略管理**：配置自动启动行为
+5. **标签管理**：使用键值对标记和组织实例
+   ```javascript
+   // 通过PATCH方法更新实例标签
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     return response.json();
+   }
+   
+   // 添加或更新标签 - 现有标签会保留，除非被显式指定
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "production"},  // 添加/更新
+     {"key": "region", "value": "us-west-2"},        // 添加/更新
+     {"key": "team", "value": "backend"}             // 添加/更新
+   ]);
+   
+   // 通过设置空值删除特定标签
+   await updateInstanceTags('abc123', [
+     {"key": "old-tag", "value": ""},               // 删除此标签
+     {"key": "temp-env", "value": ""}               // 删除此标签
+   ]);
+   
+   // 混合操作：添加/更新某些标签，删除其他标签
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},    // 更新现有
+     {"key": "version", "value": "2.0"},            // 添加新的
+     {"key": "deprecated", "value": ""}             // 删除现有
+   ]);
+   ```
+
+6. **自启动策略管理**：配置自动启动行为
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -781,6 +853,17 @@ async function configureAutoStartPolicies(instances) {
 }
 ```
 
+### 标签管理规则
+
+1. **合并式更新**：标签采用合并逻辑处理 - 现有标签会保留，除非被显式更新或删除
+2. **数组格式**：标签使用数组格式 `[{"key": "key1", "value": "value1"}]`
+3. **键过滤**：空键会被自动过滤并被验证拒绝
+4. **空值删除**：设置 `value: ""` （空字符串）可删除现有标签键
+5. **添加/更新逻辑**：非空值会添加新标签或更新现有标签
+6. **唯一性检查**：同一标签操作中不允许重复的键名
+7. **限制**：最多50个标签，键名长度≤100字符，值长度≤500字符
+8. **持久化**：所有标签操作自动保存到磁盘，重启后恢复
+
 ## 实例数据结构
 
 API响应中的实例对象包含以下字段：
@@ -792,7 +875,13 @@ API响应中的实例对象包含以下字段：
   "type": "server",           // 实例类型：server 或 client
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // 完整配置URL
   "restart": true,            // 自启动策略
+  "tags": [                   // 标签数组
+    {"key": "environment", "value": "production"},
+    {"key": "project", "value": "web-service"},
+    {"key": "region", "value": "us-west-2"}
+  ],
   "mode": 0,                  // 运行模式
   "tcprx": 1024,              // TCP接收字节数
   "tcptx": 2048,              // TCP发送字节数
@@ -803,8 +892,31 @@ API响应中的实例对象包含以下字段：
 
 **注意：** 
 - `alias` 字段为可选，如果未设置则为空字符串
+- `config` 字段包含实例的完整配置URL，由系统自动生成
 - `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
+- `tags` 字段为可选，仅在设置标签时存在
+
+### 实例配置字段
+
+NodePass主控会自动为每个实例维护 `config` 字段：
+
+- **自动生成**：在实例创建和更新时自动生成，无需手动维护
+- **完整配置**：包含实例的完整URL，带有所有默认参数
+- **配置继承**：log和tls配置继承自主控设置
+- **默认参数**：其他参数使用系统默认值
+- **只读性质**：自动生成的字段，通过API无法直接修改
+
+**示例 config 字段值：**
+```
+server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
+```
+
+此功能特别适用于：
+- 配置备份和导出
+- 实例配置的完整性检查
+- 自动化部署脚本
+- 配置文档生成
 
 ## 系统信息端点
 
@@ -824,13 +936,14 @@ GET /info
 
 ```json
 {
+  "alias": "dev",             // 主控别名
   "os": "linux",              // 操作系统类型
   "arch": "amd64",            // 系统架构
   "cpu": 45,                  // CPU使用率百分比（仅Linux系统）
   "mem_total": 8589934592,    // 内存容量（字节，仅Linux系统）
-  "mem_free": 2684354560,     // 内存可用（字节，仅Linux系统）
+  "mem_used": 2684354560,     // 内存已用（字节，仅Linux系统）
   "swap_total": 3555328000,   // 交换区总量（字节，仅Linux系统）
-  "swap_free": 3555328000,    // 交换区可用（字节，仅Linux系统）
+  "swap_used": 3555328000,    // 交换区已用（字节，仅Linux系统）
   "netrx": 1048576000,        // 网络接收字节数（累计值，仅Linux）
   "nettx": 2097152000,        // 网络发送字节数（累计值，仅Linux）
   "diskr": 4194304000,        // 磁盘读取字节数（累计值，仅Linux）
@@ -878,12 +991,16 @@ function displaySystemStatus() {
         console.log(`CPU使用率: ${info.cpu}%`);
       }
       if (info.mem_total > 0) {
-        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
-        console.log(`内存使用率: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+        const memUsagePercent = (info.mem_used / info.mem_total * 100).toFixed(1);
+        const memFreeGB = ((info.mem_total - info.mem_used) / 1024 / 1024 / 1024).toFixed(1);
+        const memTotalGB = (info.mem_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`内存使用率: ${memUsagePercent}% (${memFreeGB}GB 可用，共 ${memTotalGB}GB)`);
       }
       if (info.swap_total > 0) {
-        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
-        console.log(`交换区使用率: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB 可用，共 ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB)`);
+        const swapUsagePercent = (info.swap_used / info.swap_total * 100).toFixed(1);
+        const swapFreeGB = ((info.swap_total - info.swap_used) / 1024 / 1024 / 1024).toFixed(1);
+        const swapTotalGB = (info.swap_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`交换区使用率: ${swapUsagePercent}% (${swapFreeGB}GB 可用，共 ${swapTotalGB}GB)`);
       }
     } else {
       console.log('CPU、内存、交换区、网络I/O、磁盘I/O和系统运行时间监控功能仅在Linux系统上可用');
@@ -909,8 +1026,8 @@ function displaySystemStatus() {
 - **日志级别验证**：确认当前日志级别符合预期
 - **资源监控**：在Linux系统上，监控CPU、内存、交换区、网络I/O、磁盘I/O使用情况以确保最佳性能
   - CPU使用率通过解析`/proc/stat`计算（非空闲时间百分比）
-  - 内存信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
-  - 交换区信息通过解析`/proc/meminfo`获取（总量和可用量，单位为字节）
+  - 内存信息通过解析`/proc/meminfo`获取（总量和已用量，单位为字节，已用量计算为总量减去可用量）
+  - 交换区信息通过解析`/proc/meminfo`获取（总量和已用量，单位为字节，已用量计算为总量减去空闲量）
   - 网络I/O通过解析`/proc/net/dev`计算（累计字节数，排除虚拟接口）
   - 磁盘I/O通过解析`/proc/diskstats`计算（累计字节数，仅统计主设备）
   - 系统运行时间通过解析`/proc/uptime`获取
@@ -986,13 +1103,12 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **描述**：更新实例状态、别名或执行控制操作
+- **描述**：更新实例状态、别名、标签或执行控制操作
 - **认证**：需要API Key
-- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false }`
-- **特点**：不中断正在运行的实例，仅更新指定字段。`action: "reset"` 可将该实例的流量统计（tcprx、tcptx、udprx、udptx）清零。
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false, "tags": [{"key": "键", "value": "值"}] }`
 - **示例**：
 ```javascript
-// 更新别名和自启动策略
+// 更新标签
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1000,29 +1116,27 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    alias: 'Web服务器',
-    restart: true 
+    tags: [
+      {"key": "environment", "value": "production"},
+      {"key": "region", "value": "us-west-2"}
+    ]
   })
 });
 
-// 控制实例操作
+// 一次操作中更新和删除标签
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ action: 'restart' })
-});
-
-// 清零流量统计
-await fetch(`${API_URL}/instances/abc123`, {
-  method: 'PATCH',
-  headers: { 
-    'Content-Type': 'application/json',
-    'X-API-Key': apiKey 
-  },
-  body: JSON.stringify({ action: 'reset' })
+  body: JSON.stringify({ 
+    tags: [
+      {"key": "environment", "value": "staging"},    // 更新现有
+      {"key": "version", "value": "2.0"},            // 添加新的
+      {"key": "old-tag", "value": ""}                // 删除现有
+    ]
+  })
 });
 ```
 
@@ -1072,6 +1186,28 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **描述**：获取主控服务信息
 - **认证**：需要API Key
 - **响应**：包含系统信息、版本、运行时间、CPU和RAM使用率等
+
+#### POST /info
+- **描述**：更新主控别名
+- **认证**：需要API Key
+- **请求体**：`{ "alias": "新别名" }`
+- **响应**：完整的主控信息（与GET /info相同）
+- **示例**：
+```javascript
+// 更新主控别名
+const response = await fetch(`${API_URL}/info`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ alias: '我的NodePass服务器' })
+});
+
+const data = await response.json();
+console.log('更新后的别名:', data.alias);
+// 响应包含完整的系统信息，包括更新后的别名
+```
 
 #### GET /tcping
 - **描述**：TCP连接测试，检测目标地址的连通性和延迟
@@ -1129,9 +1265,10 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` | 仅服务器 |
 | `crt` | 证书路径 | 文件路径 | 无 | 仅服务器 |
 | `key` | 私钥路径 | 文件路径 | 无 | 仅服务器 |
-| `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
 | `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端双端握手模式 |
 | `max` | 最大连接池容量 | 整数 > 0 | `1024` | 双端握手模式 |
+| `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
 | `read` | 读取超时时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `10m` | 两者 |
 | `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |
+| `slot` | 连接槽位数 | 整数 (1-65536) | `65536` | 两者 |
 | `proxy` | PROXY协议支持 | `0`(禁用), `1`(启用) | `0` | 两者 |

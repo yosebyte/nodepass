@@ -254,19 +254,19 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 
 NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
 
-| Parameter | Description           | server | client | master |
-|-----------|----------------------|:------:|:------:|:------:|
-| `log`     | Log level             |   O    |   O    |   O    |
-| `tls`     | TLS encryption mode   |   O    |   X    |   O    |
-| `crt`     | Custom certificate path|  O    |   X    |   O    |
-| `key`     | Custom key path       |   O    |   X    |   O    |
-| `min`     | Minimum pool capacity |   X    |   O    |   X    |
-| `max`     | Maximum pool capacity |   O    |   X    |   X    |
-| `mode`    | Run mode control      |   O    |   O    |   X    |
-| `read`    | Data read timeout     |   O    |   O    |   X    |
-| `rate`    | Bandwidth rate limit  |   O    |   O    |   X    |
-| `slot`    | Maximum connection limit  |   O    |   O    |   X    |
-| `proxy`   | PROXY protocol support|   O    |   O    |   X    |
+| Parameter | Description           | Default | server | client | master |
+|-----------|----------------------|---------|:------:|:------:|:------:|
+| `log`     | Log level             | `info`  |   O    |   O    |   O    |
+| `tls`     | TLS encryption mode   | `0`     |   O    |   X    |   O    |
+| `crt`     | Custom certificate path| N/A    |   O    |   X    |   O    |
+| `key`     | Custom key path       | N/A     |   O    |   X    |   O    |
+| `min`     | Minimum pool capacity | `64`    |   X    |   O    |   X    |
+| `max`     | Maximum pool capacity | `1024`  |   O    |   X    |   X    |
+| `mode`    | Run mode control      | `0`     |   O    |   O    |   X    |
+| `read`    | Data read timeout     | `1h`    |   O    |   O    |   X    |
+| `rate`    | Bandwidth rate limit  | `0`     |   O    |   O    |   X    |
+| `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |
+| `proxy`   | PROXY protocol support| `0`     |   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored
@@ -285,6 +285,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -348,6 +349,11 @@ For applications relying heavily on UDP traffic:
 
 For optimizing TCP connections:
 
+- `NP_TCP_DATA_BUF_SIZE`: Buffer size for TCP data transfer
+  - Default (32768) provides good balance for most applications
+  - Increase for high-throughput applications requiring larger buffers
+  - Consider increasing to 65536 or higher for bulk data transfers and streaming
+
 - `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
   - Default (30s) is suitable for most network conditions
   - Increase for unstable network conditions
@@ -401,6 +407,7 @@ Environment variables:
 export NP_MIN_POOL_INTERVAL=50ms
 export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
+export NP_TCP_DATA_BUF_SIZE=65536
 export NP_UDP_DATA_BUF_SIZE=32768
 export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s

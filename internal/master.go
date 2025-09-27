@@ -38,6 +38,9 @@ const (
 	apiKeyID       = "********"             // API Key的特殊ID
 	tcpingSemLimit = 10                     // TCPing最大并发数
 	baseDuration   = 100 * time.Millisecond // 基准持续时间
+	maxTagsCount   = 50                     // 最大标签数量
+	maxTagKeyLen   = 100                    // 标签键最大长度
+	maxTagValueLen = 500                    // 标签值最大长度
 )
 
 // Swagger UI HTML模板
@@ -64,6 +67,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
 // Master 实现主控模式功能
 type Master struct {
 	Common                            // 继承通用功能
+	alias         string              // 主控别名
 	prefix        string              // API前缀
 	version       string              // NP版本
 	hostname      string              // 隧道名称
@@ -80,7 +84,7 @@ type Master struct {
 	notifyChannel chan *InstanceEvent // 事件通知通道
 	tcpingSem     chan struct{}       // TCPing并发控制
 	startTime     time.Time           // 启动时间
-	backupDone    chan struct{}       // 备份停止信号
+	periodicDone  chan struct{}       // 定期任务停止信号
 }
 
 // Instance 实例信息
@@ -90,7 +94,9 @@ type Instance struct {
 	Type           string             `json:"type"`      // 实例类型
 	Status         string             `json:"status"`    // 实例状态
 	URL            string             `json:"url"`       // 实例URL
+	Config         string             `json:"config"`    // 实例配置
 	Restart        bool               `json:"restart"`   // 是否自启动
+	Tags           []Tag              `json:"tags"`      // 标签数组
 	Mode           int32              `json:"mode"`      // 实例模式
 	Ping           int32              `json:"ping"`      // 端内延迟
 	Pool           int32              `json:"pool"`      // 池连接数
@@ -106,25 +112,32 @@ type Instance struct {
 	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
 	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
+	deleted        bool               `json:"-" gob:"-"` // 删除标志（不序列化）
 	cancelFunc     context.CancelFunc `json:"-" gob:"-"` // 取消函数（不序列化）
 	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
+// Tag 标签结构体
+type Tag struct {
+	Key   string `json:"key"`   // 标签键
+	Value string `json:"value"` // 标签值
+}
+
 // InstanceEvent 实例事件信息
 type InstanceEvent struct {
-	Type     string    `json:"type"`           // 事件类型：initial, create, update, delete, shutdown, log
-	Time     time.Time `json:"time"`           // 事件时间
-	Instance *Instance `json:"instance"`       // 关联的实例
-	Logs     string    `json:"logs,omitempty"` // 日志内容，仅当Type为log时有效
+	Type     string    `json:"type"`     // 事件类型：initial, create, update, delete, shutdown, log
+	Time     time.Time `json:"time"`     // 事件时间
+	Instance *Instance `json:"instance"` // 关联的实例
+	Logs     string    `json:"logs"`     // 日志内容
 }
 
 // SystemInfo 系统信息结构体
 type SystemInfo struct {
 	CPU       int    `json:"cpu"`        // CPU使用率 (%)
 	MemTotal  uint64 `json:"mem_total"`  // 内存容量字节数
-	MemFree   uint64 `json:"mem_free"`   // 内存可用字节数
+	MemUsed   uint64 `json:"mem_used"`   // 内存已用字节数
 	SwapTotal uint64 `json:"swap_total"` // 交换区容量字节数
-	SwapFree  uint64 `json:"swap_free"`  // 交换区可用字节数
+	SwapUsed  uint64 `json:"swap_used"`  // 交换区已用字节数
 	NetRX     uint64 `json:"netrx"`      // 网络接收字节数
 	NetTX     uint64 `json:"nettx"`      // 网络发送字节数
 	DiskR     uint64 `json:"diskr"`      // 磁盘读取字节数
@@ -191,6 +204,34 @@ func (m *Master) performTCPing(target string) *TCPingResult {
 	return result
 }
 
+// validateTags 验证标签的有效性
+func validateTags(tags []Tag) error {
+	if len(tags) > maxTagsCount {
+		return fmt.Errorf("too many tags: maximum %d allowed", maxTagsCount)
+	}
+
+	keySet := make(map[string]bool)
+	for _, tag := range tags {
+		if len(tag.Key) == 0 {
+			return fmt.Errorf("tag key cannot be empty")
+		}
+		if len(tag.Key) > maxTagKeyLen {
+			return fmt.Errorf("tag key exceeds maximum length %d", maxTagKeyLen)
+		}
+		if len(tag.Value) > maxTagValueLen {
+			return fmt.Errorf("tag value for key exceeds maximum length %d", maxTagValueLen)
+		}
+
+		// 检查重复的键
+		if keySet[tag.Key] {
+			return fmt.Errorf("duplicate tag key: '%s'", tag.Key)
+		}
+		keySet[tag.Key] = true
+	}
+
+	return nil
+}
+
 // InstanceLogWriter 实例日志写入器
 type InstanceLogWriter struct {
 	instanceID string         // 实例ID
@@ -246,9 +287,11 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			}
 
 			w.instance.lastCheckPoint = time.Now()
-			w.master.instances.Store(w.instanceID, w.instance)
-			// 发送检查点更新事件
-			w.master.sendSSEEvent("update", w.instance)
+			// 仅当实例未被删除时才存储和发送更新事件
+			if !w.instance.deleted {
+				w.master.instances.Store(w.instanceID, w.instance)
+				w.master.sendSSEEvent("update", w.instance)
+			}
 			// 过滤检查点日志
 			continue
 		}
@@ -256,8 +299,10 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		// 输出日志加实例ID
 		fmt.Fprintf(w.target, "%s [%s]\n", line, w.instanceID)
 
-		// 发送日志事件
-		w.master.sendSSEEvent("log", w.instance, line)
+		// 仅当实例未被删除时才发送日志事件
+		if !w.instance.deleted {
+			w.master.sendSSEEvent("log", w.instance, line)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -274,12 +319,11 @@ func setCorsHeaders(w http.ResponseWriter) {
 }
 
 // NewMaster 创建新的主控实例
-func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger, version string) *Master {
+func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger, version string) (*Master, error) {
 	// 解析主机地址
 	host, err := net.ResolveTCPAddr("tcp", parsedURL.Host)
 	if err != nil {
-		logger.Error("newMaster: resolveTCPAddr failed: %v", err)
-		return nil
+		return nil, fmt.Errorf("newMaster: resolve host failed: %w", err)
 	}
 
 	// 获取隧道名称
@@ -319,7 +363,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 		notifyChannel: make(chan *InstanceEvent, semaphoreLimit),
 		tcpingSem:     make(chan struct{}, tcpingSemLimit),
 		startTime:     time.Now(),
-		backupDone:    make(chan struct{}),
+		periodicDone:  make(chan struct{}),
 	}
 	master.tunnelTCPAddr = host
 
@@ -329,10 +373,7 @@ func NewMaster(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	// 启动事件分发器
 	go master.startEventDispatcher()
 
-	// 启动定期备份
-	go master.startPeriodicBackup()
-
-	return master
+	return master, nil
 }
 
 // Run 管理主控生命周期
@@ -449,6 +490,9 @@ func (m *Master) Run() {
 		}
 	}()
 
+	// 启动定期任务
+	go m.startPeriodicTasks()
+
 	// 处理系统信号
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	<-ctx.Done()
@@ -467,53 +511,15 @@ func (m *Master) Run() {
 // Shutdown 关闭主控
 func (m *Master) Shutdown(ctx context.Context) error {
 	return m.shutdown(ctx, func() {
-		// 声明一个已关闭通道的集合，避免重复关闭
-		var closedChannels sync.Map
-
-		var wg sync.WaitGroup
-
-		// 给所有订阅者一个关闭通知
-		m.subscribers.Range(func(key, value any) bool {
-			subscriberChan := value.(chan *InstanceEvent)
-			wg.Add(1)
-			go func(ch chan *InstanceEvent) {
-				defer wg.Done()
-				// 非阻塞的方式发送关闭事件
-				select {
-				case ch <- &InstanceEvent{
-					Type: "shutdown",
-					Time: time.Now(),
-				}:
-				default:
-					// 不可用，忽略
-				}
-			}(subscriberChan)
-			return true
-		})
-
-		// 等待所有订阅者处理完关闭事件
-		time.Sleep(baseDuration)
-
-		// 关闭所有订阅者通道
-		m.subscribers.Range(func(key, value any) bool {
-			subscriberChan := value.(chan *InstanceEvent)
-			// 检查通道是否已关闭，如果没有则关闭它
-			if _, loaded := closedChannels.LoadOrStore(subscriberChan, true); !loaded {
-				wg.Add(1)
-				go func(k any, ch chan *InstanceEvent) {
-					defer wg.Done()
-					close(ch)
-					m.subscribers.Delete(k)
-				}(key, subscriberChan)
-			}
-			return true
-		})
+		// 通知并关闭SSE连接
+		m.shutdownSSEConnections()
 
 		// 停止所有运行中的实例
+		var wg sync.WaitGroup
 		m.instances.Range(func(key, value any) bool {
 			instance := value.(*Instance)
-			// 如果实例正在运行，则停止它
-			if instance.Status == "running" && instance.cmd != nil && instance.cmd.Process != nil {
+			// 如果实例需要停止，则停止它
+			if instance.Status != "stopped" && instance.cmd != nil && instance.cmd.Process != nil {
 				wg.Add(1)
 				go func(inst *Instance) {
 					defer wg.Done()
@@ -525,8 +531,8 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 		wg.Wait()
 
-		// 关闭定期备份
-		close(m.backupDone)
+		// 关闭定期任务
+		close(m.periodicDone)
 
 		// 关闭事件通知通道，停止事件分发器
 		close(m.notifyChannel)
@@ -543,6 +549,107 @@ func (m *Master) Shutdown(ctx context.Context) error {
 			m.logger.Error("shutdown: api shutdown error: %v", err)
 		}
 	})
+}
+
+// startPeriodicTasks 启动所有定期任务
+func (m *Master) startPeriodicTasks() {
+	go m.startPeriodicBackup()
+	go m.startPeriodicCleanup()
+	go m.startPeriodicRestart()
+}
+
+// startPeriodicBackup 启动定期备份
+func (m *Master) startPeriodicBackup() {
+	for {
+		select {
+		case <-time.After(ReloadInterval):
+			// 固定备份文件名
+			backupPath := fmt.Sprintf("%s.backup", m.statePath)
+
+			if err := m.saveStateToPath(backupPath); err != nil {
+				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
+			} else {
+				m.logger.Info("State backup saved: %v", backupPath)
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicCleanup 启动定期清理重复ID的实例
+func (m *Master) startPeriodicCleanup() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集实例并按ID分组
+			idInstances := make(map[string][]*Instance)
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					idInstances[id] = append(idInstances[id], value.(*Instance))
+				}
+				return true
+			})
+
+			// 清理重复实例
+			for _, instances := range idInstances {
+				if len(instances) <= 1 {
+					continue
+				}
+
+				// 选择保留实例
+				keepIdx := 0
+				for i, inst := range instances {
+					if inst.Status == "running" && instances[keepIdx].Status != "running" {
+						keepIdx = i
+					}
+				}
+
+				// 清理多余实例
+				for i, inst := range instances {
+					if i == keepIdx {
+						continue
+					}
+					inst.deleted = true
+					if inst.Status != "stopped" {
+						m.stopInstance(inst)
+					}
+					m.instances.Delete(inst.ID)
+				}
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
+}
+
+// startPeriodicRestart 启动定期错误实例重启
+func (m *Master) startPeriodicRestart() {
+	for {
+		select {
+		case <-time.After(reportInterval):
+			// 收集所有error状态的实例
+			var errorInstances []*Instance
+			m.instances.Range(func(key, value any) bool {
+				if id := key.(string); id != apiKeyID {
+					instance := value.(*Instance)
+					if instance.Status == "error" && !instance.deleted {
+						errorInstances = append(errorInstances, instance)
+					}
+				}
+				return true
+			})
+
+			// 重启所有error状态的实例
+			for _, instance := range errorInstances {
+				m.stopInstance(instance)
+				time.Sleep(baseDuration)
+				m.startInstance(instance)
+			}
+		case <-m.periodicDone:
+			return
+		}
+	}
 }
 
 // saveState 保存实例状态到文件
@@ -618,27 +725,15 @@ func (m *Master) saveStateToPath(filePath string) error {
 	return nil
 }
 
-// startPeriodicBackup 启动定期备份
-func (m *Master) startPeriodicBackup() {
-	for {
-		select {
-		case <-time.After(ReloadInterval):
-			// 固定备份文件名
-			backupPath := fmt.Sprintf("%s.backup", m.statePath)
-
-			if err := m.saveStateToPath(backupPath); err != nil {
-				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
-			} else {
-				m.logger.Info("State backup saved: %v", backupPath)
-			}
-		case <-m.backupDone:
-			return
-		}
-	}
-}
-
 // loadState 从文件加载实例状态
 func (m *Master) loadState() {
+	// 清理旧的临时文件
+	if tmpFiles, _ := filepath.Glob(filepath.Join(filepath.Dir(m.statePath), "np-*.tmp")); tmpFiles != nil {
+		for _, f := range tmpFiles {
+			os.Remove(f)
+		}
+	}
+
 	// 检查文件是否存在
 	if _, err := os.Stat(m.statePath); os.IsNotExist(err) {
 		return
@@ -663,6 +758,12 @@ func (m *Master) loadState() {
 	// 恢复实例
 	for id, instance := range persistentData {
 		instance.stopped = make(chan struct{})
+
+		// 生成完整配置
+		if instance.Config == "" && instance.ID != apiKeyID {
+			instance.Config = m.generateConfigURL(instance)
+		}
+
 		m.instances.Store(id, instance)
 
 		// 处理自启动
@@ -679,31 +780,56 @@ func (m *Master) loadState() {
 func (m *Master) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	setCorsHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(generateOpenAPISpec()))
+	w.Write([]byte(m.generateOpenAPISpec()))
 }
 
 // handleSwaggerUI 处理Swagger UI请求
 func (m *Master) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	setCorsHeaders(w)
 	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, swaggerUIHTML, generateOpenAPISpec())
+	fmt.Fprintf(w, swaggerUIHTML, m.generateOpenAPISpec())
 }
 
 // handleInfo 处理系统信息请求
 func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, m.getMasterInfo())
 
+	case http.MethodPost:
+		var reqData struct {
+			Alias string `json:"alias"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil {
+			httpError(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		// 更新主控别名
+		if len(reqData.Alias) > maxTagKeyLen {
+			httpError(w, fmt.Sprintf("Master alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+			return
+		}
+		m.alias = reqData.Alias
+
+		writeJSON(w, http.StatusOK, m.getMasterInfo())
+
+	default:
+		httpError(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// getMasterInfo 获取完整的主控信息
+func (m *Master) getMasterInfo() map[string]any {
 	info := map[string]any{
+		"alias":      m.alias,
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,
 		"cpu":        -1,
 		"mem_total":  uint64(0),
-		"mem_free":   uint64(0),
+		"mem_used":   uint64(0),
 		"swap_total": uint64(0),
-		"swap_free":  uint64(0),
+		"swap_used":  uint64(0),
 		"netrx":      uint64(0),
 		"nettx":      uint64(0),
 		"diskr":      uint64(0),
@@ -722,9 +848,9 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		sysInfo := getLinuxSysInfo()
 		info["cpu"] = sysInfo.CPU
 		info["mem_total"] = sysInfo.MemTotal
-		info["mem_free"] = sysInfo.MemFree
+		info["mem_used"] = sysInfo.MemUsed
 		info["swap_total"] = sysInfo.SwapTotal
-		info["swap_free"] = sysInfo.SwapFree
+		info["swap_used"] = sysInfo.SwapUsed
 		info["netrx"] = sysInfo.NetRX
 		info["nettx"] = sysInfo.NetTX
 		info["diskr"] = sysInfo.DiskR
@@ -732,7 +858,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		info["sysup"] = sysInfo.SysUp
 	}
 
-	writeJSON(w, http.StatusOK, info)
+	return info
 }
 
 // getLinuxSysInfo 获取Linux系统信息
@@ -740,9 +866,9 @@ func getLinuxSysInfo() SystemInfo {
 	info := SystemInfo{
 		CPU:       -1,
 		MemTotal:  0,
-		MemFree:   0,
+		MemUsed:   0,
 		SwapTotal: 0,
-		SwapFree:  0,
+		SwapUsed:  0,
 		NetRX:     0,
 		NetTX:     0,
 		DiskR:     0,
@@ -754,7 +880,7 @@ func getLinuxSysInfo() SystemInfo {
 		return info
 	}
 
-	// CPU使用率：解析/proc/stat
+	// CPU占用：解析/proc/stat
 	readStat := func() (idle, total uint64) {
 		data, err := os.ReadFile("/proc/stat")
 		if err != nil {
@@ -783,9 +909,9 @@ func getLinuxSysInfo() SystemInfo {
 		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal/uint64(numCPU)), 100)
 	}
 
-	// RAM使用率：解析/proc/meminfo
+	// RAM占用：解析/proc/meminfo
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
-		var memTotal, memFree, swapTotal, swapFree uint64
+		var memTotal, memAvailable, swapTotal, swapFree uint64
 		for line := range strings.SplitSeq(string(data), "\n") {
 			if fields := strings.Fields(line); len(fields) >= 2 {
 				if val, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
@@ -793,8 +919,8 @@ func getLinuxSysInfo() SystemInfo {
 					switch fields[0] {
 					case "MemTotal:":
 						memTotal = val
-					case "MemFree:":
-						memFree = val
+					case "MemAvailable:":
+						memAvailable = val
 					case "SwapTotal:":
 						swapTotal = val
 					case "SwapFree:":
@@ -804,9 +930,9 @@ func getLinuxSysInfo() SystemInfo {
 			}
 		}
 		info.MemTotal = memTotal
-		info.MemFree = memFree
+		info.MemUsed = memTotal - memAvailable
 		info.SwapTotal = swapTotal
-		info.SwapFree = swapFree
+		info.SwapUsed = swapTotal - swapFree
 	}
 
 	// 网络I/O：解析/proc/net/dev
@@ -914,9 +1040,12 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
-			Restart: false,
+			Restart: true,
+			Tags:    []Tag{},
 			stopped: make(chan struct{}),
 		}
+
+		instance.Config = m.generateConfigURL(instance)
 		m.instances.Store(id, instance)
 
 		// 启动实例
@@ -978,6 +1107,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
+		Tags    []Tag  `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -988,6 +1118,44 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
+			// 处理标签更新
+			if reqData.Tags != nil {
+				if err := validateTags(reqData.Tags); err != nil {
+					httpError(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+
+				// 创建现有标签的映射表
+				existingTags := make(map[string]Tag)
+				for _, tag := range instance.Tags {
+					existingTags[tag.Key] = tag
+				}
+
+				for _, tag := range reqData.Tags {
+					if tag.Value == "" {
+						// value为空，删除key
+						delete(existingTags, tag.Key)
+					} else {
+						// value非空，更新或添加key
+						existingTags[tag.Key] = tag
+					}
+				}
+
+				// 将映射表转换回标签数组
+				newTags := make([]Tag, 0, len(existingTags))
+				for _, tag := range existingTags {
+					newTags = append(newTags, tag)
+				}
+
+				instance.Tags = newTags
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Tags updated: [%v]", instance.ID)
+
+				// 发送标签变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
 			// 重置流量统计
 			if reqData.Action == "reset" {
 				instance.TCPRX = 0
@@ -1015,6 +1183,10 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 
 			// 更新实例别名
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
+				if len(reqData.Alias) > maxTagKeyLen {
+					httpError(w, fmt.Sprintf("Instance alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+					return
+				}
 				instance.Alias = reqData.Alias
 				m.instances.Store(id, instance)
 				go m.saveState()
@@ -1072,8 +1244,8 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 		return
 	}
 
-	// 如果实例正在运行，先停止它
-	if instance.Status == "running" {
+	// 如果实例需要停止，先停止它
+	if instance.Status != "stopped" {
 		m.stopInstance(instance)
 		time.Sleep(baseDuration)
 	}
@@ -1081,6 +1253,7 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 	// 更新实例URL和类型
 	instance.URL = enhancedURL
 	instance.Type = instanceType
+	instance.Config = m.generateConfigURL(instance)
 
 	// 更新实例状态
 	instance.Status = "stopped"
@@ -1103,8 +1276,9 @@ func (m *Master) handlePutInstance(w http.ResponseWriter, r *http.Request, id st
 func (m *Master) regenerateAPIKey(instance *Instance) {
 	instance.URL = generateAPIKey()
 	m.instances.Store(apiKeyID, instance)
-	go m.saveState()
 	m.logger.Info("API Key regenerated: %v", instance.URL)
+	go m.saveState()
+	go m.shutdownSSEConnections()
 }
 
 // processInstanceAction 处理实例操作
@@ -1115,19 +1289,15 @@ func (m *Master) processInstanceAction(instance *Instance, action string) {
 			go m.startInstance(instance)
 		}
 	case "stop":
-		if instance.Status == "running" {
+		if instance.Status != "stopped" {
 			go m.stopInstance(instance)
 		}
 	case "restart":
-		if instance.Status == "running" {
-			go func() {
-				m.stopInstance(instance)
-				time.Sleep(baseDuration)
-				m.startInstance(instance)
-			}()
-		} else {
-			go m.startInstance(instance)
-		}
+		go func() {
+			m.stopInstance(instance)
+			time.Sleep(baseDuration)
+			m.startInstance(instance)
+		}()
 	}
 }
 
@@ -1139,7 +1309,11 @@ func (m *Master) handleDeleteInstance(w http.ResponseWriter, id string, instance
 		return
 	}
 
-	if instance.Status == "running" {
+	// 标记实例为已删除
+	instance.deleted = true
+	m.instances.Store(id, instance)
+
+	if instance.Status != "stopped" {
 		m.stopInstance(instance)
 	}
 	m.instances.Delete(id)
@@ -1202,12 +1376,14 @@ func (m *Master) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// 客户端连接关闭标志
 	connectionClosed := make(chan struct{})
 
-	// 监听客户端连接是否关闭，但不关闭通道，留给Shutdown处理
+	// 监听客户端连接是否关闭
 	go func() {
 		<-ctx.Done()
 		close(connectionClosed)
-		// 只从映射表中移除，但不关闭通道
-		m.subscribers.Delete(subscriberID)
+		// 从映射表中移除并关闭通道
+		if ch, exists := m.subscribers.LoadAndDelete(subscriberID); exists {
+			close(ch.(chan *InstanceEvent))
+		}
 	}()
 
 	// 持续发送事件到客户端
@@ -1253,6 +1429,32 @@ func (m *Master) sendSSEEvent(eventType string, instance *Instance, logs ...stri
 	default:
 		// 通道已满或关闭，忽略
 	}
+}
+
+// shutdownSSEConnections 通知并关闭SSE连接
+func (m *Master) shutdownSSEConnections() {
+	var wg sync.WaitGroup
+
+	// 发送shutdown通知并关闭通道
+	m.subscribers.Range(func(key, value any) bool {
+		ch := value.(chan *InstanceEvent)
+		wg.Add(1)
+		go func(subscriberID any, eventChan chan *InstanceEvent) {
+			defer wg.Done()
+			// 发送shutdown通知
+			select {
+			case eventChan <- &InstanceEvent{Type: "shutdown", Time: time.Now()}:
+			default:
+			}
+			// 从映射表中移除并关闭通道
+			if _, exists := m.subscribers.LoadAndDelete(subscriberID); exists {
+				close(eventChan)
+			}
+		}(key, ch)
+		return true
+	})
+
+	wg.Wait()
 }
 
 // startEventDispatcher 启动事件分发器
@@ -1345,9 +1547,7 @@ func (m *Master) startInstance(instance *Instance) {
 // monitorInstance 监控实例状态
 func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 	done := make(chan error, 1)
-	go func() {
-		done <- cmd.Wait()
-	}()
+	go func() { done <- cmd.Wait() }()
 
 	for {
 		select {
@@ -1371,7 +1571,7 @@ func (m *Master) monitorInstance(instance *Instance, cmd *exec.Cmd) {
 			}
 			return
 		case <-time.After(reportInterval):
-			if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 5*reportInterval {
+			if !instance.lastCheckPoint.IsZero() && time.Since(instance.lastCheckPoint) > 3*reportInterval {
 				instance.Status = "error"
 				m.instances.Store(instance.ID, instance)
 				m.sendSSEEvent("update", instance)
@@ -1469,6 +1669,86 @@ func (m *Master) enhanceURL(instanceURL string, instanceType string) string {
 	return parsedURL.String()
 }
 
+// generateConfigURL 生成实例的完整URL
+func (m *Master) generateConfigURL(instance *Instance) string {
+	parsedURL, err := url.Parse(instance.URL)
+	if err != nil {
+		m.logger.Error("generateConfigURL: invalid URL format: %v", err)
+		return instance.URL
+	}
+
+	query := parsedURL.Query()
+
+	// 设置日志级别
+	if m.logLevel != "" && query.Get("log") == "" {
+		query.Set("log", m.logLevel)
+	}
+
+	// 设置TLS配置
+	if instance.Type == "server" && m.tlsCode != "0" {
+		if query.Get("tls") == "" {
+			query.Set("tls", m.tlsCode)
+		}
+
+		// 为TLS code-2设置证书和密钥
+		if m.tlsCode == "2" {
+			if m.crtPath != "" && query.Get("crt") == "" {
+				query.Set("crt", m.crtPath)
+			}
+			if m.keyPath != "" && query.Get("key") == "" {
+				query.Set("key", m.keyPath)
+			}
+		}
+	}
+
+	// 根据实例类型设置默认参数
+	switch instance.Type {
+	case "client":
+		// client参数: min, mode, read, rate, slot, proxy
+		if query.Get("min") == "" {
+			query.Set("min", strconv.Itoa(defaultMinPool))
+		}
+		if query.Get("mode") == "" {
+			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("read") == "" {
+			query.Set("read", defaultReadTimeout.String())
+		}
+		if query.Get("rate") == "" {
+			query.Set("rate", strconv.Itoa(defaultRateLimit))
+		}
+		if query.Get("slot") == "" {
+			query.Set("slot", strconv.Itoa(defaultSlotLimit))
+		}
+		if query.Get("proxy") == "" {
+			query.Set("proxy", defaultProxyProtocol)
+		}
+	case "server":
+		// server参数: max, mode, read, rate, slot, proxy
+		if query.Get("max") == "" {
+			query.Set("max", strconv.Itoa(defaultMaxPool))
+		}
+		if query.Get("mode") == "" {
+			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("read") == "" {
+			query.Set("read", defaultReadTimeout.String())
+		}
+		if query.Get("rate") == "" {
+			query.Set("rate", strconv.Itoa(defaultRateLimit))
+		}
+		if query.Get("slot") == "" {
+			query.Set("slot", strconv.Itoa(defaultSlotLimit))
+		}
+		if query.Get("proxy") == "" {
+			query.Set("proxy", defaultProxyProtocol)
+		}
+	}
+
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String()
+}
+
 // generateID 生成随机ID
 func generateID() string {
 	bytes := make([]byte, 4)
@@ -1500,7 +1780,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, data any) {
 }
 
 // generateOpenAPISpec 生成OpenAPI规范文档
-func generateOpenAPISpec() string {
+func (m *Master) generateOpenAPISpec() string {
 	return fmt.Sprintf(`{
   "openapi": "3.1.1",
   "info": {
@@ -1508,7 +1788,7 @@ func generateOpenAPISpec() string {
 	"description": "API for managing NodePass server and client instances",
 	"version": "%s"
   },
-  "servers": [{"url": "/{prefix}/v1", "variables": {"prefix": {"default": "api", "description": "API prefix path"}}}],
+  "servers": [{"url": "%s"}],
   "security": [{"ApiKeyAuth": []}],
   "paths": {
 	"/instances": {
@@ -1606,6 +1886,17 @@ func generateOpenAPISpec() string {
 		  "401": {"description": "Unauthorized"},
 		  "405": {"description": "Method not allowed"}
 		}
+	  },
+	  "post": {
+		"summary": "Update master alias",
+		"security": [{"ApiKeyAuth": []}],
+		"requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateMasterAliasRequest"}}}},
+		"responses": {
+		  "200": {"description": "Success", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MasterInfo"}}}},
+		  "400": {"description": "Invalid input"},
+		  "401": {"description": "Unauthorized"},
+		  "405": {"description": "Method not allowed"}
+		}
 	  }
 	},
 	"/tcping": {
@@ -1664,7 +1955,9 @@ func generateOpenAPISpec() string {
 	  "type": {"type": "string", "enum": ["client", "server"], "description": "Type of instance"},
 	  "status": {"type": "string", "enum": ["running", "stopped", "error"], "description": "Instance status"},
 	  "url": {"type": "string", "description": "Command string or API Key"},
+	  "config": {"type": "string", "description": "Instance configuration URL"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1686,7 +1979,8 @@ func generateOpenAPISpec() string {
 		"properties": {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-		  "restart": {"type": "boolean", "description": "Instance restart policy"}
+		  "restart": {"type": "boolean", "description": "Instance restart policy"},
+		  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"}
 		}
 	  },
 	  "PutInstanceRequest": {
@@ -1697,13 +1991,14 @@ func generateOpenAPISpec() string {
 	  "MasterInfo": {
 		"type": "object",
 		"properties": {
+		  "alias": {"type": "string", "description": "Master alias"},
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
 		  "cpu": {"type": "integer", "description": "CPU usage percentage"},
 		  "mem_total": {"type": "integer", "format": "int64", "description": "Total memory in bytes"},
-		  "mem_free": {"type": "integer", "format": "int64", "description": "Free memory in bytes"},
+		  "mem_used": {"type": "integer", "format": "int64", "description": "Used memory in bytes"},
 		  "swap_total": {"type": "integer", "format": "int64", "description": "Total swap space in bytes"},
-		  "swap_free": {"type": "integer", "format": "int64", "description": "Free swap space in bytes"},
+		  "swap_used": {"type": "integer", "format": "int64", "description": "Used swap space in bytes"},
 		  "netrx": {"type": "integer", "format": "int64", "description": "Network received bytes"},
 		  "nettx": {"type": "integer", "format": "int64", "description": "Network transmitted bytes"},
 		  "diskr": {"type": "integer", "format": "int64", "description": "Disk read bytes"},
@@ -1718,6 +2013,11 @@ func generateOpenAPISpec() string {
 		  "key": {"type": "string", "description": "Private key path"}
 		}
 	  },
+	  "UpdateMasterAliasRequest": {
+		"type": "object",
+		"required": ["alias"],
+		"properties": {"alias": {"type": "string", "description": "Master alias"}}
+	  },
 	  "TCPingResult": {
 		"type": "object",
 		"properties": {
@@ -1726,8 +2026,16 @@ func generateOpenAPISpec() string {
 		  "latency": {"type": "integer", "format": "int64", "description": "Latency in milliseconds"},
 		  "error": {"type": "string", "nullable": true, "description": "Error message"}
 		}
+	  },
+	  "Tag": {
+		"type": "object",
+		"required": ["key", "value"],
+		"properties": {
+		  "key": {"type": "string", "description": "Tag key"},
+		  "value": {"type": "string", "description": "Tag value"}
+		}
 	  }
 	}
   }
-}`, openAPIVersion)
+}`, openAPIVersion, m.prefix)
 }

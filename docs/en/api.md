@@ -42,6 +42,7 @@ nodepass "master://0.0.0.0:9090/admin?log=info&tls=1"
 | `/instances/{id}`  | DELETE | Delete instance          |
 | `/events`          | GET    | SSE real-time event stream |
 | `/info`            | GET    | Get master service info  |
+| `/info`            | POST   | Update master alias      |
 | `/tcping`          | GET    | TCP connection test      |
 | `/openapi.json`    | GET    | OpenAPI specification    |
 | `/docs`            | GET    | Swagger UI documentation |
@@ -64,7 +65,13 @@ API Key authentication is enabled by default, automatically generated and saved 
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
+  "tags": [
+    {"key": "environment", "value": "production"},
+    {"key": "region", "value": "us-west-2"},
+    {"key": "project", "value": "web-service"}
+  ],
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -81,7 +88,9 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `ping`/`pool`: Health check data
 - `tcps`/`udps`: Current active connection count statistics
 - `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
+- `config`: Instance configuration URL with complete startup configuration
 - `restart`: Auto-restart policy
+- `tags`: Optional key-value pairs for labeling and organizing instances
 
 ### Instance URL Format
 
@@ -514,6 +523,31 @@ To properly manage lifecycles:
      return data.success;
    }
    
+   // Update instance tags
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Delete specific tags by setting their values to empty string
+   async function deleteInstanceTags(instanceId, tagKeys) {
+     const tagsToDelete = {};
+     tagKeys.forEach(key => {
+       tagsToDelete[key] = "";  // Empty string removes the tag
+     });
+     
+     return await updateInstanceTags(instanceId, tagsToDelete);
+   }
+   
    // Update instance URL configuration
    async function updateInstanceURL(instanceId, newURL) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -530,7 +564,44 @@ To properly manage lifecycles:
    }
    ```
 
-5. **Auto-restart Policy Management**: Configure automatic startup behavior
+5. **Tag Management**: Label and organize instances using key-value pairs
+   ```javascript
+   // Update instance tags via PATCH method
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({ tags })
+     });
+     
+     return response.json();
+   }
+   
+   // Add or update tags - existing tags are preserved unless specified
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "production"},  // Add/update
+     {"key": "region", "value": "us-west-2"},        // Add/update
+     {"key": "team", "value": "backend"}             // Add/update
+   ]);
+   
+   // Delete specific tags by setting empty values
+   await updateInstanceTags('abc123', [
+     {"key": "old-tag", "value": ""},               // Delete this tag
+     {"key": "temp-env", "value": ""}               // Delete this tag
+   ]);
+   
+   // Mix operations: add/update some tags, delete others
+   await updateInstanceTags('abc123', [
+     {"key": "environment", "value": "staging"},    // Update existing
+     {"key": "version", "value": "2.0"},            // Add new
+     {"key": "deprecated", "value": ""}             // Delete existing
+   ]);
+   ```
+
+6. **Auto-restart Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -782,6 +853,17 @@ async function configureAutoStartPolicies(instances) {
 }
 ```
 
+### Tag Management Rules
+
+1. **Merge-based Updates**: Tags are processed with merge logic - existing tags are preserved unless explicitly updated or deleted
+2. **Array Format**: Tags use array format `[{"key": "key1", "value": "value1"}]`
+3. **Key Filtering**: Empty keys are automatically filtered out and rejected by validation
+4. **Delete by Empty Value**: Set `value: ""` (empty string) to delete an existing tag key
+5. **Add/Update Logic**: Non-empty values will add new tags or update existing ones
+6. **Uniqueness Check**: Duplicate keys are not allowed within the same tag operation
+7. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
+8. **Persistence**: All tag operations are automatically saved to disk and restored after restart
+
 ## Instance Data Structure
 
 The instance object in API responses contains the following fields:
@@ -793,7 +875,13 @@ The instance object in API responses contains the following fields:
   "type": "server",           // Instance type: server or client
   "status": "running",        // Instance status: running, stopped, or error
   "url": "server://...",      // Instance configuration URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
+  "tags": [                   // Tag array
+    {"key": "environment", "value": "production"},
+    {"key": "project", "value": "web-service"},
+    {"key": "region", "value": "us-west-2"}
+  ],
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
   "tcptx": 2048,              // TCP transmitted bytes
@@ -804,8 +892,31 @@ The instance object in API responses contains the following fields:
 
 **Note:** 
 - `alias` field is optional, empty string if not set
+- `config` field contains the instance's complete configuration URL, auto-generated by the system
 - `mode` field indicates the current runtime mode of the instance
 - `restart` field controls the auto-restart behavior of the instance
+- `tags` field is optional, only included when tags are present
+
+### Instance Configuration Field
+
+NodePass Master automatically maintains the `config` field for each instance:
+
+- **Auto Generation**: Automatically generated when instances are created and updated, no manual maintenance required
+- **Complete Configuration**: Contains the instance's complete URL with all default parameters
+- **Configuration Inheritance**: log and tls configurations are inherited from master settings
+- **Default Parameters**: Other parameters use system defaults
+- **Read-Only Nature**: Auto-generated field that cannot be directly modified through the API
+
+**Example config field value:**
+```
+server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0
+```
+
+This feature is particularly useful for:
+- Configuration backup and export
+- Instance configuration integrity checks
+- Automated deployment scripts
+- Configuration documentation generation
 
 ## System Information Endpoint
 
@@ -825,13 +936,14 @@ The response contains the following system information fields:
 
 ```json
 {
+  "alias": "dev",             // Master alias
   "os": "linux",              // Operating system type
   "arch": "amd64",            // System architecture
   "cpu": 45,                  // CPU usage percentage (Linux only)
   "mem_total": 8589934592,    // Total memory in bytes (Linux only)
-  "mem_free": 2684354560,     // Free memory in bytes (Linux only)
+  "mem_used": 2684354560,     // Used memory in bytes (Linux only)
   "swap_total": 3555328000,   // Total swap space in bytes (Linux only)
-  "swap_free": 3555328000,    // Free swap space in bytes (Linux only)
+  "swap_used": 3555328000,    // Used swap space in bytes (Linux only)
   "netrx": 1048576000,        // Network received bytes (cumulative, Linux only)
   "nettx": 2097152000,        // Network transmitted bytes (cumulative, Linux only)
   "diskr": 4194304000,        // Disk read bytes (cumulative, Linux only)
@@ -879,12 +991,16 @@ function displaySystemStatus() {
         console.log(`CPU usage: ${info.cpu}%`);
       }
       if (info.mem_total > 0) {
-        const memUsagePercent = ((info.mem_total - info.mem_free) / info.mem_total * 100).toFixed(1);
-        console.log(`Memory usage: ${memUsagePercent}% (${(info.mem_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.mem_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+        const memUsagePercent = (info.mem_used / info.mem_total * 100).toFixed(1);
+        const memFreeGB = ((info.mem_total - info.mem_used) / 1024 / 1024 / 1024).toFixed(1);
+        const memTotalGB = (info.mem_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`Memory usage: ${memUsagePercent}% (${memFreeGB}GB free of ${memTotalGB}GB total)`);
       }
       if (info.swap_total > 0) {
-        const swapUsagePercent = ((info.swap_total - info.swap_free) / info.swap_total * 100).toFixed(1);
-        console.log(`Swap usage: ${swapUsagePercent}% (${(info.swap_free / 1024 / 1024 / 1024).toFixed(1)}GB free of ${(info.swap_total / 1024 / 1024 / 1024).toFixed(1)}GB total)`);
+        const swapUsagePercent = (info.swap_used / info.swap_total * 100).toFixed(1);
+        const swapFreeGB = ((info.swap_total - info.swap_used) / 1024 / 1024 / 1024).toFixed(1);
+        const swapTotalGB = (info.swap_total / 1024 / 1024 / 1024).toFixed(1);
+        console.log(`Swap usage: ${swapUsagePercent}% (${swapFreeGB}GB free of ${swapTotalGB}GB total)`);
       }
     } else {
       console.log('CPU, memory, swap space, network I/O, disk I/O, and system uptime monitoring is only available on Linux systems');
@@ -910,8 +1026,8 @@ function displaySystemStatus() {
 - **Log level verification**: Ensure current log level meets expectations
 - **Resource monitoring**: On Linux systems, monitor CPU, memory, swap space, network I/O, disk I/O usage to ensure optimal performance
   - CPU usage is calculated by parsing `/proc/stat` (percentage of non-idle time)
-  - Memory information is obtained by parsing `/proc/meminfo` (total and free memory in bytes)
-  - Swap space information is obtained by parsing `/proc/meminfo` (total and free swap space in bytes)
+  - Memory information is obtained by parsing `/proc/meminfo` (total and used memory in bytes, calculated as total minus available)
+  - Swap space information is obtained by parsing `/proc/meminfo` (total and used swap space in bytes, calculated as total minus free)
   - Network I/O is calculated by parsing `/proc/net/dev` (cumulative bytes, excluding virtual interfaces)
   - Disk I/O is calculated by parsing `/proc/diskstats` (cumulative bytes, major devices only)
   - System uptime is obtained by parsing `/proc/uptime`
@@ -987,13 +1103,12 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, or perform control operations
+- **Description**: Update instance state, alias, tags, or perform control operations
 - **Authentication**: Requires API Key
-- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
-- **Features**: Does not interrupt running instances, only updates specified fields. `action: "reset"` can reset traffic statistics (tcprx, tcptx, udprx, udptx) for the instance to zero.
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "tags": [{"key": "key1", "value": "value1"}] }`
 - **Example**:
 ```javascript
-// Update alias and auto-restart policy
+// Update tags
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1001,29 +1116,27 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    alias: 'Web Server',
-    restart: true 
+    tags: [
+      {"key": "environment", "value": "production"},
+      {"key": "region", "value": "us-west-2"}
+    ]
   })
 });
 
-// Control instance operations
+// Update and delete tags in one operation
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ action: 'restart' })
-});
-
-// Reset traffic statistics
-await fetch(`${API_URL}/instances/abc123`, {
-  method: 'PATCH',
-  headers: { 
-    'Content-Type': 'application/json',
-    'X-API-Key': apiKey 
-  },
-  body: JSON.stringify({ action: 'reset' })
+  body: JSON.stringify({ 
+    tags: [
+      {"key": "environment", "value": "staging"}, // Update existing
+      {"key": "version", "value": "2.0"},         // Add new
+      {"key": "old-tag", "value": ""}             // Delete existing
+    ]
+  })
 });
 ```
 
@@ -1073,6 +1186,28 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **Description**: Get master service information
 - **Authentication**: Requires API Key
 - **Response**: Contains system information, version, uptime, CPU and RAM usage, etc.
+
+#### POST /info
+- **Description**: Update master alias
+- **Authentication**: Requires API Key
+- **Request body**: `{ "alias": "new alias" }`
+- **Response**: Complete master information (same as GET /info)
+- **Example**:
+```javascript
+// Update master alias
+const response = await fetch(`${API_URL}/info`, {
+  method: 'POST',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ alias: 'My NodePass Server' })
+});
+
+const data = await response.json();
+console.log('Updated alias:', data.alias);
+// Response contains full system info with updated alias
+```
 
 #### GET /tcping
 - **Description**: TCP connection test, checks connectivity and latency to target address
@@ -1130,9 +1265,10 @@ Examples:
 | `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
 | `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None | Server only |
-| `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
+| `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
 | `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `10m` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
+| `slot` | Connection slot count | Integer (1-65536) | `65536` | Both |
 | `proxy` | PROXY protocol support | `0`(disabled), `1`(enabled) | `0` | Both |

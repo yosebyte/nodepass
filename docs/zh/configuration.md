@@ -254,19 +254,19 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 
 NodePass支持通过URL查询参数进行灵活配置，不同参数在 server、client、master 模式下的适用性如下表：
 
-| 参数      | 说明                 | server | client | master |
-|-----------|----------------------|:------:|:------:|:------:|
-| `log`     | 日志级别             |   O    |   O    |   O    |
-| `tls`     | TLS加密模式          |   O    |   X    |   O    |
-| `crt`     | 自定义证书路径       |   O    |   X    |   O    |
-| `key`     | 自定义密钥路径       |   O    |   X    |   O    |
-| `min`     | 最小连接池容量       |   X    |   O    |   X    |
-| `max`     | 最大连接池容量       |   O    |   X    |   X    |
-| `mode`    | 运行模式控制         |   O    |   O    |   X    |
-| `read`    | 读取超时时间         |   O    |   O    |   X    |
-| `rate`    | 带宽速率限制         |   O    |   O    |   X    |
-| `slot`    | 最大连接数限制       |   O    |   O    |   X    |
-| `proxy`   | PROXY协议支持        |   O    |   O    |   X    |
+| 参数      | 说明                 | 默认值    | server | client | master |
+|-----------|----------------------|-----------|:------:|:------:|:------:|
+| `log`     | 日志级别             | `info`    |   O    |   O    |   O    |
+| `tls`     | TLS加密模式          | `0`       |   O    |   X    |   O    |
+| `crt`     | 自定义证书路径       | N/A       |   O    |   X    |   O    |
+| `key`     | 自定义密钥路径       | N/A       |   O    |   X    |   O    |
+| `min`     | 最小连接池容量       | `64`      |   X    |   O    |   X    |
+| `max`     | 最大连接池容量       | `1024`    |   O    |   X    |   X    |
+| `mode`    | 运行模式控制         | `0`       |   O    |   O    |   X    |
+| `read`    | 读取超时时间         | `1h`      |   O    |   O    |   X    |
+| `rate`    | 带宽速率限制         | `0`       |   O    |   O    |   X    |
+| `slot`    | 最大连接数限制       | `65536`   |   O    |   O    |   X    |
+| `proxy`   | PROXY协议支持        | `0`       |   O    |   O    |   X    |
 
 
 - O：参数有效，推荐根据实际场景配置
@@ -286,6 +286,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
+| `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -349,6 +350,11 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 
 对于TCP连接的优化：
 
+- `NP_TCP_DATA_BUF_SIZE`：TCP数据传输缓冲区大小
+  - 默认值(32768)为大多数应用提供良好平衡
+  - 对于需要大缓冲区的高吞吐量应用增加此值
+  - 考虑为批量数据传输和流媒体增加到65536或更高
+
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
   - 默认值(30s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
@@ -402,6 +408,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?min=128&rate=500&slot
 export NP_MIN_POOL_INTERVAL=50ms
 export NP_MAX_POOL_INTERVAL=500ms
 export NP_SEMAPHORE_LIMIT=8192
+export NP_TCP_DATA_BUF_SIZE=65536
 export NP_UDP_DATA_BUF_SIZE=32768
 export NP_POOL_GET_TIMEOUT=60s
 export NP_REPORT_INTERVAL=10s

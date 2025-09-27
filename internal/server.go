@@ -3,7 +3,6 @@ package internal
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -29,26 +29,40 @@ type Server struct {
 }
 
 // NewServer 创建新的服务端实例
-func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) *Server {
+func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
+			tcpBufferPool: &sync.Pool{
+				New: func() any {
+					buf := make([]byte, tcpDataBufSize)
+					return &buf
+				},
+			},
+			udpBufferPool: &sync.Pool{
+				New: func() any {
+					buf := make([]byte, udpDataBufSize)
+					return &buf
+				},
+			},
 		},
 		tlsConfig: tlsConfig,
 	}
-	server.initConfig(parsedURL)
+	if err := server.initConfig(parsedURL); err != nil {
+		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
+	}
 	server.initRateLimiter()
-	return server
+	return server, nil
 }
 
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: %v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v",
+		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v",
 			prefix, s.tunnelKey, s.tunnelTCPAddr, s.targetTCPAddr,
-			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit)
+			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol)
 	}
 	logInfo("Server started")
 
@@ -168,7 +182,7 @@ func (s *Server) tunnelHandshake() error {
 		tunnelTCPConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 
 		bufReader := bufio.NewReader(tunnelTCPConn)
-		rawTunnelKey, err := bufReader.ReadString('\n')
+		rawTunnelKey, err := bufReader.ReadBytes('\n')
 		if err != nil {
 			s.logger.Warn("tunnelHandshake: handshake timeout: %v", tunnelTCPConn.RemoteAddr())
 			tunnelTCPConn.Close()
@@ -181,7 +195,20 @@ func (s *Server) tunnelHandshake() error {
 		}
 
 		tunnelTCPConn.SetReadDeadline(time.Time{})
-		tunnelKey := string(s.xor(bytes.TrimSuffix([]byte(rawTunnelKey), []byte{'\n'})))
+
+		// 解码隧道密钥
+		tunnelKeyData, err := s.decode(rawTunnelKey)
+		if err != nil {
+			s.logger.Warn("tunnelHandshake: decode tunnel key failed: %v", tunnelTCPConn.RemoteAddr())
+			tunnelTCPConn.Close()
+			select {
+			case <-s.ctx.Done():
+				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
+			case <-time.After(serviceCooldown):
+			}
+			continue
+		}
+		tunnelKey := string(tunnelKeyData)
 
 		if tunnelKey != s.tunnelKey {
 			s.logger.Warn("tunnelHandshake: access denied: %v", tunnelTCPConn.RemoteAddr())
@@ -212,7 +239,7 @@ func (s *Server) tunnelHandshake() error {
 		Fragment: s.tlsCode,
 	}
 
-	_, err := s.tunnelTCPConn.Write(append(s.xor([]byte(tunnelURL.String())), '\n'))
+	_, err := s.tunnelTCPConn.Write(s.encode([]byte(tunnelURL.String())))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)
 	}

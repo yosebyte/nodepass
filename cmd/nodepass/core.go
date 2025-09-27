@@ -2,37 +2,80 @@ package main
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/url"
+	"os"
+	"runtime"
 	"time"
 
 	"github.com/NodePassProject/cert"
+	"github.com/NodePassProject/logs"
 	"github.com/yosebyte/nodepass/internal"
 )
 
-// coreDispatch 根据URL方案分派到不同的运行模式
-func coreDispatch(parsedURL *url.URL) {
-	var core interface{ Run() }
+// start 启动核心逻辑
+func start(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("start: empty URL command")
+	}
 
-	switch scheme := parsedURL.Scheme; scheme {
-	case "server", "master":
-		tlsCode, tlsConfig := getTLSProtocol(parsedURL)
-		if scheme == "server" {
-			core = internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
-		} else {
-			core = internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger, version)
-		}
-	case "client":
-		core = internal.NewClient(parsedURL, logger)
-	default:
-		logger.Error("Unknown core: %v", scheme)
-		getExitInfo()
+	parsedURL, err := url.Parse(args[1])
+	if err != nil {
+		return fmt.Errorf("start: parse URL failed: %v", err)
+	}
+
+	logger := initLogger(parsedURL.Query().Get("log"))
+
+	core, err := createCore(parsedURL, logger)
+	if err != nil {
+		return fmt.Errorf("start: create core failed: %v", err)
 	}
 
 	core.Run()
+	return nil
+}
+
+// initLogger 初始化日志记录器
+func initLogger(level string) *logs.Logger {
+	logger := logs.NewLogger(logs.Info, true)
+	switch level {
+	case "none":
+		logger.SetLogLevel(logs.None)
+	case "debug":
+		logger.SetLogLevel(logs.Debug)
+		logger.Debug("Init log level: DEBUG")
+	case "warn":
+		logger.SetLogLevel(logs.Warn)
+		logger.Warn("Init log level: WARN")
+	case "error":
+		logger.SetLogLevel(logs.Error)
+		logger.Error("Init log level: ERROR")
+	case "event":
+		logger.SetLogLevel(logs.Event)
+		logger.Event("Init log level: EVENT")
+	default:
+	}
+	return logger
+}
+
+// createCore 创建核心
+func createCore(parsedURL *url.URL, logger *logs.Logger) (interface{ Run() }, error) {
+	switch parsedURL.Scheme {
+	case "server":
+		tlsCode, tlsConfig := getTLSProtocol(parsedURL, logger)
+		return internal.NewServer(parsedURL, tlsCode, tlsConfig, logger)
+	case "client":
+		return internal.NewClient(parsedURL, logger)
+	case "master":
+		tlsCode, tlsConfig := getTLSProtocol(parsedURL, logger)
+		return internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger, version)
+	default:
+		return nil, fmt.Errorf("unknown core: %v", parsedURL)
+	}
 }
 
 // getTLSProtocol 获取TLS配置
-func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
+func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Config) {
 	// 生成基本TLS配置
 	tlsConfig, err := cert.NewTLSConfig(version)
 	if err != nil {
@@ -98,4 +141,41 @@ func getTLSProtocol(parsedURL *url.URL) (string, *tls.Config) {
 		logger.Warn("TLS code-0: unencrypted")
 		return "0", nil
 	}
+}
+
+// exit 退出程序并显示帮助信息
+func exit(err error) {
+	errMsg1, errMsg2 := "", ""
+	if err != nil {
+		errStr := "FAILED: " + err.Error()
+		if len(errStr) > 35 {
+			errMsg1 = errStr[:35]
+			if len(errStr) > 70 {
+				errMsg2 = errStr[35:67] + "..."
+			} else {
+				errMsg2 = errStr[35:]
+			}
+		} else {
+			errMsg1 = errStr
+		}
+	}
+	fmt.Printf(`
+╭─────────────────────────────────────╮
+│ ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░ │
+│ ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░ │
+│ ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░ │
+├─────────────────────────────────────┤
+│%*s │
+│%*s │
+├─────────────────────────────────────┤
+│ server://password@host/host?<query> │
+│ client://password@host/host?<query> │
+│ master://hostname:port/path?<query> │
+├─────────────────────────────────────┤
+│ %-35s │
+│ %-35s │
+╰─────────────────────────────────────╯
+
+`, 36, version, 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), errMsg1, errMsg2)
+	os.Exit(1)
 }
