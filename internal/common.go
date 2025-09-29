@@ -719,12 +719,16 @@ func (c *Common) commonTCPLoop() {
 			// 注册取消函数
 			c.cancelMap.Store(id, func() {
 				if targetConn != nil {
-					targetConn.Close()
+					targetConn.SetReadDeadline(time.Now())
+				}
+				if remoteConn != nil {
+					remoteConn.SetReadDeadline(time.Now())
 				}
 			})
 			defer c.cancelMap.Delete(id)
 
 			defer func() {
+				remoteConn.SetReadDeadline(time.Time{})
 				c.tunnelPool.Put(id, remoteConn)
 				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 
@@ -1039,6 +1043,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 	defer func() {
+		remoteConn.SetReadDeadline(time.Time{})
 		c.tunnelPool.Put(id, remoteConn)
 		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 
@@ -1079,7 +1084,10 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	// 注册取消函数
 	c.cancelMap.Store(id, func() {
 		if targetConn != nil {
-			targetConn.Close()
+			targetConn.SetReadDeadline(time.Now())
+		}
+		if remoteConn != nil {
+			remoteConn.SetReadDeadline(time.Now())
 		}
 	})
 	defer c.cancelMap.Delete(id)
