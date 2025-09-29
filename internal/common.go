@@ -62,6 +62,7 @@ type Common struct {
 	udpTX            uint64             // UDP发送字节数
 	ctx              context.Context    // 上下文
 	cancel           context.CancelFunc // 取消函数
+	cancelMap        sync.Map           // 取消映射
 }
 
 // 配置变量，可通过环境变量调整
@@ -449,6 +450,14 @@ func (c *Common) stop() {
 		c.cancel()
 	}
 
+	// 触发所有在运取消函数
+	c.cancelMap.Range(func(key, value any) bool {
+		if cancel, ok := value.(func()); ok {
+			cancel()
+		}
+		return true
+	})
+
 	// 关闭隧道连接池
 	if c.tunnelPool != nil {
 		active := c.tunnelPool.Active()
@@ -710,6 +719,21 @@ func (c *Common) commonTCPLoop() {
 			defer func() {
 				c.tunnelPool.Put(id, remoteConn)
 				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+
+				// 发送关闭信号到对端
+				closeURL := &url.URL{
+					Scheme:   "np",
+					Path:     url.PathEscape(id),
+					Fragment: "3", // 关闭隧道
+				}
+
+				c.mu.Lock()
+				_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+				c.mu.Unlock()
+
+				if err != nil {
+					c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
+				}
 			}()
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -810,6 +834,21 @@ func (c *Common) commonUDPLoop() {
 					remoteConn.SetReadDeadline(time.Time{})
 					c.tunnelPool.Put(id, remoteConn)
 					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+
+					// 发送关闭信号到对端
+					closeURL := &url.URL{
+						Scheme:   "np",
+						Path:     url.PathEscape(id),
+						Fragment: "3", // 关闭隧道
+					}
+
+					c.mu.Lock()
+					_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+					c.mu.Unlock()
+
+					if err != nil {
+						c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
+					}
 
 					// 清理UDP会话
 					c.targetUDPSession.Delete(sessionKey)
@@ -932,6 +971,8 @@ func (c *Common) commonOnce() error {
 				go c.commonTCPOnce(signalURL)
 			case "2": // UDP
 				go c.commonUDPOnce(signalURL)
+			case "3": // 关闭隧道
+				c.commonOnceKiller(signalURL)
 			case "i": // PING
 				c.mu.Lock()
 				_, err := c.tunnelTCPConn.Write(c.encode([]byte(pongURL.String())))
@@ -1004,6 +1045,14 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
+	// 注册取消函数
+	c.cancelMap.Store(id, func() {
+		if targetConn != nil {
+			targetConn.Close()
+		}
+	})
+	defer c.cancelMap.Delete(id)
+
 	// 发送PROXY v1
 	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
 		c.logger.Error("commonTCPOnce: sendProxyV1Header failed: %v", err)
@@ -1032,6 +1081,14 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		id = unescapedID
 	}
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	// 创建子上下文用于取消
+	ctx, cancel := context.WithCancel(c.ctx)
+	c.cancelMap.Store(id, cancel)
+	defer func() {
+		cancel()
+		c.cancelMap.Delete(id)
+	}()
 
 	// 尝试获取UDP连接槽位
 	if !c.tryAcquireSlot(true) {
@@ -1079,11 +1136,14 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
-		for {
-			if c.ctx.Err() != nil {
-				return
-			}
 
+		// 通过读超时机制实现取消
+		go func() {
+			<-ctx.Done()
+			remoteConn.SetReadDeadline(time.Now())
+		}()
+
+		for {
 			// 从隧道连接读取数据
 			x, err := reader.Read(buffer)
 			if err != nil {
@@ -1113,11 +1173,14 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
-		for {
-			if c.ctx.Err() != nil {
-				return
-			}
 
+		// 通过读超时机制实现取消
+		go func() {
+			<-ctx.Done()
+			targetConn.SetReadDeadline(time.Now())
+		}()
+
+		for {
 			// 从目标UDP连接读取数据
 			x, err := reader.Read(buffer)
 			if err != nil {
@@ -1154,6 +1217,23 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	remoteConn.SetReadDeadline(time.Time{})
 	c.tunnelPool.Put(id, remoteConn)
 	c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+}
+
+// commonOnceKiller 共用处理关闭隧道请求
+func (c *Common) commonOnceKiller(signalURL *url.URL) {
+	id := strings.TrimPrefix(signalURL.Path, "/")
+	if unescapedID, err := url.PathUnescape(id); err != nil {
+		c.logger.Error("commonOnceKiller: unescape id failed: %v", err)
+		return
+	} else {
+		id = unescapedID
+	}
+	c.logger.Debug("Once close signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	// 触发取消函数
+	if cancel, ok := c.cancelMap.Load(id); ok {
+		cancel.(func())()
+	}
 }
 
 // singleControl 单端控制处理循环
