@@ -6,5 +6,5 @@ require (
 	github.com/NodePassProject/cert v1.0.1
 	github.com/NodePassProject/conn v1.0.15
 	github.com/NodePassProject/logs v1.0.3
-	github.com/NodePassProject/pool v1.0.33
+	github.com/NodePassProject/pool v1.0.34
 )
