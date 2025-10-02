@@ -285,7 +285,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | Variable | Description | Default | Example |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
+| `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
