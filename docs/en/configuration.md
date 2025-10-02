@@ -290,7 +290,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_POOL_GET_TIMEOUT` | Timeout for getting connections from pool | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_POOL_GET_TIMEOUT` | Timeout for getting connections from pool | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
 | `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | Interval for health check reports | 5s | `export NP_REPORT_INTERVAL=10s` |

@@ -291,7 +291,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
