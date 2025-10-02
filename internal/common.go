@@ -1078,7 +1078,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	// 从连接池获取连接
 	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
 	if err != nil {
-		c.logger.Warn("commonTCPOnce: clientGet failed: %v", err)
+		c.logger.Error("commonTCPOnce: request timeout: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
@@ -1184,13 +1184,37 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	// 获取池连接
 	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
 	if err != nil {
-		c.logger.Warn("commonUDPOnce: clientGet failed: %v", err)
+		c.logger.Error("commonUDPOnce: request timeout: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
 
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+
+	defer func() {
+		// 重置池连接的读取超时
+		remoteConn.SetReadDeadline(time.Time{})
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
+
+		// 发送关闭信号到对端
+		closeURL := &url.URL{
+			Scheme:   "np",
+			Path:     url.PathEscape(id),
+			Fragment: "0", // 关闭隧道
+		}
+
+		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			c.mu.Lock()
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+			c.mu.Unlock()
+
+			if err != nil {
+				c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
+			}
+		}
+	}()
 
 	var targetConn net.Conn
 	sessionKey := signalURL.Host
@@ -1210,6 +1234,15 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		c.targetUDPSession.Store(sessionKey, targetConn)
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
+
+	defer func() {
+		// 清理UDP会话
+		c.targetUDPSession.Delete(sessionKey)
+		if targetConn != nil {
+			targetConn.Close()
+		}
+	}()
+
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
 	done := make(chan struct{}, 2)
@@ -1290,34 +1323,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	// 等待任一协程完成
 	<-done
-
-	// 清理连接和会话
-	c.targetUDPSession.Delete(sessionKey)
-	if targetConn != nil {
-		targetConn.Close()
-	}
-
-	// 重置池连接的读取超时
-	remoteConn.SetReadDeadline(time.Time{})
-	c.tunnelPool.Put(id, remoteConn)
-	c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-
-	// 发送关闭信号到对端
-	closeURL := &url.URL{
-		Scheme:   "np",
-		Path:     url.PathEscape(id),
-		Fragment: "0", // 关闭隧道
-	}
-
-	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-		c.mu.Lock()
-		_, err = c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
-		c.mu.Unlock()
-
-		if err != nil {
-			c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
-		}
-	}
 }
 
 // commonOnceKiller 共用处理关闭隧道请求
