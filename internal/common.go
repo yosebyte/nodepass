@@ -739,12 +739,14 @@ func (c *Common) commonTCPLoop() {
 					Fragment: "3", // 关闭隧道
 				}
 
-				c.mu.Lock()
-				_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
-				c.mu.Unlock()
+				if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+					c.mu.Lock()
+					_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+					c.mu.Unlock()
 
-				if err != nil {
-					c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
+					if err != nil {
+						c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
+					}
 				}
 			}()
 
@@ -860,12 +862,14 @@ func (c *Common) commonUDPLoop() {
 						Fragment: "3", // 关闭隧道
 					}
 
-					c.mu.Lock()
-					_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
-					c.mu.Unlock()
+					if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+						c.mu.Lock()
+						_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+						c.mu.Unlock()
 
-					if err != nil {
-						c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
+						if err != nil {
+							c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
+						}
 					}
 
 					// 清理UDP会话
@@ -1054,12 +1058,14 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 			Fragment: "3", // 关闭隧道
 		}
 
-		c.mu.Lock()
-		_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
-		c.mu.Unlock()
+		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			c.mu.Lock()
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+			c.mu.Unlock()
 
-		if err != nil {
-			c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
+			if err != nil {
+				c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
+			}
 		}
 	}()
 
@@ -1264,12 +1270,14 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		Fragment: "3", // 关闭隧道
 	}
 
-	c.mu.Lock()
-	_, err = c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
-	c.mu.Unlock()
+	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+		c.mu.Lock()
+		_, err = c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+		c.mu.Unlock()
 
-	if err != nil {
-		c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
+		if err != nil {
+			c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
+		}
 	}
 }
 
