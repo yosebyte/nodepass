@@ -67,11 +67,6 @@ API Key authentication is enabled by default, automatically generated and saved 
   "url": "...",
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
-  "tags": [
-    {"key": "environment", "value": "production"},
-    {"key": "region", "value": "us-west-2"},
-    {"key": "project", "value": "web-service"}
-  ],
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -90,7 +85,6 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
 - `config`: Instance configuration URL with complete startup configuration
 - `restart`: Auto-restart policy
-- `tags`: Optional key-value pairs for labeling and organizing instances
 
 ### Instance URL Format
 
@@ -514,38 +508,13 @@ To properly manage lifecycles:
        method: 'PATCH',
        headers: { 
          'Content-Type': 'application/json',
-         'X-API-Key': apiKey // If API Key is enabled 
+         'X-API-Key': apiKey // If API Key is enabled
        },
        body: JSON.stringify({ alias })
      });
      
      const data = await response.json();
      return data.success;
-   }
-   
-   // Update instance tags
-   async function updateInstanceTags(instanceId, tags) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 
-         'Content-Type': 'application/json',
-         'X-API-Key': apiKey // If API Key is enabled 
-       },
-       body: JSON.stringify({ tags })
-     });
-     
-     const data = await response.json();
-     return data.success;
-   }
-   
-   // Delete specific tags by setting their values to empty string
-   async function deleteInstanceTags(instanceId, tagKeys) {
-     const tagsToDelete = {};
-     tagKeys.forEach(key => {
-       tagsToDelete[key] = "";  // Empty string removes the tag
-     });
-     
-     return await updateInstanceTags(instanceId, tagsToDelete);
    }
    
    // Update instance URL configuration
@@ -564,44 +533,7 @@ To properly manage lifecycles:
    }
    ```
 
-5. **Tag Management**: Label and organize instances using key-value pairs
-   ```javascript
-   // Update instance tags via PATCH method
-   async function updateInstanceTags(instanceId, tags) {
-     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
-       method: 'PATCH',
-       headers: { 
-         'Content-Type': 'application/json',
-         'X-API-Key': apiKey
-       },
-       body: JSON.stringify({ tags })
-     });
-     
-     return response.json();
-   }
-   
-   // Add or update tags - existing tags are preserved unless specified
-   await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "production"},  // Add/update
-     {"key": "region", "value": "us-west-2"},        // Add/update
-     {"key": "team", "value": "backend"}             // Add/update
-   ]);
-   
-   // Delete specific tags by setting empty values
-   await updateInstanceTags('abc123', [
-     {"key": "old-tag", "value": ""},               // Delete this tag
-     {"key": "temp-env", "value": ""}               // Delete this tag
-   ]);
-   
-   // Mix operations: add/update some tags, delete others
-   await updateInstanceTags('abc123', [
-     {"key": "environment", "value": "staging"},    // Update existing
-     {"key": "version", "value": "2.0"},            // Add new
-     {"key": "deprecated", "value": ""}             // Delete existing
-   ]);
-   ```
-
-6. **Auto-restart Policy Management**: Configure automatic startup behavior
+5. **Auto-restart Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -846,23 +778,12 @@ async function configureAutoStartPolicies(instances) {
   for (const instance of instances) {
     // Enable auto-start for servers and critical clients
     const shouldAutoStart = instance.type === 'server' || 
-                            instance.tags?.includes('critical');
+                            instance.critical === true;
     
     await setAutoStartPolicy(instance.id, shouldAutoStart);
   }
 }
 ```
-
-### Tag Management Rules
-
-1. **Merge-based Updates**: Tags are processed with merge logic - existing tags are preserved unless explicitly updated or deleted
-2. **Array Format**: Tags use array format `[{"key": "key1", "value": "value1"}]`
-3. **Key Filtering**: Empty keys are automatically filtered out and rejected by validation
-4. **Delete by Empty Value**: Set `value: ""` (empty string) to delete an existing tag key
-5. **Add/Update Logic**: Non-empty values will add new tags or update existing ones
-6. **Uniqueness Check**: Duplicate keys are not allowed within the same tag operation
-7. **Limits**: Maximum 50 tags, key names ≤100 characters, values ≤500 characters
-8. **Persistence**: All tag operations are automatically saved to disk and restored after restart
 
 ## Instance Data Structure
 
@@ -877,11 +798,6 @@ The instance object in API responses contains the following fields:
   "url": "server://...",      // Instance configuration URL
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
-  "tags": [                   // Tag array
-    {"key": "environment", "value": "production"},
-    {"key": "project", "value": "web-service"},
-    {"key": "region", "value": "us-west-2"}
-  ],
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
   "tcptx": 2048,              // TCP transmitted bytes
@@ -895,7 +811,6 @@ The instance object in API responses contains the following fields:
 - `config` field contains the instance's complete configuration URL, auto-generated by the system
 - `mode` field indicates the current runtime mode of the instance
 - `restart` field controls the auto-restart behavior of the instance
-- `tags` field is optional, only included when tags are present
 
 ### Instance Configuration Field
 
@@ -1103,12 +1018,12 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, tags, or perform control operations
+- **Description**: Update instance state, alias, or perform control operations
 - **Authentication**: Requires API Key
-- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "tags": [{"key": "key1", "value": "value1"}] }`
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
 - **Example**:
 ```javascript
-// Update tags
+// Update alias and restart policy
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1116,14 +1031,12 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: [
-      {"key": "environment", "value": "production"},
-      {"key": "region", "value": "us-west-2"}
-    ]
+    alias: "production-server",
+    restart: true
   })
 });
 
-// Update and delete tags in one operation
+// Perform control action
 await fetch(`${API_URL}/instances/abc123`, {
   method: 'PATCH',
   headers: { 
@@ -1131,11 +1044,7 @@ await fetch(`${API_URL}/instances/abc123`, {
     'X-API-Key': apiKey 
   },
   body: JSON.stringify({ 
-    tags: [
-      {"key": "environment", "value": "staging"}, // Update existing
-      {"key": "version", "value": "2.0"},         // Add new
-      {"key": "old-tag", "value": ""}             // Delete existing
-    ]
+    action: "restart"
   })
 });
 ```
