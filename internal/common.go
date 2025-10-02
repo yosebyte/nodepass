@@ -1033,9 +1033,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	defer c.releaseSlot(false)
 
 	// 从连接池获取连接
-	remoteConn, err := c.tunnelPool.ClientGet(id)
+	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
 	if err != nil {
-		c.logger.Error("commonTCPOnce: clientGet failed: %v", err)
+		c.logger.Warn("commonTCPOnce: clientGet failed: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
@@ -1137,9 +1137,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	defer c.releaseSlot(true)
 
 	// 获取池连接
-	remoteConn, err := c.tunnelPool.ClientGet(id)
+	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
 	if err != nil {
-		c.logger.Error("commonUDPOnce: clientGet failed: %v", err)
+		c.logger.Warn("commonUDPOnce: clientGet failed: %v", err)
 		c.tunnelPool.AddError()
 		return
 	}
