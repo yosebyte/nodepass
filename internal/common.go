@@ -1069,13 +1069,6 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	}
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
-	// 尝试获取TCP连接槽位
-	if !c.tryAcquireSlot(false) {
-		c.logger.Error("commonTCPOnce: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
-		return
-	}
-	defer c.releaseSlot(false)
-
 	// 从连接池获取连接
 	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
 	if err != nil {
@@ -1118,10 +1111,20 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		return
 	}
 
+	// 尝试获取TCP连接槽位
+	if !c.tryAcquireSlot(false) {
+		c.logger.Error("commonTCPOnce: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
+		if targetConn != nil {
+			targetConn.Close()
+		}
+		return
+	}
+
 	defer func() {
 		if targetConn != nil {
 			targetConn.Close()
 		}
+		c.releaseSlot(false)
 	}()
 
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
@@ -1174,13 +1177,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		cancel()
 		c.cancelMap.Delete(id)
 	}()
-
-	// 尝试获取UDP连接槽位
-	if !c.tryAcquireSlot(true) {
-		c.logger.Error("commonUDPOnce: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
-		return
-	}
-	defer c.releaseSlot(true)
 
 	// 获取池连接
 	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
@@ -1236,12 +1232,23 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 
+	// 尝试获取UDP连接槽位
+	if !c.tryAcquireSlot(true) {
+		c.logger.Error("commonUDPOnce: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
+		c.targetUDPSession.Delete(sessionKey)
+		if targetConn != nil {
+			targetConn.Close()
+		}
+		return
+	}
+
 	defer func() {
 		// 清理UDP会话
 		c.targetUDPSession.Delete(sessionKey)
 		if targetConn != nil {
 			targetConn.Close()
 		}
+		c.releaseSlot(true)
 	}()
 
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
