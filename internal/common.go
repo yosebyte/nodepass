@@ -52,12 +52,12 @@ type Common struct {
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
-	cleanURL         *url.URL           // 清理信号URL
-	flushURL         *url.URL           // 刷新信号URL
-	pingURL          *url.URL           // PING信号URL
-	pongURL          *url.URL           // PONG信号URL
 	checkPoint       time.Time          // 检查点时间
 	lastClean        time.Time          // 上次清理时间
+	cleanURL         *url.URL           // 清理信号
+	flushURL         *url.URL           // 重置信号
+	pingURL          *url.URL           // PING信号
+	pongURL          *url.URL           // PONG信号
 	slotLimit        int32              // 槽位限制
 	tcpSlot          int32              // TCP连接数
 	udpSlot          int32              // UDP连接数
@@ -200,26 +200,6 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("decode: base64 decode failed: %w", err)
 	}
 	return c.xor(decoded), nil
-}
-
-// writeSignal 向隧道控制连接写入信号
-func (c *Common) writeSignal(signalURL *url.URL) error {
-	if c.ctx.Err() != nil {
-		return fmt.Errorf("writeSignal: context error: %w", c.ctx.Err())
-	}
-	if c.tunnelTCPConn == nil {
-		return fmt.Errorf("writeSignal: tunnel connection is nil")
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	_, err := c.tunnelTCPConn.Write(c.encode([]byte(signalURL.String())))
-	if err != nil {
-		return fmt.Errorf("writeSignal: write failed: %w", err)
-	}
-
-	return nil
 }
 
 // getAddress 解析和设置地址信息
@@ -631,9 +611,12 @@ func (c *Common) healthCheck() error {
 		// 连接池定期清理
 		if time.Since(c.lastClean) >= ReloadInterval {
 			// 发送清理信号到对端
-			if err := c.writeSignal(c.cleanURL); err != nil {
-				c.mu.Unlock()
-				return fmt.Errorf("healthCheck: write clean signal failed: %w", err)
+			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.cleanURL.String())))
+				if err != nil {
+					c.mu.Unlock()
+					return fmt.Errorf("healthCheck: write clean signal failed: %w", err)
+				}
 			}
 			c.tunnelPool.Clean()
 			c.lastClean = time.Now()
@@ -643,9 +626,12 @@ func (c *Common) healthCheck() error {
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
-			if err := c.writeSignal(c.flushURL); err != nil {
-				c.mu.Unlock()
-				return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
+			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.flushURL.String())))
+				if err != nil {
+					c.mu.Unlock()
+					return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
+				}
 			}
 			c.tunnelPool.Flush()
 			c.tunnelPool.ResetError()
@@ -661,9 +647,12 @@ func (c *Common) healthCheck() error {
 
 		// 发送PING信号
 		c.checkPoint = time.Now()
-		if err := c.writeSignal(c.pingURL); err != nil {
-			c.mu.Unlock()
-			return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
+		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pingURL.String())))
+			if err != nil {
+				c.mu.Unlock()
+				return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
+			}
 		}
 
 		c.mu.Unlock()
@@ -751,12 +740,20 @@ func (c *Common) commonTCPLoop() {
 
 			defer func() {
 				// 构建并发送关闭信号
-				if err := c.writeSignal(&url.URL{
+				closeURL := &url.URL{
 					Scheme:   "np",
 					Path:     url.PathEscape(id),
 					Fragment: "0", // 关闭隧道
-				}); err != nil {
-					c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
+				}
+
+				if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+					c.mu.Lock()
+					_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+					c.mu.Unlock()
+
+					if err != nil {
+						c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
+					}
 				}
 
 				remoteConn.SetReadDeadline(time.Time{})
@@ -778,14 +775,22 @@ func (c *Common) commonTCPLoop() {
 			defer c.cancelMap.Delete(id)
 
 			// 构建并发送启动信号
-			if err = c.writeSignal(&url.URL{
+			launchURL := &url.URL{
 				Scheme:   "np",
 				Host:     targetConn.RemoteAddr().String(),
 				Path:     url.PathEscape(id),
 				Fragment: "1", // TCP模式
-			}); err != nil {
-				c.logger.Error("commonTCPLoop: write launch signal failed: %v", err)
-				return
+			}
+
+			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				c.mu.Lock()
+				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				c.mu.Unlock()
+
+				if err != nil {
+					c.logger.Error("commonTCPLoop: write launch signal failed: %v", err)
+					return
+				}
 			}
 
 			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
@@ -871,12 +876,20 @@ func (c *Common) commonUDPLoop() {
 					c.cancelMap.Delete(id)
 
 					// 构建并发送关闭信号
-					if err := c.writeSignal(&url.URL{
+					closeURL := &url.URL{
 						Scheme:   "np",
 						Path:     url.PathEscape(id),
 						Fragment: "0", // 关闭隧道
-					}); err != nil {
-						c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
+					}
+
+					if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+						c.mu.Lock()
+						_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+						c.mu.Unlock()
+
+						if err != nil {
+							c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
+						}
 					}
 
 					// 重置池连接的读取超时
@@ -923,14 +936,21 @@ func (c *Common) commonUDPLoop() {
 			}(remoteConn, clientAddr, sessionKey, id)
 
 			// 构建并发送启动信号
-			if err = c.writeSignal(&url.URL{
+			launchURL := &url.URL{
 				Scheme:   "np",
 				Host:     clientAddr.String(),
 				Path:     url.PathEscape(id),
 				Fragment: "2", // UDP模式
-			}); err != nil {
-				c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
-				continue
+			}
+
+			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				c.mu.Lock()
+				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				c.mu.Unlock()
+				if err != nil {
+					c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
+					continue
+				}
 			}
 
 			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
@@ -1016,8 +1036,13 @@ func (c *Common) commonOnce() error {
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
 			case "i": // PING
-				if err := c.writeSignal(c.pongURL); err != nil {
-					return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
+				if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+					c.mu.Lock()
+					_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pongURL.String())))
+					c.mu.Unlock()
+					if err != nil {
+						return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
+					}
 				}
 			case "o": // PONG
 				// 发送检查点事件
@@ -1063,12 +1088,20 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 
 	defer func() {
 		// 构建并发送关闭信号
-		if err := c.writeSignal(&url.URL{
+		closeURL := &url.URL{
 			Scheme:   "np",
 			Path:     url.PathEscape(id),
 			Fragment: "0", // 关闭隧道
-		}); err != nil {
-			c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
+		}
+
+		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			c.mu.Lock()
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+			c.mu.Unlock()
+
+			if err != nil {
+				c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
+			}
 		}
 
 		remoteConn.SetReadDeadline(time.Time{})
@@ -1162,12 +1195,20 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	defer func() {
 		// 构建并发送关闭信号
-		if err := c.writeSignal(&url.URL{
+		closeURL := &url.URL{
 			Scheme:   "np",
 			Path:     url.PathEscape(id),
 			Fragment: "0", // 关闭隧道
-		}); err != nil {
-			c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
+		}
+
+		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			c.mu.Lock()
+			_, err := c.tunnelTCPConn.Write(c.encode([]byte(closeURL.String())))
+			c.mu.Unlock()
+
+			if err != nil {
+				c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
+			}
 		}
 
 		// 重置池连接的读取超时
