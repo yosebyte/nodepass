@@ -52,6 +52,10 @@ type Common struct {
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
+	cleanURL         *url.URL           // 清理信号URL
+	flushURL         *url.URL           // 刷新信号URL
+	pingURL          *url.URL           // PING信号URL
+	pongURL          *url.URL           // PONG信号URL
 	checkPoint       time.Time          // 检查点时间
 	lastClean        time.Time          // 上次清理时间
 	slotLimit        int32              // 槽位限制
@@ -614,9 +618,6 @@ func (c *Common) commonQueue() error {
 
 // healthCheck 共用健康度检查
 func (c *Common) healthCheck() error {
-	cleanURL := &url.URL{Scheme: "np", Fragment: "c"} // 连接池清理信号
-	flushURL := &url.URL{Scheme: "np", Fragment: "f"} // 连接池重置信号
-	pingURL := &url.URL{Scheme: "np", Fragment: "i"}  // PING信号
 	for {
 		if c.ctx.Err() != nil {
 			return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
@@ -630,7 +631,7 @@ func (c *Common) healthCheck() error {
 		// 连接池定期清理
 		if time.Since(c.lastClean) >= ReloadInterval {
 			// 发送清理信号到对端
-			if err := c.writeSignal(cleanURL); err != nil {
+			if err := c.writeSignal(c.cleanURL); err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write clean signal failed: %w", err)
 			}
@@ -642,7 +643,7 @@ func (c *Common) healthCheck() error {
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
-			if err := c.writeSignal(flushURL); err != nil {
+			if err := c.writeSignal(c.flushURL); err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
 			}
@@ -660,7 +661,7 @@ func (c *Common) healthCheck() error {
 
 		// 发送PING信号
 		c.checkPoint = time.Now()
-		if err := c.writeSignal(pingURL); err != nil {
+		if err := c.writeSignal(c.pingURL); err != nil {
 			c.mu.Unlock()
 			return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
 		}
@@ -961,7 +962,6 @@ func (c *Common) commonUDPLoop() {
 
 // commonOnce 共用处理单个请求
 func (c *Common) commonOnce() error {
-	pongURL := &url.URL{Scheme: "np", Fragment: "o"} // PONG信号
 	for {
 		// 等待连接池准备就绪
 		if !c.tunnelPool.Ready() {
@@ -1023,7 +1023,7 @@ func (c *Common) commonOnce() error {
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
 			case "i": // PING
-				if err := c.writeSignal(pongURL); err != nil {
+				if err := c.writeSignal(c.pongURL); err != nil {
 					return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
 				}
 			case "o": // PONG
