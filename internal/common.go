@@ -750,14 +750,12 @@ func (c *Common) commonTCPLoop() {
 			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 			defer func() {
-				// 发送关闭信号到对端
-				closeURL := &url.URL{
+				// 构建并发送关闭信号
+				if err := c.writeSignal(&url.URL{
 					Scheme:   "np",
 					Path:     url.PathEscape(id),
 					Fragment: "0", // 关闭隧道
-				}
-
-				if err := c.writeSignal(closeURL); err != nil {
+				}); err != nil {
 					c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
 				}
 
@@ -779,15 +777,13 @@ func (c *Common) commonTCPLoop() {
 			})
 			defer c.cancelMap.Delete(id)
 
-			// 构建并发送启动URL到客户端
-			launchURL := &url.URL{
+			// 构建并发送启动信号
+			if err = c.writeSignal(&url.URL{
 				Scheme:   "np",
 				Host:     targetConn.RemoteAddr().String(),
 				Path:     url.PathEscape(id),
 				Fragment: "1", // TCP模式
-			}
-
-			if err = c.writeSignal(launchURL); err != nil {
+			}); err != nil {
 				c.logger.Error("commonTCPLoop: write launch signal failed: %v", err)
 				return
 			}
@@ -874,14 +870,12 @@ func (c *Common) commonUDPLoop() {
 					cancel()
 					c.cancelMap.Delete(id)
 
-					// 发送关闭信号到对端
-					closeURL := &url.URL{
+					// 构建并发送关闭信号
+					if err := c.writeSignal(&url.URL{
 						Scheme:   "np",
 						Path:     url.PathEscape(id),
 						Fragment: "0", // 关闭隧道
-					}
-
-					if err := c.writeSignal(closeURL); err != nil {
+					}); err != nil {
 						c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
 					}
 
@@ -928,15 +922,13 @@ func (c *Common) commonUDPLoop() {
 				}
 			}(remoteConn, clientAddr, sessionKey, id)
 
-			// 构建并发送启动URL到客户端
-			launchURL := &url.URL{
+			// 构建并发送启动信号
+			if err = c.writeSignal(&url.URL{
 				Scheme:   "np",
 				Host:     clientAddr.String(),
 				Path:     url.PathEscape(id),
 				Fragment: "2", // UDP模式
-			}
-
-			if err = c.writeSignal(launchURL); err != nil {
+			}); err != nil {
 				c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
 				continue
 			}
@@ -1070,14 +1062,12 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 	defer func() {
-		// 发送关闭信号到对端
-		closeURL := &url.URL{
+		// 构建并发送关闭信号
+		if err := c.writeSignal(&url.URL{
 			Scheme:   "np",
 			Path:     url.PathEscape(id),
 			Fragment: "0", // 关闭隧道
-		}
-
-		if err := c.writeSignal(closeURL); err != nil {
+		}); err != nil {
 			c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
 		}
 
@@ -1171,14 +1161,12 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	defer func() {
-		// 发送关闭信号到对端
-		closeURL := &url.URL{
+		// 构建并发送关闭信号
+		if err := c.writeSignal(&url.URL{
 			Scheme:   "np",
 			Path:     url.PathEscape(id),
 			Fragment: "0", // 关闭隧道
-		}
-
-		if err := c.writeSignal(closeURL); err != nil {
+		}); err != nil {
 			c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
 		}
 
