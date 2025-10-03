@@ -749,22 +749,7 @@ func (c *Common) commonTCPLoop() {
 
 			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
-			// 注册取消函数
-			c.cancelMap.Store(id, func() {
-				if targetConn != nil {
-					targetConn.SetReadDeadline(time.Now())
-				}
-				if remoteConn != nil {
-					remoteConn.SetReadDeadline(time.Now())
-				}
-			})
-			defer c.cancelMap.Delete(id)
-
 			defer func() {
-				remoteConn.SetReadDeadline(time.Time{})
-				c.tunnelPool.Put(id, remoteConn)
-				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-
 				// 发送关闭信号到对端
 				closeURL := &url.URL{
 					Scheme:   "np",
@@ -775,9 +760,24 @@ func (c *Common) commonTCPLoop() {
 				if err := c.writeSignal(closeURL); err != nil {
 					c.logger.Error("commonTCPLoop: write close signal failed: %v", err)
 				}
+
+				remoteConn.SetReadDeadline(time.Time{})
+				c.tunnelPool.Put(id, remoteConn)
+				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 			}()
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
+
+			// 注册取消函数
+			c.cancelMap.Store(id, func() {
+				if targetConn != nil {
+					targetConn.SetReadDeadline(time.Now())
+				}
+				if remoteConn != nil {
+					remoteConn.SetReadDeadline(time.Now())
+				}
+			})
+			defer c.cancelMap.Delete(id)
 
 			// 构建并发送启动URL到客户端
 			launchURL := &url.URL{
@@ -873,10 +873,6 @@ func (c *Common) commonUDPLoop() {
 				defer func() {
 					cancel()
 					c.cancelMap.Delete(id)
-					// 重置池连接的读取超时
-					remoteConn.SetReadDeadline(time.Time{})
-					c.tunnelPool.Put(id, remoteConn)
-					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 
 					// 发送关闭信号到对端
 					closeURL := &url.URL{
@@ -888,6 +884,11 @@ func (c *Common) commonUDPLoop() {
 					if err := c.writeSignal(closeURL); err != nil {
 						c.logger.Error("commonUDPLoop: write close signal failed: %v", err)
 					}
+
+					// 重置池连接的读取超时
+					remoteConn.SetReadDeadline(time.Time{})
+					c.tunnelPool.Put(id, remoteConn)
+					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 
 					// 清理UDP会话
 					c.targetUDPSession.Delete(sessionKey)
@@ -1069,10 +1070,6 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 	defer func() {
-		remoteConn.SetReadDeadline(time.Time{})
-		c.tunnelPool.Put(id, remoteConn)
-		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-
 		// 发送关闭信号到对端
 		closeURL := &url.URL{
 			Scheme:   "np",
@@ -1083,6 +1080,10 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		if err := c.writeSignal(closeURL); err != nil {
 			c.logger.Error("commonTCPOnce: write close signal failed: %v", err)
 		}
+
+		remoteConn.SetReadDeadline(time.Time{})
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -1170,11 +1171,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	defer func() {
-		// 重置池连接的读取超时
-		remoteConn.SetReadDeadline(time.Time{})
-		c.tunnelPool.Put(id, remoteConn)
-		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-
 		// 发送关闭信号到对端
 		closeURL := &url.URL{
 			Scheme:   "np",
@@ -1185,6 +1181,11 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		if err := c.writeSignal(closeURL); err != nil {
 			c.logger.Error("commonUDPOnce: write close signal failed: %v", err)
 		}
+
+		// 重置池连接的读取超时
+		remoteConn.SetReadDeadline(time.Time{})
+		c.tunnelPool.Put(id, remoteConn)
+		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	var targetConn net.Conn
