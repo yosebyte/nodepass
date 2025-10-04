@@ -766,10 +766,7 @@ func (c *Common) commonTCPLoop() {
 			// 注册取消函数
 			c.cancelMap.Store(id, func() {
 				if targetConn != nil {
-					targetConn.SetReadDeadline(time.Now())
-				}
-				if remoteConn != nil {
-					remoteConn.SetReadDeadline(time.Now())
+					targetConn.Close()
 				}
 			})
 			defer c.cancelMap.Delete(id)
@@ -909,7 +906,9 @@ func (c *Common) commonUDPLoop() {
 				// 通过读超时机制实现取消
 				go func() {
 					<-ctx.Done()
-					remoteConn.SetReadDeadline(time.Now())
+					if remoteConn != nil {
+						remoteConn.SetReadDeadline(time.Now())
+					}
 				}()
 
 				for {
@@ -1133,10 +1132,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	// 注册取消函数
 	c.cancelMap.Store(id, func() {
 		if targetConn != nil {
-			targetConn.SetReadDeadline(time.Now())
-		}
-		if remoteConn != nil {
-			remoteConn.SetReadDeadline(time.Now())
+			targetConn.Close()
 		}
 	})
 	defer c.cancelMap.Delete(id)
@@ -1255,18 +1251,23 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	done := make(chan struct{}, 2)
 
+	// 通过连接关闭和读超时机制实现取消
+	go func() {
+		<-ctx.Done()
+		if targetConn != nil {
+			targetConn.Close()
+		}
+		if remoteConn != nil {
+			remoteConn.SetReadDeadline(time.Now())
+		}
+	}()
+
 	go func() {
 		defer func() { done <- struct{}{} }()
 
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
-
-		// 通过读超时机制实现取消
-		go func() {
-			<-ctx.Done()
-			remoteConn.SetReadDeadline(time.Now())
-		}()
 
 		for {
 			// 从隧道连接读取数据
@@ -1298,12 +1299,6 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
-
-		// 通过读超时机制实现取消
-		go func() {
-			<-ctx.Done()
-			targetConn.SetReadDeadline(time.Now())
-		}()
 
 		for {
 			// 从目标UDP连接读取数据
