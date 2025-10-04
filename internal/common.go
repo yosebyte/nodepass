@@ -1012,7 +1012,7 @@ func (c *Common) commonOnce() error {
 			// 处理信号
 			switch signalURL.Fragment {
 			case "0": // 关闭隧道
-				c.commonOnceKiller(signalURL)
+				go c.commonOnceClose(signalURL)
 			case "1": // TCP
 				go c.commonTCPOnce(signalURL)
 			case "2": // UDP
@@ -1344,11 +1344,11 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	<-done
 }
 
-// commonOnceKiller 共用处理关闭隧道请求
-func (c *Common) commonOnceKiller(signalURL *url.URL) {
+// commonOnceClose 共用处理关闭隧道请求
+func (c *Common) commonOnceClose(signalURL *url.URL) {
 	id := strings.TrimPrefix(signalURL.Path, "/")
 	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("commonOnceKiller: unescape id failed: %v", err)
+		c.logger.Error("commonOnceClose: unescape id failed: %v", err)
 		return
 	} else {
 		id = unescapedID
