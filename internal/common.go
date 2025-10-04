@@ -777,6 +777,9 @@ func (c *Common) commonTCPLoop() {
 				if targetConn != nil {
 					targetConn.Close()
 				}
+				if remoteConn != nil {
+					remoteConn.SetReadDeadline(time.Now())
+				}
 			}()
 
 			// 构建并发送启动信号
@@ -1150,6 +1153,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		<-ctx.Done()
 		if targetConn != nil {
 			targetConn.Close()
+		}
+		if remoteConn != nil {
+			remoteConn.SetReadDeadline(time.Now())
 		}
 	}()
 
