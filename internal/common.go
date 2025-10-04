@@ -763,13 +763,21 @@ func (c *Common) commonTCPLoop() {
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
-			// 注册取消函数
-			c.cancelMap.Store(id, func() {
+			// 创建子上下文用于取消
+			ctx, cancel := context.WithCancel(c.ctx)
+			c.cancelMap.Store(id, cancel)
+			defer func() {
+				cancel()
+				c.cancelMap.Delete(id)
+			}()
+
+			// 通过连接关闭机制实现取消
+			go func() {
+				<-ctx.Done()
 				if targetConn != nil {
 					targetConn.Close()
 				}
-			})
-			defer c.cancelMap.Delete(id)
+			}()
 
 			// 构建并发送启动信号
 			launchURL := &url.URL{
@@ -1129,13 +1137,21 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
-	// 注册取消函数
-	c.cancelMap.Store(id, func() {
+	// 创建子上下文用于取消
+	ctx, cancel := context.WithCancel(c.ctx)
+	c.cancelMap.Store(id, cancel)
+	defer func() {
+		cancel()
+		c.cancelMap.Delete(id)
+	}()
+
+	// 通过连接关闭机制实现取消
+	go func() {
+		<-ctx.Done()
 		if targetConn != nil {
 			targetConn.Close()
 		}
-	})
-	defer c.cancelMap.Delete(id)
+	}()
 
 	// 发送PROXY v1
 	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
