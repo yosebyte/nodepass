@@ -286,9 +286,9 @@ func (c *Common) getReadTimeout(parsedURL *url.URL) {
 		if value, err := time.ParseDuration(timeout); err == nil && value > 0 {
 			c.readTimeout = value
 		}
+		c.poolReuse = true
 	} else {
 		c.readTimeout = defaultReadTimeout
-		c.poolReuse = true
 	}
 }
 
