@@ -125,25 +125,39 @@ Example:
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 ```
 
-## Data Read Timeout
-Data read timeout can be set using the URL query parameter `read`, with units in seconds or minutes:
-- `read`: Data read timeout (default: 1 hour)
-  - Value format: integer followed by optional unit (`s` for seconds, `m` for minutes)
-  - Examples: `30s` (30 seconds), `5m` (5 minutes), `1h` (1 hour)
+## Data Read Timeout and Connection Reuse
+
+The `read` parameter controls both data read timeout and connection pool reuse behavior:
+
+- `read`: Data read timeout and connection reuse (default: 0, meaning no timeout and no connection recycling)
+  - Value 0 or omitted: No data read timeout, connections are not recycled to the pool after data transfer completes
+  - Positive integer with time unit: Sets read timeout and enables connection reuse
+    - Value format: integer followed by unit (`s` for seconds, `m` for minutes, `h` for hours)
+    - Examples: `30s` (30 seconds), `5m` (5 minutes), `1h` (1 hour)
+    - If no data is received within the timeout period, the connection is closed
+    - After data transfer completes, the connection is recycled to the pool for reuse
   - Applies to both client and server modes
-  - If no data is received within the timeout period, the connection is closed
 
 Example:
 ```bash
-# Set data read timeout to 5 minutes
+# Set data read timeout to 5 minutes, enable connection reuse
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
 
-# Set data read timeout to 30 seconds for fast-response applications
+# Set data read timeout to 30 seconds for fast-response applications, enable connection reuse
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
 
-# Set data read timeout to 30 minutes for long-running transfers
-nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30m"
+# Set data read timeout to 1 hour for long-running transfers, enable connection reuse
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=1h"
+
+# Default behavior: no timeout and no connection recycling (omit read parameter or set to 0)
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
 ```
+
+**Connection Reuse Use Cases:**
+- **HTTP Short Connections**: Set reasonable read timeout and enable connection reuse for frequent short connections to improve pool utilization
+- **Long Connection Optimization**: Set larger timeout values for long-lived connections while avoiding resource waste
+- **Resource Control**: Enable connection recycling by setting timeout in scenarios requiring strict connection lifecycle control
+- **Default Mode**: Use the default no-timeout no-recycling mode for scenarios requiring maximum flexibility
 
 ## Rate Limiting
 NodePass supports bandwidth rate limiting for traffic control through the `rate` parameter. This feature helps prevent network congestion and ensures fair resource allocation across multiple connections.
@@ -263,7 +277,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `min`     | Minimum pool capacity | `64`    |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity | `1024`  |   O    |   X    |   X    |
 | `mode`    | Run mode control      | `0`     |   O    |   O    |   X    |
-| `read`    | Data read timeout     | `1h`    |   O    |   O    |   X    |
+| `read`    | Data read timeout and connection reuse | `0` |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit  | `0`     |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |
 | `proxy`   | PROXY protocol support| `0`     |   O    |   O    |   X    |
