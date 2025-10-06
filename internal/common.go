@@ -78,6 +78,7 @@ var (
 	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 10*time.Second)       // 握手超时
 	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 30*time.Second)        // TCP拨号超时
 	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second)        // UDP拨号超时
+	udpReadTimeout   = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
 	poolGetTimeout   = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
 	minPoolInterval  = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
 	maxPoolInterval  = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
@@ -856,7 +857,7 @@ func (c *Common) commonUDPLoop() {
 
 				buffer := c.getUDPBuffer()
 				defer c.putUDPBuffer(buffer)
-				reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
+				reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: udpReadTimeout}
 
 				for {
 					// 从池连接读取数据
@@ -1162,7 +1163,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
-		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: c.readTimeout}
+		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: udpReadTimeout}
 
 		for {
 			// 从隧道连接读取数据
@@ -1193,7 +1194,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 		buffer := c.getUDPBuffer()
 		defer c.putUDPBuffer(buffer)
-		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
+		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 
 		for {
 			// 从目标UDP连接读取数据
@@ -1415,7 +1416,7 @@ func (c *Common) singleUDPLoop() error {
 
 				buffer := c.getUDPBuffer()
 				defer c.putUDPBuffer(buffer)
-				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: c.readTimeout}
+				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 
 				for {
 					if c.ctx.Err() != nil {
