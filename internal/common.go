@@ -840,6 +840,10 @@ func (c *Common) commonUDPLoop() {
 
 			go func(remoteConn net.Conn, clientAddr *net.UDPAddr, sessionKey, id string) {
 				defer func() {
+					// 清理UDP会话和释放槽位
+					c.targetUDPSession.Delete(sessionKey)
+					c.releaseSlot(true)
+
 					// 池连接关闭或复用
 					if !c.poolReuse && remoteConn != nil {
 						remoteConn.Close()
@@ -849,10 +853,6 @@ func (c *Common) commonUDPLoop() {
 					remoteConn.SetReadDeadline(time.Time{})
 					c.tunnelPool.Put(id, remoteConn)
 					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
-
-					// 清理UDP会话
-					c.targetUDPSession.Delete(sessionKey)
-					c.releaseSlot(true)
 				}()
 
 				buffer := c.getUDPBuffer()
@@ -1118,6 +1118,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	var targetConn net.Conn
 	sessionKey := signalURL.Host
+	isNewSession := false
 
 	// 获取或创建目标UDP会话
 	if session, ok := c.targetUDPSession.Load(sessionKey); ok {
@@ -1125,9 +1126,18 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		c.logger.Debug("Using UDP session: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	} else {
 		// 创建新的会话
+		isNewSession = true
+
+		// 尝试获取UDP连接槽位
+		if !c.tryAcquireSlot(true) {
+			c.logger.Error("commonUDPOnce: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
+			return
+		}
+
 		newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 		if err != nil {
 			c.logger.Error("commonUDPOnce: dialTimeout failed: %v", err)
+			c.releaseSlot(true)
 			return
 		}
 		targetConn = &conn.StatConn{Conn: newSession, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
@@ -1135,24 +1145,16 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 	}
 
-	// 尝试获取UDP连接槽位
-	if !c.tryAcquireSlot(true) {
-		c.logger.Error("commonUDPOnce: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
-		c.targetUDPSession.Delete(sessionKey)
-		if targetConn != nil {
-			targetConn.Close()
-		}
-		return
+	if isNewSession {
+		defer func() {
+			// 清理UDP会话和释放槽位
+			c.targetUDPSession.Delete(sessionKey)
+			if targetConn != nil {
+				targetConn.Close()
+			}
+			c.releaseSlot(true)
+		}()
 	}
-
-	defer func() {
-		// 清理UDP会话
-		c.targetUDPSession.Delete(sessionKey)
-		if targetConn != nil {
-			targetConn.Close()
-		}
-		c.releaseSlot(true)
-	}()
 
 	c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), targetConn.LocalAddr())
 
