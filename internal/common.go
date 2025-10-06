@@ -707,21 +707,19 @@ func (c *Common) commonTCPLoop() {
 		c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 		go func(targetConn net.Conn) {
-			// 尝试获取TCP连接槽位
-			if !c.tryAcquireSlot(false) {
-				c.logger.Error("commonTCPLoop: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
-				if targetConn != nil {
-					targetConn.Close()
-				}
-				return
-			}
-
 			defer func() {
 				if targetConn != nil {
 					targetConn.Close()
 				}
-				c.releaseSlot(false)
 			}()
+
+			// 尝试获取TCP连接槽位
+			if !c.tryAcquireSlot(false) {
+				c.logger.Error("commonTCPLoop: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
+				return
+			}
+
+			defer c.releaseSlot(false)
 
 			// 从连接池获取连接
 			id, remoteConn, err := c.tunnelPool.ServerGet(poolGetTimeout)
@@ -1038,6 +1036,14 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
+	// 尝试获取TCP连接槽位
+	if !c.tryAcquireSlot(false) {
+		c.logger.Error("commonTCPOnce: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
+		return
+	}
+
+	defer c.releaseSlot(false)
+
 	// 连接到目标TCP地址
 	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
@@ -1045,20 +1051,10 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 		return
 	}
 
-	// 尝试获取TCP连接槽位
-	if !c.tryAcquireSlot(false) {
-		c.logger.Error("commonTCPOnce: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
-		if targetConn != nil {
-			targetConn.Close()
-		}
-		return
-	}
-
 	defer func() {
 		if targetConn != nil {
 			targetConn.Close()
 		}
-		c.releaseSlot(false)
 	}()
 
 	targetConn = &conn.StatConn{Conn: targetConn, RX: &c.tcpRX, TX: &c.tcpTX, Rate: c.rateLimiter}
@@ -1301,21 +1297,19 @@ func (c *Common) singleTCPLoop() error {
 		c.logger.Debug("Tunnel connection: %v <-> %v", tunnelConn.LocalAddr(), tunnelConn.RemoteAddr())
 
 		go func(tunnelConn net.Conn) {
-			// 尝试获取TCP连接槽位
-			if !c.tryAcquireSlot(false) {
-				c.logger.Error("singleTCPLoop: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
-				if tunnelConn != nil {
-					tunnelConn.Close()
-				}
-				return
-			}
-
 			defer func() {
-				c.releaseSlot(false)
 				if tunnelConn != nil {
 					tunnelConn.Close()
 				}
 			}()
+
+			// 尝试获取TCP连接槽位
+			if !c.tryAcquireSlot(false) {
+				c.logger.Error("singleTCPLoop: TCP slot limit reached: %v/%v", c.tcpSlot, c.slotLimit)
+				return
+			}
+
+			defer c.releaseSlot(false)
 
 			// 尝试建立目标连接
 			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
