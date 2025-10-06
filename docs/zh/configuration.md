@@ -303,6 +303,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
+| `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
 | `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
@@ -354,6 +355,12 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 对于发送大UDP数据包的应用增加此值
   - 默认值(8192)适用于大多数情况
   - 考虑为媒体流或游戏服务器增加到16384或更高
+
+- `NP_UDP_READ_TIMEOUT`：UDP读取操作超时
+  - 默认值(30s)适用于大多数UDP应用场景
+  - 控制UDP连接在无数据传输时的最大等待时间
+  - 对于实时性要求高的应用（如游戏、VoIP）可以适当减小此值以快速检测断线
+  - 对于允许间歇性传输的应用可以增加此值以避免误判超时
 
 - `NP_UDP_DIAL_TIMEOUT`：UDP连接建立超时
   - 默认值(10s)为大多数应用提供良好平衡
