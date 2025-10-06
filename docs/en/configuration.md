@@ -302,6 +302,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
+| `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
 | `NP_POOL_GET_TIMEOUT` | Timeout for getting connections from pool | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
@@ -353,6 +354,12 @@ For applications relying heavily on UDP traffic:
   - Increase for applications sending large UDP packets
   - Default (8192) works well for most cases
   - Consider increasing to 16384 or higher for media streaming or game servers
+
+- `NP_UDP_READ_TIMEOUT`: Timeout for UDP read operations
+  - Default (30s) is suitable for most UDP application scenarios
+  - Controls the maximum wait time for UDP connections when no data is being transferred
+  - For real-time applications (e.g., gaming, VoIP), consider reducing this value to quickly detect disconnections
+  - For applications allowing intermittent transmission, increase this value to avoid false timeout detection
 
 - `NP_UDP_DIAL_TIMEOUT`: Timeout for establishing UDP connections
   - Default (10s) provides good balance for most applications
