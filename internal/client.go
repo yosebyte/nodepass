@@ -45,6 +45,10 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 					return &buf
 				},
 			},
+			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
+			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
+			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
+			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
@@ -177,7 +181,7 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 2 * reportInterval})
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 3 * reportInterval})
 	c.tunnelTCPConn.SetKeepAlive(true)
 	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 

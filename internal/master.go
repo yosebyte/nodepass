@@ -38,9 +38,7 @@ const (
 	apiKeyID       = "********"             // API Key的特殊ID
 	tcpingSemLimit = 10                     // TCPing最大并发数
 	baseDuration   = 100 * time.Millisecond // 基准持续时间
-	maxTagsCount   = 50                     // 最大标签数量
-	maxTagKeyLen   = 100                    // 标签键最大长度
-	maxTagValueLen = 500                    // 标签值最大长度
+	maxValueLen    = 256                    // 字符长度限制
 )
 
 // Swagger UI HTML模板
@@ -202,34 +200,6 @@ func (m *Master) performTCPing(target string) *TCPingResult {
 	result.Latency = time.Since(start).Milliseconds()
 	conn.Close()
 	return result
-}
-
-// validateTags 验证标签的有效性
-func validateTags(tags []Tag) error {
-	if len(tags) > maxTagsCount {
-		return fmt.Errorf("too many tags: maximum %d allowed", maxTagsCount)
-	}
-
-	keySet := make(map[string]bool)
-	for _, tag := range tags {
-		if len(tag.Key) == 0 {
-			return fmt.Errorf("tag key cannot be empty")
-		}
-		if len(tag.Key) > maxTagKeyLen {
-			return fmt.Errorf("tag key exceeds maximum length %d", maxTagKeyLen)
-		}
-		if len(tag.Value) > maxTagValueLen {
-			return fmt.Errorf("tag value for key exceeds maximum length %d", maxTagValueLen)
-		}
-
-		// 检查重复的键
-		if keySet[tag.Key] {
-			return fmt.Errorf("duplicate tag key: '%s'", tag.Key)
-		}
-		keySet[tag.Key] = true
-	}
-
-	return nil
 }
 
 // InstanceLogWriter 实例日志写入器
@@ -764,6 +734,8 @@ func (m *Master) loadState() {
 			instance.Config = m.generateConfigURL(instance)
 		}
 
+		instance.Tags = nil
+
 		m.instances.Store(id, instance)
 
 		// 处理自启动
@@ -806,8 +778,8 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 更新主控别名
-		if len(reqData.Alias) > maxTagKeyLen {
-			httpError(w, fmt.Sprintf("Master alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+		if len(reqData.Alias) > maxValueLen {
+			httpError(w, fmt.Sprintf("Master alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
 			return
 		}
 		m.alias = reqData.Alias
@@ -1041,7 +1013,6 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
 			Restart: true,
-			Tags:    []Tag{},
 			stopped: make(chan struct{}),
 		}
 
@@ -1107,7 +1078,6 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
-		Tags    []Tag  `json:"tags,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -1118,44 +1088,6 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
-			// 处理标签更新
-			if reqData.Tags != nil {
-				if err := validateTags(reqData.Tags); err != nil {
-					httpError(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-
-				// 创建现有标签的映射表
-				existingTags := make(map[string]Tag)
-				for _, tag := range instance.Tags {
-					existingTags[tag.Key] = tag
-				}
-
-				for _, tag := range reqData.Tags {
-					if tag.Value == "" {
-						// value为空，删除key
-						delete(existingTags, tag.Key)
-					} else {
-						// value非空，更新或添加key
-						existingTags[tag.Key] = tag
-					}
-				}
-
-				// 将映射表转换回标签数组
-				newTags := make([]Tag, 0, len(existingTags))
-				for _, tag := range existingTags {
-					newTags = append(newTags, tag)
-				}
-
-				instance.Tags = newTags
-				m.instances.Store(id, instance)
-				go m.saveState()
-				m.logger.Info("Tags updated: [%v]", instance.ID)
-
-				// 发送标签变更事件
-				m.sendSSEEvent("update", instance)
-			}
-
 			// 重置流量统计
 			if reqData.Action == "reset" {
 				instance.TCPRX = 0
@@ -1183,8 +1115,8 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 
 			// 更新实例别名
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
-				if len(reqData.Alias) > maxTagKeyLen {
-					httpError(w, fmt.Sprintf("Instance alias exceeds maximum length %d", maxTagKeyLen), http.StatusBadRequest)
+				if len(reqData.Alias) > maxValueLen {
+					httpError(w, fmt.Sprintf("Instance alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
 					return
 				}
 				instance.Alias = reqData.Alias
@@ -1957,7 +1889,6 @@ func (m *Master) generateOpenAPISpec() string {
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "config": {"type": "string", "description": "Instance configuration URL"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
-	  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1979,8 +1910,7 @@ func (m *Master) generateOpenAPISpec() string {
 		"properties": {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-		  "restart": {"type": "boolean", "description": "Instance restart policy"},
-		  "tags": {"type": "array", "items": {"$ref": "#/components/schemas/Tag"}, "description": "Tag array"}
+		  "restart": {"type": "boolean", "description": "Instance restart policy"}
 		}
 	  },
 	  "PutInstanceRequest": {
@@ -2025,14 +1955,6 @@ func (m *Master) generateOpenAPISpec() string {
 		  "connected": {"type": "boolean", "description": "Is connected"},
 		  "latency": {"type": "integer", "format": "int64", "description": "Latency in milliseconds"},
 		  "error": {"type": "string", "nullable": true, "description": "Error message"}
-		}
-	  },
-	  "Tag": {
-		"type": "object",
-		"required": ["key", "value"],
-		"properties": {
-		  "key": {"type": "string", "description": "Tag key"},
-		  "value": {"type": "string", "description": "Tag value"}
 		}
 	  }
 	}

@@ -47,6 +47,10 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 					return &buf
 				},
 			},
+			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
+			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
+			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
+			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 		tlsConfig: tlsConfig,
 	}
@@ -222,7 +226,7 @@ func (s *Server) tunnelHandshake() error {
 		}
 
 		s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-		s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: 2 * reportInterval})
+		s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: 3 * reportInterval})
 		s.tunnelTCPConn.SetKeepAlive(true)
 		s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
 

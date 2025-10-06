@@ -125,25 +125,39 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 ```
 
-## 数据读取超时
-数据读取超时可以通过URL查询参数`read`设置，单位为秒或分钟：
-- `read`: 数据读取超时时间（默认: 1小时）
-  - 值格式：整数后跟可选单位（`s`表示秒，`m`表示分钟）
-  - 示例：`30s`（30秒），`5m`（5分钟），`1h`（1小时）
+## 数据读取超时与连接重用
+
+`read`参数用于控制数据读取超时时间和连接池连接的重用行为：
+
+- `read`: 数据读取超时时间（默认: 0，表示无超时且不回收连接）
+  - 值为0或省略：无数据读取超时，连接在数据传输完成后不回收到连接池
+  - 正整数加时间单位：设置读取超时时间，并启用连接重用
+    - 值格式：整数后跟单位（`s`表示秒，`m`表示分钟，`h`表示小时）
+    - 示例：`30s`（30秒），`5m`（5分钟），`1h`（1小时）
+    - 如果在超时时间内未接收到数据，连接将被关闭
+    - 数据传输完成后，连接将被回收到连接池供重用
   - 适用于客户端和服务端模式
-  - 如果在超时时间内未接收到数据，连接将被关闭
 
 示例：
 ```bash
-# 设置数据读取超时为5分钟
+# 设置数据读取超时为5分钟，启用连接重用
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
 
-# 设置数据读取超时为30秒，适用于快速响应应用
+# 设置数据读取超时为30秒，适用于快速响应应用，启用连接重用
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
 
-# 设置数据读取超时为30分钟，适用于长时间传输
-nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30m"
+# 设置数据读取超时为1小时，适用于长时间传输，启用连接重用
+nodepass "client://server.example.com:10101/127.0.0.1:8080?read=1h"
+
+# 默认行为：无超时且不回收连接（省略read参数或设置为0）
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
 ```
+
+**连接重用使用场景：**
+- **HTTP短连接**：为频繁的短连接设置合理的读取超时并启用连接重用，提高连接池利用率
+- **长连接优化**：为长时间保持的连接设置较大的超时值，同时避免资源浪费
+- **资源控制**：在需要严格控制连接生命周期的场景下，通过设置超时启用连接回收
+- **默认模式**：对于需要最大灵活性的场景，使用默认的无超时不回收模式
 
 ## 速率限制
 NodePass支持通过`rate`参数进行带宽速率限制，用于流量控制。此功能有助于防止网络拥塞，确保多个连接间的公平资源分配。
@@ -263,7 +277,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `min`     | 最小连接池容量       | `64`      |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       | `1024`    |   O    |   X    |   X    |
 | `mode`    | 运行模式控制         | `0`       |   O    |   O    |   X    |
-| `read`    | 读取超时时间         | `1h`      |   O    |   O    |   X    |
+| `read`    | 数据读取超时与连接重用 | `0`     |   O    |   O    |   X    |
 | `rate`    | 带宽速率限制         | `0`       |   O    |   O    |   X    |
 | `slot`    | 最大连接数限制       | `65536`   |   O    |   O    |   X    |
 | `proxy`   | PROXY协议支持        | `0`       |   O    |   O    |   X    |
@@ -286,12 +300,12 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | 变量 | 描述 | 默认值 | 示例 |
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
-| `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 32768 | `export NP_TCP_DATA_BUF_SIZE=65536` |
+| `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
-| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 30s | `export NP_POOL_GET_TIMEOUT=60s` |
+| `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
 | `NP_REPORT_INTERVAL` | 健康检查报告间隔 | 5s | `export NP_REPORT_INTERVAL=10s` |
