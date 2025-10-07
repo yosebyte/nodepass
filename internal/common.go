@@ -283,9 +283,43 @@ func (c *Common) nextTargetAddr() {
 	}
 
 	// 轮询下一个地址
-	newIdx := max((atomic.AddInt32(&c.targetIdx, 1)-1)%int32(len(c.targetTCPAddrs)), 0)
+	newIdx := atomic.AddInt32(&c.targetIdx, 1) % int32(len(c.targetTCPAddrs))
 	c.targetTCPAddr = c.targetTCPAddrs[newIdx]
 	c.targetUDPAddr = c.targetUDPAddrs[newIdx]
+}
+
+// dialWithRotation 轮询拨号到目标地址组
+func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Conn, error) {
+	maxRetries := max(len(c.targetTCPAddrs), 1)
+	var lastErr error
+
+	for i := range maxRetries {
+		// 故障转移
+		if i > 0 {
+			c.nextTargetAddr()
+		}
+
+		var targetAddr string
+		if network == "tcp" {
+			targetAddr = c.targetTCPAddr.String()
+		} else {
+			targetAddr = c.targetUDPAddr.String()
+		}
+
+		// 负载均衡
+		conn, err := net.DialTimeout(network, targetAddr, timeout)
+		if err == nil {
+			c.nextTargetAddr()
+			return conn, nil
+		}
+
+		lastErr = err
+	}
+
+	if maxRetries > 1 {
+		return nil, fmt.Errorf("dialWithRotation: all %d targets failed: %w", maxRetries, lastErr)
+	}
+	return nil, lastErr
 }
 
 // getTunnelKey 从URL中获取隧道密钥
@@ -1090,13 +1124,10 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 
 	defer c.releaseSlot(false)
 
-	// 轮询下一个目标地址
-	c.nextTargetAddr()
-
 	// 连接到目标TCP地址
-	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
+	targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
 	if err != nil {
-		c.logger.Error("commonTCPOnce: dialTimeout failed: %v", err)
+		c.logger.Error("commonTCPOnce: dialWithRotation failed: %v", err)
 		return
 	}
 
@@ -1179,12 +1210,10 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			return
 		}
 
-		// 轮询下一个目标地址
-		c.nextTargetAddr()
-
-		newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+		// 创建新的会话
+		newSession, err := c.dialWithRotation("udp", udpDialTimeout)
 		if err != nil {
-			c.logger.Error("commonUDPOnce: dialTimeout failed: %v", err)
+			c.logger.Error("commonUDPOnce: dialWithRotation failed: %v", err)
 			c.releaseSlot(true)
 			return
 		}
@@ -1363,13 +1392,10 @@ func (c *Common) singleTCPLoop() error {
 
 			defer c.releaseSlot(false)
 
-			// 轮询下一个目标地址
-			c.nextTargetAddr()
-
 			// 尝试建立目标连接
-			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
+			targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
 			if err != nil {
-				c.logger.Error("singleTCPLoop: dialTimeout failed: %v", err)
+				c.logger.Error("singleTCPLoop: dialWithRotation failed: %v", err)
 				return
 			}
 
@@ -1445,13 +1471,10 @@ func (c *Common) singleUDPLoop() error {
 				continue
 			}
 
-			// 轮询下一个目标地址
-			c.nextTargetAddr()
-
 			// 创建新的会话
-			newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+			newSession, err := c.dialWithRotation("udp", udpDialTimeout)
 			if err != nil {
-				c.logger.Error("singleUDPLoop: dialTimeout failed: %v", err)
+				c.logger.Error("singleUDPLoop: dialWithRotation failed: %v", err)
 				c.releaseSlot(true)
 				c.putUDPBuffer(buffer)
 				continue
