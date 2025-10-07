@@ -235,9 +235,84 @@ This setup:
 - Enables developers to access environments without direct network exposure
 - Maps remote services to different local ports for easy identification
 
+## High Availability and Load Balancing
+
+### Example 14: Multi-Backend Server Load Balancing
+
+Use target address groups for even traffic distribution and automatic failover:
+
+```bash
+# Server side: Configure 3 backend web servers
+nodepass "server://0.0.0.0:10101/web1.internal:8080,web2.internal:8080,web3.internal:8080?mode=2&tls=1&log=info"
+
+# Client side: Connect to server
+nodepass "client://server.example.com:10101/127.0.0.1:8080?log=info"
+```
+
+This configuration:
+- Automatically distributes traffic across 3 backend servers using round-robin for load balancing
+- Automatically switches to other available servers when one backend fails
+- Automatically resumes sending traffic to recovered servers
+- Uses TLS encryption to secure the tunnel
+
+### Example 15: Database Primary-Replica Failover
+
+Configure primary and replica database instances for high availability access:
+
+```bash
+# Client side: Configure primary and replica database addresses (single-end forwarding mode)
+nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?mode=1&log=warn"
+```
+
+This setup:
+- Prioritizes connections to primary database, automatically switches to replica on primary failure
+- Single-end forwarding mode provides high-performance local proxy
+- Application requires no modification for transparent failover
+- Logs only warnings and errors to reduce output
+
+### Example 16: API Gateway Backend Pool
+
+Configure multiple backend service instances for an API gateway:
+
+```bash
+# Server side: Configure 4 API service instances
+nodepass "server://0.0.0.0:10101/api1.backend:8080,api2.backend:8080,api3.backend:8080,api4.backend:8080?mode=2&tls=1&rate=200&slot=5000"
+
+# Client side: Connect from API gateway
+nodepass "client://apigateway.example.com:10101/127.0.0.1:8080?rate=100&slot=2000"
+```
+
+This configuration:
+- 4 API service instances form backend pool with round-robin request distribution
+- Server limits bandwidth to 200 Mbps with maximum 5000 concurrent connections
+- Client limits bandwidth to 100 Mbps with maximum 2000 concurrent connections
+- Single instance failure doesn't affect overall service availability
+
+### Example 17: Geo-Distributed Services
+
+Configure multi-region service nodes to optimize network latency:
+
+```bash
+# Server side: Configure multi-region nodes
+nodepass "server://0.0.0.0:10101/us-west.service:8080,us-east.service:8080,eu-central.service:8080?mode=2&log=debug"
+```
+
+This setup:
+- Configures 3 service nodes in different regions
+- Round-robin algorithm automatically distributes traffic across regions
+- Debug logging helps analyze traffic distribution and failure scenarios
+- Suitable for globally distributed application scenarios
+
+**Target Address Group Best Practices:**
+- **Address Count**: Recommend configuring 2-5 addresses; too many increases failure detection time
+- **Health Checks**: Ensure backend services have their own health check mechanisms
+- **Port Consistency**: All addresses use the same port or explicitly specify port for each address
+- **Monitoring & Alerts**: Configure monitoring systems to track failover events
+- **Testing & Validation**: Verify failover and load balancing behavior in test environments before deployment
+
 ## PROXY Protocol Integration
 
-### Example 14: Load Balancer Integration with PROXY Protocol
+### Example 18: Load Balancer Integration with PROXY Protocol
 
 Enable PROXY protocol support for integration with load balancers and reverse proxies:
 
@@ -256,7 +331,7 @@ This configuration:
 - Compatible with HAProxy, Nginx, and other PROXY protocol aware services
 - Useful for maintaining accurate access logs and IP-based access controls
 
-### Example 15: Reverse Proxy Support for Web Applications
+### Example 19: Reverse Proxy Support for Web Applications
 
 Enable web applications behind NodePass to receive original client information:
 
@@ -280,7 +355,7 @@ This setup:
 - Supports compliance requirements for connection auditing
 - Works with web servers that support PROXY protocol (Nginx, HAProxy, etc.)
 
-### Example 16: Database Access with Client IP Preservation
+### Example 20: Database Access with Client IP Preservation
 
 Maintain client IP information for database access logging and security:
 
@@ -307,7 +382,7 @@ Benefits:
 
 ## Container Deployment
 
-### Example 17: Containerized NodePass
+### Example 21: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -342,7 +417,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 18: Centralized Management
+### Example 22: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -379,7 +454,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 19: Custom API Prefix
+### Example 23: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
@@ -398,7 +473,7 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
-### Example 20: Real-time Connection and Traffic Monitoring
+### Example 24: Real-time Connection and Traffic Monitoring
 
 Monitor instance connection counts and traffic statistics through the master API:
 
