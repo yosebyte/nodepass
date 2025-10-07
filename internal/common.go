@@ -35,6 +35,9 @@ type Common struct {
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
 	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
 	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
+	targetTCPAddrs   []*net.TCPAddr     // 目标TCP地址组
+	targetUDPAddrs   []*net.UDPAddr     // 目标UDP地址组
+	targetIdx        int32              // 目标地址索引
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
@@ -207,6 +210,9 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 解析隧道地址
 	tunnelAddr := parsedURL.Host
+	if tunnelAddr == "" {
+		return fmt.Errorf("getAddress: no valid tunnel address found")
+	}
 
 	// 解析隧道TCP地址
 	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
@@ -222,24 +228,64 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
 	}
 
-	// 处理目标地址
+	// 处理目标地址组
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
-
-	// 解析目标TCP地址
-	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
-		c.targetTCPAddr = targetTCPAddr
-	} else {
-		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
+	if targetAddr == "" {
+		return fmt.Errorf("getAddress: no valid target address found")
 	}
 
-	// 解析目标UDP地址
-	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
-		c.targetUDPAddr = targetUDPAddr
-	} else {
-		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
+	addrList := strings.Split(targetAddr, ",")
+	tempTCPAddrs := make([]*net.TCPAddr, 0, len(addrList))
+	tempUDPAddrs := make([]*net.UDPAddr, 0, len(addrList))
+
+	for _, addr := range addrList {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+
+		// 解析目标TCP地址
+		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("getAddress: resolveTCPAddr failed for %s: %w", addr, err)
+		}
+
+		// 解析目标UDP地址
+		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return fmt.Errorf("getAddress: resolveUDPAddr failed for %s: %w", addr, err)
+		}
+
+		tempTCPAddrs = append(tempTCPAddrs, tcpAddr)
+		tempUDPAddrs = append(tempUDPAddrs, udpAddr)
 	}
+
+	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
+		return fmt.Errorf("getAddress: no valid target address found")
+	}
+
+	// 设置目标地址组
+	c.targetTCPAddrs = tempTCPAddrs
+	c.targetUDPAddrs = tempUDPAddrs
+
+	// 初始化为第一个地址
+	c.targetTCPAddr = c.targetTCPAddrs[0]
+	c.targetUDPAddr = c.targetUDPAddrs[0]
+	c.targetIdx = 0
 
 	return nil
+}
+
+// nextTargetAddr 轮询切换目标地址
+func (c *Common) nextTargetAddr() {
+	if len(c.targetTCPAddrs) <= 1 || len(c.targetUDPAddrs) <= 1 {
+		return
+	}
+
+	// 轮询下一个地址
+	newIdx := max((atomic.AddInt32(&c.targetIdx, 1)-1)%int32(len(c.targetTCPAddrs)), 0)
+	c.targetTCPAddr = c.targetTCPAddrs[newIdx]
+	c.targetUDPAddr = c.targetUDPAddrs[newIdx]
 }
 
 // getTunnelKey 从URL中获取隧道密钥
@@ -1044,6 +1090,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 
 	defer c.releaseSlot(false)
 
+	// 轮询下一个目标地址
+	c.nextTargetAddr()
+
 	// 连接到目标TCP地址
 	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
@@ -1129,6 +1178,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			c.logger.Error("commonUDPOnce: UDP slot limit reached: %v/%v", c.udpSlot, c.slotLimit)
 			return
 		}
+
+		// 轮询下一个目标地址
+		c.nextTargetAddr()
 
 		newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
 		if err != nil {
@@ -1311,6 +1363,9 @@ func (c *Common) singleTCPLoop() error {
 
 			defer c.releaseSlot(false)
 
+			// 轮询下一个目标地址
+			c.nextTargetAddr()
+
 			// 尝试建立目标连接
 			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
 			if err != nil {
@@ -1389,6 +1444,9 @@ func (c *Common) singleUDPLoop() error {
 				c.putUDPBuffer(buffer)
 				continue
 			}
+
+			// 轮询下一个目标地址
+			c.nextTargetAddr()
 
 			// 创建新的会话
 			newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
