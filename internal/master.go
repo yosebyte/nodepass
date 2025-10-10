@@ -742,6 +742,7 @@ func (m *Master) loadState() {
 		if instance.Restart {
 			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
 			m.startInstance(instance)
+			time.Sleep(baseDuration)
 		}
 	}
 
