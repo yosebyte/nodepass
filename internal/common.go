@@ -33,11 +33,9 @@ type Common struct {
 	tunnelKey        string             // 隧道密钥
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
-	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
-	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
 	targetTCPAddrs   []*net.TCPAddr     // 目标TCP地址组
 	targetUDPAddrs   []*net.UDPAddr     // 目标UDP地址组
-	targetIdx        int32              // 目标地址索引
+	targetIdx        uint64             // 目标地址索引
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
@@ -267,59 +265,60 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 设置目标地址组
 	c.targetTCPAddrs = tempTCPAddrs
 	c.targetUDPAddrs = tempUDPAddrs
-
-	// 初始化为第一个地址
-	c.targetTCPAddr = c.targetTCPAddrs[0]
-	c.targetUDPAddr = c.targetUDPAddrs[0]
 	c.targetIdx = 0
 
 	return nil
 }
 
-// nextTargetAddr 轮询切换目标地址
-func (c *Common) nextTargetAddr() {
-	if len(c.targetTCPAddrs) <= 1 || len(c.targetUDPAddrs) <= 1 {
-		return
+// getTargetAddrsString 获取目标地址组的字符串表示
+func (c *Common) getTargetAddrsString() string {
+	addrs := make([]string, len(c.targetTCPAddrs))
+	for i, addr := range c.targetTCPAddrs {
+		addrs[i] = addr.String()
 	}
+	return strings.Join(addrs, ",")
+}
 
-	// 轮询下一个地址
-	newIdx := atomic.AddInt32(&c.targetIdx, 1) % int32(len(c.targetTCPAddrs))
-	c.targetTCPAddr = c.targetTCPAddrs[newIdx]
-	c.targetUDPAddr = c.targetUDPAddrs[newIdx]
+// nextTargetIdx 获取下一个目标地址索引
+func (c *Common) nextTargetIdx() int {
+	if len(c.targetTCPAddrs) <= 1 {
+		return 0
+	}
+	return int((atomic.AddUint64(&c.targetIdx, 1) - 1) % uint64(len(c.targetTCPAddrs)))
 }
 
 // dialWithRotation 轮询拨号到目标地址组
 func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Conn, error) {
-	maxRetries := max(len(c.targetTCPAddrs), 1)
+	var addrCount int
+	var getAddr func(int) string
+
+	if network == "tcp" {
+		addrCount = len(c.targetTCPAddrs)
+		getAddr = func(i int) string { return c.targetTCPAddrs[i].String() }
+	} else {
+		addrCount = len(c.targetUDPAddrs)
+		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
+	}
+
+	// 单目标地址：快速路径
+	if addrCount == 1 {
+		return net.DialTimeout(network, getAddr(0), timeout)
+	}
+
+	// 多目标地址：负载均衡 + 故障转移
+	startIdx := c.nextTargetIdx()
 	var lastErr error
 
-	for i := range maxRetries {
-		// 故障转移
-		if i > 0 {
-			c.nextTargetAddr()
-		}
-
-		var targetAddr string
-		if network == "tcp" {
-			targetAddr = c.targetTCPAddr.String()
-		} else {
-			targetAddr = c.targetUDPAddr.String()
-		}
-
-		// 负载均衡
-		conn, err := net.DialTimeout(network, targetAddr, timeout)
+	for i := range addrCount {
+		currentIdx := (startIdx + i) % addrCount
+		conn, err := net.DialTimeout(network, getAddr(currentIdx), timeout)
 		if err == nil {
-			c.nextTargetAddr()
 			return conn, nil
 		}
-
 		lastErr = err
 	}
 
-	if maxRetries > 1 {
-		return nil, fmt.Errorf("dialWithRotation: all %d targets failed: %w", maxRetries, lastErr)
-	}
-	return nil, lastErr
+	return nil, fmt.Errorf("dialWithRotation: all %d targets failed: %w", addrCount, lastErr)
 }
 
 // getTunnelKey 从URL中获取隧道密钥
@@ -498,19 +497,19 @@ func (c *Common) initTunnelListener() error {
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
-	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
-		return fmt.Errorf("initTargetListener: nil target address")
+	if len(c.targetTCPAddrs) == 0 || len(c.targetUDPAddrs) == 0 {
+		return fmt.Errorf("initTargetListener: no target address")
 	}
 
 	// 初始化目标TCP监听器
-	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
+	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
 	if err != nil {
 		return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
 	}
 	c.targetListener = targetListener
 
 	// 初始化目标UDP监听器
-	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
+	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
 	if err != nil {
 		return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
 	}
@@ -1331,7 +1330,7 @@ func (c *Common) singleEventLoop() error {
 		now := time.Now()
 
 		// 尝试连接到目标地址
-		if conn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), reportInterval); err == nil {
+		if conn, err := net.DialTimeout("tcp", c.targetTCPAddrs[c.nextTargetIdx()].String(), reportInterval); err == nil {
 			ping = int(time.Since(now).Milliseconds())
 			conn.Close()
 		}
