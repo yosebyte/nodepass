@@ -374,6 +374,8 @@ func (m *Master) Run() {
 		m.saveState()
 		m.logger.Info("API Key created: %v", apiKey.URL)
 	} else {
+		// 从API Key实例加载别名
+		m.alias = apiKey.Alias
 		m.logger.Info("API Key loaded: %v", apiKey.URL)
 	}
 
@@ -796,6 +798,13 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m.alias = reqData.Alias
+
+		// 持久化别名到API Key实例
+		if apiKey, ok := m.findInstance(apiKeyID); ok {
+			apiKey.Alias = m.alias
+			m.instances.Store(apiKeyID, apiKey)
+			go m.saveState()
+		}
 
 		writeJSON(w, http.StatusOK, m.getMasterInfo())
 
