@@ -108,6 +108,10 @@ type Instance struct {
 	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
 	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
 	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	TCPRXReset     uint64             `json:"-" gob:"-"` // TCP接收重置偏移量（不序列化）
+	TCPTXReset     uint64             `json:"-" gob:"-"` // TCP发送重置偏移量（不序列化）
+	UDPRXReset     uint64             `json:"-" gob:"-"` // UDP接收重置偏移量（不序列化）
+	UDPTXReset     uint64             `json:"-" gob:"-"` // UDP发送重置偏移量（不序列化）
 	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	deleted        bool               `json:"-" gob:"-"` // 删除标志（不序列化）
@@ -250,9 +254,17 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
 			bases := []uint64{w.instance.TCPRXBase, w.instance.TCPTXBase, w.instance.UDPRXBase, w.instance.UDPTXBase}
+			resets := []*uint64{&w.instance.TCPRXReset, &w.instance.TCPTXReset, &w.instance.UDPRXReset, &w.instance.UDPTXReset}
 			for i, stat := range stats {
 				if v, err := strconv.ParseUint(matches[i+6], 10, 64); err == nil {
-					*stat = bases[i] + v
+					// 累计值 = 基线 + 检查点值 - 重置偏移
+					if v >= *resets[i] {
+						*stat = bases[i] + v - *resets[i]
+					} else {
+						// 发生重启，更新算法，清零偏移
+						*stat = bases[i] + v
+						*resets[i] = 0
+					}
 				}
 			}
 
@@ -1091,13 +1103,21 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		} else {
 			// 重置流量统计
 			if reqData.Action == "reset" {
+				instance.TCPRXReset = instance.TCPRX - instance.TCPRXBase
+				instance.TCPTXReset = instance.TCPTX - instance.TCPTXBase
+				instance.UDPRXReset = instance.UDPRX - instance.UDPRXBase
+				instance.UDPTXReset = instance.UDPTX - instance.UDPTXBase
 				instance.TCPRX = 0
 				instance.TCPTX = 0
 				instance.UDPRX = 0
 				instance.UDPTX = 0
+				instance.TCPRXBase = 0
+				instance.TCPTXBase = 0
+				instance.UDPRXBase = 0
+				instance.UDPTXBase = 0
 				m.instances.Store(id, instance)
 				go m.saveState()
-				m.logger.Info("Traffic stats reset: [%v]", instance.ID)
+				m.logger.Info("Traffic stats reset: 0 [%v]", instance.ID)
 
 				// 发送流量统计重置事件
 				m.sendSSEEvent("update", instance)
