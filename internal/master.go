@@ -65,6 +65,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
 // Master 实现主控模式功能
 type Master struct {
 	Common                            // 继承通用功能
+	mid           string              // 主控ID
 	alias         string              // 主控别名
 	prefix        string              // API前缀
 	version       string              // NP版本
@@ -367,15 +368,25 @@ func (m *Master) Run() {
 	if !ok {
 		// 如果不存在API Key实例，则创建一个
 		apiKey = &Instance{
-			ID:  apiKeyID,
-			URL: generateAPIKey(),
+			ID:     apiKeyID,
+			URL:    generateAPIKey(),
+			Config: generateMID(),
 		}
 		m.instances.Store(apiKeyID, apiKey)
 		m.saveState()
 		m.logger.Info("API Key created: %v", apiKey.URL)
 	} else {
-		// 从API Key实例加载别名
+		// 从API Key实例加载别名和主控ID
 		m.alias = apiKey.Alias
+
+		if apiKey.Config == "" {
+			apiKey.Config = generateMID()
+			m.instances.Store(apiKeyID, apiKey)
+			m.saveState()
+			m.logger.Info("Master ID created: %v", apiKey.Config)
+		}
+		m.mid = apiKey.Config
+
 		m.logger.Info("API Key loaded: %v", apiKey.URL)
 	}
 
@@ -816,6 +827,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 // getMasterInfo 获取完整的主控信息
 func (m *Master) getMasterInfo() map[string]any {
 	info := map[string]any{
+		"mid":        m.mid,
 		"alias":      m.alias,
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,
@@ -1711,9 +1723,16 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	return parsedURL.String()
 }
 
-// generateID 生成随机ID
+// generateID 生成实例ID
 func generateID() string {
 	bytes := make([]byte, 4)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+// generateMID 生成主控ID
+func generateMID() string {
+	bytes := make([]byte, 8)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
@@ -1951,6 +1970,7 @@ func (m *Master) generateOpenAPISpec() string {
 	  "MasterInfo": {
 		"type": "object",
 		"properties": {
+		  "mid": {"type": "string", "description": "Master ID"},
 		  "alias": {"type": "string", "description": "Master alias"},
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},
