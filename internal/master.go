@@ -95,7 +95,7 @@ type Instance struct {
 	URL            string             `json:"url"`       // 实例URL
 	Config         string             `json:"config"`    // 实例配置
 	Restart        bool               `json:"restart"`   // 是否自启动
-	Tags           []Tag              `json:"tags"`      // 标签数组
+	Meta           Meta               `json:"meta"`      // 元数据信息
 	Mode           int32              `json:"mode"`      // 实例模式
 	Ping           int32              `json:"ping"`      // 端内延迟
 	Pool           int32              `json:"pool"`      // 池连接数
@@ -120,10 +120,18 @@ type Instance struct {
 	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
-// Tag 标签结构体
-type Tag struct {
-	Key   string `json:"key"`   // 标签键
-	Value string `json:"value"` // 标签值
+// Meta 元数据信息
+type Meta struct {
+	Peer Peer              `json:"peer"` // 对端信息
+	Tags map[string]string `json:"tags"` // 标签映射
+}
+
+// Peer 对端信息
+type Peer struct {
+	Alias string `json:"alias"` // 服务别名
+	SID   string `json:"sid"`   // 服务ID
+	IID   string `json:"iid"`   // 实例ID
+	MID   string `json:"mid"`   // 主控ID
 }
 
 // InstanceEvent 实例事件信息
@@ -759,7 +767,10 @@ func (m *Master) loadState() {
 			instance.Config = m.generateConfigURL(instance)
 		}
 
-		instance.Tags = nil
+		// 初始化标签映射
+		if instance.Meta.Tags == nil && instance.ID != apiKeyID {
+			instance.Meta.Tags = make(map[string]string)
+		}
 
 		m.instances.Store(id, instance)
 
@@ -1047,6 +1058,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
 			Restart: true,
+			Meta:    Meta{Tags: make(map[string]string)},
 			stopped: make(chan struct{}),
 		}
 
@@ -1112,6 +1124,7 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
+		Meta    *Meta  `json:"meta,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -1122,39 +1135,6 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
-			// 重置流量统计
-			if reqData.Action == "reset" {
-				instance.TCPRXReset = instance.TCPRX - instance.TCPRXBase
-				instance.TCPTXReset = instance.TCPTX - instance.TCPTXBase
-				instance.UDPRXReset = instance.UDPRX - instance.UDPRXBase
-				instance.UDPTXReset = instance.UDPTX - instance.UDPTXBase
-				instance.TCPRX = 0
-				instance.TCPTX = 0
-				instance.UDPRX = 0
-				instance.UDPTX = 0
-				instance.TCPRXBase = 0
-				instance.TCPTXBase = 0
-				instance.UDPRXBase = 0
-				instance.UDPTXBase = 0
-				m.instances.Store(id, instance)
-				go m.saveState()
-				m.logger.Info("Traffic stats reset: 0 [%v]", instance.ID)
-
-				// 发送流量统计重置事件
-				m.sendSSEEvent("update", instance)
-			}
-
-			// 更新自启动设置
-			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
-				instance.Restart = *reqData.Restart
-				m.instances.Store(id, instance)
-				go m.saveState()
-				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
-
-				// 发送restart策略变更事件
-				m.sendSSEEvent("update", instance)
-			}
-
 			// 更新实例别名
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
 				if len(reqData.Alias) > maxValueLen {
@@ -1170,10 +1150,105 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 
-			// 处理当前实例操作
-			if reqData.Action != "" && reqData.Action != "reset" {
-				m.processInstanceAction(instance, reqData.Action)
+			// 处理实例操作
+			if reqData.Action != "" {
+				// 验证 action 是否合法
+				validActions := map[string]bool{
+					"start":   true,
+					"stop":    true,
+					"restart": true,
+					"reset":   true,
+				}
+				if !validActions[reqData.Action] {
+					httpError(w, fmt.Sprintf("Invalid action: %s", reqData.Action), http.StatusBadRequest)
+					return
+				}
+
+				// 重置流量统计
+				if reqData.Action == "reset" {
+					instance.TCPRXReset = instance.TCPRX - instance.TCPRXBase
+					instance.TCPTXReset = instance.TCPTX - instance.TCPTXBase
+					instance.UDPRXReset = instance.UDPRX - instance.UDPRXBase
+					instance.UDPTXReset = instance.UDPTX - instance.UDPTXBase
+					instance.TCPRX = 0
+					instance.TCPTX = 0
+					instance.UDPRX = 0
+					instance.UDPTX = 0
+					instance.TCPRXBase = 0
+					instance.TCPTXBase = 0
+					instance.UDPRXBase = 0
+					instance.UDPTXBase = 0
+					m.instances.Store(id, instance)
+					go m.saveState()
+					m.logger.Info("Traffic stats reset: 0 [%v]", instance.ID)
+
+					// 发送流量统计重置事件
+					m.sendSSEEvent("update", instance)
+				} else {
+					// 处理 start/stop/restart 操作
+					m.processInstanceAction(instance, reqData.Action)
+				}
 			}
+
+			// 更新自启动设置
+			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
+				instance.Restart = *reqData.Restart
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
+
+				// 发送restart策略变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
+			// 更新元数据
+			if reqData.Meta != nil {
+				if len(reqData.Meta.Peer.Alias) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+					return
+				}
+				if len(reqData.Meta.Peer.SID) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+					return
+				}
+				if len(reqData.Meta.Peer.IID) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.iid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+					return
+				}
+				if len(reqData.Meta.Peer.MID) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.mid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+					return
+				}
+
+				if reqData.Meta.Tags != nil {
+					// 检查键值对的唯一性和长度
+					seen := make(map[string]bool)
+					for key, value := range reqData.Meta.Tags {
+						if len(key) > maxValueLen {
+							httpError(w, fmt.Sprintf("Meta tag key exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+							return
+						}
+						if len(value) > maxValueLen {
+							httpError(w, fmt.Sprintf("Meta tag value exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+							return
+						}
+						if seen[key] {
+							httpError(w, fmt.Sprintf("Duplicate meta tag key: %s", key), http.StatusBadRequest)
+							return
+						}
+						seen[key] = true
+					}
+				}
+
+				instance.Meta = *reqData.Meta
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Meta updated [%v]", instance.ID)
+
+				// 发送元数据更新事件
+				m.sendSSEEvent("update", instance)
+			}
+
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
@@ -1938,6 +2013,7 @@ func (m *Master) generateOpenAPISpec() string {
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "config": {"type": "string", "description": "Instance configuration URL"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "meta": {"$ref": "#/components/schemas/Meta"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1959,13 +2035,30 @@ func (m *Master) generateOpenAPISpec() string {
 		"properties": {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-		  "restart": {"type": "boolean", "description": "Instance restart policy"}
+		  "restart": {"type": "boolean", "description": "Instance restart policy"},
+		  "meta": {"$ref": "#/components/schemas/Meta"}
 		}
 	  },
 	  "PutInstanceRequest": {
 		"type": "object",
 		"required": ["url"],
 		"properties": {"url": {"type": "string", "description": "New command string(scheme://host:port/host:port)"}}
+	  },
+	  "Meta": {
+		"type": "object",
+		"properties": {
+		  "peer": {"$ref": "#/components/schemas/Peer"},
+		  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Key-value tags"}
+		}
+	  },
+	  "Peer": {
+		"type": "object",
+		"properties": {
+		  "alias": {"type": "string", "description": "Service alias"},
+		  "sid": {"type": "string", "description": "Service ID"},
+		  "iid": {"type": "string", "description": "Instance ID"},
+		  "mid": {"type": "string", "description": "Master ID"}
+		}
 	  },
 	  "MasterInfo": {
 		"type": "object",
