@@ -67,6 +67,19 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "url": "...",
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
+  "meta": {
+    "peer": {
+      "alias": "远程服务",
+      "sid": "service-123",
+      "iid": "a1b2c3d4",
+      "mid": "1a2b3c4d5e6f7890"
+    },
+    "tags": {
+      "environment": "production",
+      "region": "us-west",
+      "owner": "team-alpha"
+    }
+  },
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -85,6 +98,13 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `tcprx`/`tcptx`/`udprx`/`udptx`：累计流量统计
 - `config`：实例配置URL，包含完整的启动配置
 - `restart`：自启动策略
+- `meta`：元数据信息，用于实例组织和对端识别
+  - `peer`：对端连接信息（远程端点详情）
+    - `alias`：远程端点的服务别名（无格式限制）
+    - `sid`：远程服务的服务ID（无格式限制）
+    - `iid`：远程实例的实例ID（8位十六进制）
+    - `mid`：管理远程实例的主控ID（16位十六进制）
+  - `tags`：自定义键值对标签，用于灵活分类和筛选
 
 ### 实例 URL 格式
 
@@ -131,9 +151,26 @@ async function regenerateApiKey() {
   const result = await response.json();
   return result.url; // 新的API Key
 }
+
+// 获取主控ID（Master ID）
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': 'current-api-key'
+    }
+  });
+  
+  const result = await response.json();
+  return result.data.config; // 主控ID（16位十六进制）
+}
 ```
 
-**注意**: API Key ID 固定为 `********`（八个星号）。在内部实现中，这是一个特殊的实例ID，用于存储和管理API Key。
+**注意**: 
+- API Key ID 固定为 `********`（八个星号）。在内部实现中，这是一个特殊的实例ID，用于存储和管理API Key。
+- API Key实例的 `config` 字段存储**主控ID**（Master ID, mid），这是一个16位十六进制字符串（如 `1a2b3c4d5e6f7890`），用于唯一标识主控服务。
+- 主控ID在首次启动时自动生成并持久化保存，在主控服务的整个生命周期中保持不变。
+- 主控ID可用于分布式部署中的主控识别和实例元数据中的对端追踪（`meta.peer.mid`字段）。
 
 ### 使用SSE实时事件监控
 
@@ -531,6 +568,89 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      const data = await response.json();
      return data.success;
    }
+   
+   // 更新实例元数据
+   async function updateInstanceMetadata(instanceId, metadata) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // 如果启用了API Key 
+       },
+       body: JSON.stringify({ meta: metadata })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+5. **元数据管理**：使用元数据组织和分类实例
+   ```javascript
+   // 设置对端连接信息
+   async function setPeerInfo(instanceId, peerInfo) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {
+             alias: peerInfo.alias,
+             sid: peerInfo.serviceId,
+             iid: peerInfo.instanceId,
+             mid: peerInfo.masterId
+           },
+           tags: {} // 保留现有标签
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 添加或更新实例标签
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {}, // 保留现有对端信息
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // 完整元数据更新
+   async function updateCompleteMetadata(instanceId, peerInfo, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: peerInfo,
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
 6. **自启动策略管理**：配置自动启动行为
@@ -584,6 +704,183 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
      return data.success;
    }
    ```
+
+#### 元数据管理使用示例
+
+以下是展示如何使用元数据进行实例组织和管理的综合示例：
+
+```javascript
+// 示例1：建立带有元数据的点对点隧道
+async function establishPeerTunnel(localConfig, remoteConfig) {
+  // 创建本地服务器实例
+  const localInstance = await createNodePassInstance({
+    type: 'server',
+    port: localConfig.port,
+    target: localConfig.target
+  });
+  
+  // 创建远程客户端实例
+  const remoteInstance = await createNodePassInstance({
+    type: 'client',
+    serverHost: localConfig.serverHost,
+    port: remoteConfig.port,
+    target: remoteConfig.target
+  });
+  
+  if (localInstance.success && remoteInstance.success) {
+    // 在本地实例上设置对端信息
+    await updateCompleteMetadata(
+      localInstance.data.id,
+      {
+        alias: remoteConfig.serviceName,
+        sid: remoteConfig.serviceId,
+        iid: remoteInstance.data.id,
+        mid: remoteConfig.masterId
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    // 在远程实例上设置对端信息
+    await updateCompleteMetadata(
+      remoteInstance.data.id,
+      {
+        alias: localConfig.serviceName,
+        sid: localConfig.serviceId,
+        iid: localInstance.data.id,
+        mid: localConfig.masterId
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    console.log('已建立带有元数据的对等隧道');
+  }
+}
+
+// 示例2：按环境和区域组织实例
+async function organizeInstancesByEnvironment(instances) {
+  for (const instance of instances) {
+    const tags = {
+      environment: instance.isProduction ? 'production' : 'development',
+      region: instance.deploymentRegion,
+      team: instance.owningTeam,
+      cost_center: instance.costCenter,
+      criticality: instance.isCritical ? 'high' : 'normal'
+    };
+    
+    await updateInstanceTags(instance.id, tags);
+    console.log(`已为实例 ${instance.id} 设置环境元数据标签`);
+  }
+}
+
+// 示例3：通过元数据标签查询实例
+async function findInstancesByTags(requiredTags) {
+  const response = await fetch(`${API_URL}/instances`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  
+  if (data.success) {
+    return data.data.filter(instance => {
+      if (!instance.meta || !instance.meta.tags) return false;
+      
+      // 检查所有必需标签是否匹配
+      return Object.entries(requiredTags).every(([key, value]) => 
+        instance.meta.tags[key] === value
+      );
+    });
+  }
+  return [];
+}
+
+// 示例4：在分布式部署中跟踪对端关系
+async function trackPeerRelationships() {
+  const response = await fetch(`${API_URL}/instances`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  
+  if (data.success) {
+    const peerMap = new Map();
+    
+    // 构建对端关系映射
+    data.data.forEach(instance => {
+      if (instance.meta && instance.meta.peer && instance.meta.peer.iid) {
+        peerMap.set(instance.id, instance.meta.peer.iid);
+      }
+    });
+    
+    // 显示对端连接
+    peerMap.forEach((peerId, instanceId) => {
+      const instance = data.data.find(i => i.id === instanceId);
+      const peer = data.data.find(i => i.id === peerId);
+      
+      if (instance && peer) {
+        console.log(`${instance.alias || instanceId} <-> ${peer.alias || peerId}`);
+      }
+    });
+  }
+}
+
+// 示例5：根据运行状态更新元数据
+async function updateMetadataOnStatusChange(instanceId, newStatus) {
+  const instance = await fetch(`${API_URL}/instances/${instanceId}`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await instance.json();
+  
+  if (data.success && data.data.meta) {
+    const updatedTags = {
+      ...data.data.meta.tags,
+      last_status_change: new Date().toISOString(),
+      current_status: newStatus,
+      status_change_count: (parseInt(data.data.meta.tags.status_change_count || '0') + 1).toString()
+    };
+    
+    await updateInstanceTags(instanceId, updatedTags);
+  }
+}
+```
+
+#### 元数据最佳实践
+
+1. **对端信息**：使用 `peer` 对象跟踪实例之间的连接
+   - `alias`：远程服务的友好名称（无格式限制，最多256字符）
+   - `sid`：用于服务发现的唯一服务标识符（无格式限制，最多256字符）
+   - `iid`：远程实例ID，用于直接实例跟踪（8位十六进制，如 `a1b2c3d4`）
+   - `mid`：远程主控ID，用于多主控部署（16位十六进制，如 `1a2b3c4d5e6f7890`）
+
+2. **标签组织**：设计一致的标签策略
+   - 使用小写字母和下划线的键名（如 `cost_center`、`deployment_region`）
+   - 将标签值限制为有意义的、可搜索的字符串
+   - 常见标签类别：
+     - 环境：`production`、`staging`、`development`
+     - 位置：`us-west`、`eu-central`、`ap-southeast`
+     - 所有权：`team-alpha`、`ops-team`、`platform-team`
+     - 功能：`database-tunnel`、`web-proxy`、`api-gateway`
+     - 重要性：`high`、`medium`、`low`
+
+3. **字段长度限制**：元数据字段的长度要求
+   - `peer.alias`：最多256字符（无特定格式要求）
+   - `peer.sid`：最多256字符（无特定格式要求）
+   - `peer.iid`：8位十六进制字符串（如 `a1b2c3d4`）
+   - `peer.mid`：16位十六进制字符串（如 `1a2b3c4d5e6f7890`）
+   - 标签键和值：每个最多256字符
+
+4. **标签唯一性**：确保实例内的标签键唯一
+   - 重复的键将导致400 Bad Request错误
+
+5. **过滤和搜索**：使用元数据进行实例过滤
+   - 客户端按标签过滤以显示仪表板视图
+   - 通过对端信息查询实例以进行关系映射
+   - 按标签分组实例以进行批量操作
 
 #### 自启动策略完整使用示例
 
@@ -798,6 +1095,19 @@ API响应中的实例对象包含以下字段：
   "url": "server://...",      // 实例配置URL
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // 完整配置URL
   "restart": true,            // 自启动策略
+  "meta": {                   // 用于组织和对端跟踪的元数据
+    "peer": {
+      "alias": "远程服务",       // 远程服务友好名称
+      "sid": "service-123",    // 远程服务ID
+      "iid": "a1b2c3d4",       // 远程实例ID
+      "mid": "1a2b3c4d5e6f7890"      // 远程主控ID
+    },
+    "tags": {                  // 自定义键值对标签
+      "environment": "production",
+      "region": "us-west",
+      "team": "platform"
+    }
+  },
   "mode": 0,                  // 运行模式
   "tcprx": 1024,              // TCP接收字节数
   "tcptx": 2048,              // TCP发送字节数
@@ -811,6 +1121,14 @@ API响应中的实例对象包含以下字段：
 - `config` 字段包含实例的完整配置URL，由系统自动生成
 - `mode` 字段表示实例当前的运行模式
 - `restart` 字段控制实例的自启动行为
+- `meta` 字段包含用于实例组织的结构化元数据
+  - `peer` 对象跟踪点对点连接的远程端点信息
+    - `alias` 和 `sid`：自定义字符串，最多256字符，无格式限制
+    - `iid`：8位十六进制实例ID（如 `a1b2c3d4`）
+    - `mid`：16位十六进制主控ID（如 `1a2b3c4d5e6f7890`）
+  - `tags` 映射允许使用自定义键值对进行灵活分类
+  - 标签键和值最大长度为256个字符
+  - 标签键在实例内必须唯一
 
 ### 实例配置字段
 
@@ -1018,9 +1336,16 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **描述**：更新实例状态、别名或执行控制操作
+- **描述**：更新实例状态、别名、元数据或执行控制操作
 - **认证**：需要API Key
-- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false }`
+- **请求体**：`{ "alias": "新别名", "action": "start|stop|restart|reset", "restart": true|false, "meta": {...} }`
+- **元数据结构**：
+  - `peer`：对象，包含以下字段（均为可选）：
+    - `alias`：服务别名（最多256字符，无格式限制）
+    - `sid`：服务ID（最多256字符，无格式限制）
+    - `iid`：实例ID（8位十六进制，如 `a1b2c3d4`）
+    - `mid`：主控ID（16位十六进制，如 `1a2b3c4d5e6f7890`）
+  - `tags`：自定义键值对对象（键和值最多256字符，键必须唯一）
 - **示例**：
 ```javascript
 // 更新别名和自启动策略
@@ -1045,6 +1370,49 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ 
     action: "restart"
+  })
+});
+
+// 更新元数据（包含对端信息和标签）
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {
+        alias: "远程API服务器",
+        sid: "api-service-prod",
+        iid: "b2c3d4e5",
+        mid: "2b3c4d5e6f7a8b9c"
+      },
+      tags: {
+        environment: "production",
+        region: "us-east",
+        team: "backend",
+        criticality: "high"
+      }
+    }
+  })
+});
+
+// 仅更新标签（对端信息保持不变）
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {},  // 空对象保留现有对端信息
+      tags: {
+        environment: "staging",
+        updated_at: new Date().toISOString()
+      }
+    }
   })
 });
 ```
@@ -1101,6 +1469,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **认证**：需要API Key
 - **请求体**：`{ "alias": "新别名" }`
 - **响应**：完整的主控信息（与GET /info相同）
+- **说明**：主控别名存储在API Key实例（ID为`********`）的 `alias` 字段中
 - **示例**：
 ```javascript
 // 更新主控别名
@@ -1116,6 +1485,18 @@ const response = await fetch(`${API_URL}/info`, {
 const data = await response.json();
 console.log('更新后的别名:', data.alias);
 // 响应包含完整的系统信息，包括更新后的别名
+```
+
+**主控ID获取**：主控ID存储在API Key实例的 `config` 字段中，可以通过以下方式获取：
+```javascript
+// 获取主控ID
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/********`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  return data.data.config; // 返回16位十六进制的主控ID
+}
 ```
 
 #### GET /tcping

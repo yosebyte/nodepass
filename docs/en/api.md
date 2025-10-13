@@ -67,6 +67,19 @@ API Key authentication is enabled by default, automatically generated and saved 
   "url": "...",
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
+  "meta": {
+    "peer": {
+      "alias": "remote-service",
+      "sid": "service-123",
+      "iid": "a1b2c3d4",
+      "mid": "1a2b3c4d5e6f7890"
+    },
+    "tags": {
+      "environment": "production",
+      "region": "us-west",
+      "owner": "team-alpha"
+    }
+  },
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -85,6 +98,13 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
 - `config`: Instance configuration URL with complete startup configuration
 - `restart`: Auto-restart policy
+- `meta`: Metadata information for instance organization and peer identification
+  - `peer`: Peer connection information (remote endpoint details)
+    - `alias`: Service alias of the remote endpoint (no format restriction)
+    - `sid`: Service ID of the remote service (no format restriction)
+    - `iid`: Instance ID of the remote instance (8-character hexadecimal)
+    - `mid`: Master ID managing the remote instance (16-character hexadecimal)
+  - `tags`: Custom key-value tags for flexible categorization and filtering
 
 ### Instance URL Format
 
@@ -131,9 +151,26 @@ async function regenerateApiKey() {
   const result = await response.json();
   return result.url; // New API Key
 }
+
+// Get Master ID
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': 'current-api-key'
+    }
+  });
+  
+  const result = await response.json();
+  return result.data.config; // Master ID (16-character hex)
+}
 ```
 
-**Note**: API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+**Note**: 
+- API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+- The API Key instance's `config` field stores the **Master ID** (mid), which is a 16-character hexadecimal string (e.g., `1a2b3c4d5e6f7890`) used to uniquely identify the master service.
+- The Master ID is automatically generated on first startup and persisted, remaining constant throughout the master service's lifecycle.
+- The Master ID can be used for master identification in distributed deployments and peer tracking in instance metadata (`meta.peer.mid` field).
 
 ### Using SSE for Real-time Event Monitoring
 
@@ -531,9 +568,92 @@ To properly manage lifecycles:
      const data = await response.json();
      return data.success;
    }
+   
+   // Update instance metadata
+   async function updateInstanceMetadata(instanceId, metadata) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ meta: metadata })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
-5. **Auto-restart Policy Management**: Configure automatic startup behavior
+5. **Metadata Management**: Organize and categorize instances with metadata
+   ```javascript
+   // Set peer connection information
+   async function setPeerInfo(instanceId, peerInfo) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {
+             alias: peerInfo.alias,
+             sid: peerInfo.serviceId,
+             iid: peerInfo.instanceId,
+             mid: peerInfo.masterId
+           },
+           tags: {} // Preserve existing tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Add or update instance tags
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {}, // Preserve existing peer info
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Complete metadata update
+   async function updateCompleteMetadata(instanceId, peerInfo, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: peerInfo,
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+6. **Auto-restart Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -584,6 +704,183 @@ To properly manage lifecycles:
      return data.success;
    }
    ```
+
+#### Metadata Management Usage Examples
+
+Here are comprehensive examples showing how to use metadata for instance organization and management:
+
+```javascript
+// Example 1: Establish peer-to-peer tunnel with metadata
+async function establishPeerTunnel(localConfig, remoteConfig) {
+  // Create local server instance
+  const localInstance = await createNodePassInstance({
+    type: 'server',
+    port: localConfig.port,
+    target: localConfig.target
+  });
+  
+  // Create remote client instance
+  const remoteInstance = await createNodePassInstance({
+    type: 'client',
+    serverHost: localConfig.serverHost,
+    port: remoteConfig.port,
+    target: remoteConfig.target
+  });
+  
+  if (localInstance.success && remoteInstance.success) {
+    // Set peer information on local instance
+    await updateCompleteMetadata(
+      localInstance.data.id,
+      {
+        alias: remoteConfig.serviceName,
+        sid: remoteConfig.serviceId,
+        iid: remoteInstance.data.id,
+        mid: remoteConfig.masterId
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    // Set peer information on remote instance
+    await updateCompleteMetadata(
+      remoteInstance.data.id,
+      {
+        alias: localConfig.serviceName,
+        sid: localConfig.serviceId,
+        iid: localInstance.data.id,
+        mid: localConfig.masterId
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    console.log('Peer tunnel established with metadata');
+  }
+}
+
+// Example 2: Organize instances by environment and region
+async function organizeInstancesByEnvironment(instances) {
+  for (const instance of instances) {
+    const tags = {
+      environment: instance.isProduction ? 'production' : 'development',
+      region: instance.deploymentRegion,
+      team: instance.owningTeam,
+      cost_center: instance.costCenter,
+      criticality: instance.isCritical ? 'high' : 'normal'
+    };
+    
+    await updateInstanceTags(instance.id, tags);
+    console.log(`Tagged instance ${instance.id} with environment metadata`);
+  }
+}
+
+// Example 3: Query instances by metadata tags
+async function findInstancesByTags(requiredTags) {
+  const response = await fetch(`${API_URL}/instances`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  
+  if (data.success) {
+    return data.data.filter(instance => {
+      if (!instance.meta || !instance.meta.tags) return false;
+      
+      // Check if all required tags match
+      return Object.entries(requiredTags).every(([key, value]) => 
+        instance.meta.tags[key] === value
+      );
+    });
+  }
+  return [];
+}
+
+// Example 4: Track peer relationships in distributed deployments
+async function trackPeerRelationships() {
+  const response = await fetch(`${API_URL}/instances`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  
+  if (data.success) {
+    const peerMap = new Map();
+    
+    // Build peer relationship map
+    data.data.forEach(instance => {
+      if (instance.meta && instance.meta.peer && instance.meta.peer.iid) {
+        peerMap.set(instance.id, instance.meta.peer.iid);
+      }
+    });
+    
+    // Display peer connections
+    peerMap.forEach((peerId, instanceId) => {
+      const instance = data.data.find(i => i.id === instanceId);
+      const peer = data.data.find(i => i.id === peerId);
+      
+      if (instance && peer) {
+        console.log(`${instance.alias || instanceId} <-> ${peer.alias || peerId}`);
+      }
+    });
+  }
+}
+
+// Example 5: Update metadata based on operational status
+async function updateMetadataOnStatusChange(instanceId, newStatus) {
+  const instance = await fetch(`${API_URL}/instances/${instanceId}`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await instance.json();
+  
+  if (data.success && data.data.meta) {
+    const updatedTags = {
+      ...data.data.meta.tags,
+      last_status_change: new Date().toISOString(),
+      current_status: newStatus,
+      status_change_count: (parseInt(data.data.meta.tags.status_change_count || '0') + 1).toString()
+    };
+    
+    await updateInstanceTags(instanceId, updatedTags);
+  }
+}
+```
+
+#### Metadata Best Practices
+
+1. **Peer Information**: Use the `peer` object to track connections between instances
+   - `alias`: Friendly name of the remote service (no format restriction, max 256 chars)
+   - `sid`: Unique service identifier for service discovery (no format restriction, max 256 chars)
+   - `iid`: Remote instance ID for direct instance tracking (8-character hexadecimal, e.g., `a1b2c3d4`)
+   - `mid`: Remote master ID for multi-master deployments (16-character hexadecimal, e.g., `1a2b3c4d5e6f7890`)
+
+2. **Tags Organization**: Design a consistent tagging strategy
+   - Use lowercase keys with underscores (e.g., `cost_center`, `deployment_region`)
+   - Limit tag values to meaningful, searchable strings
+   - Common tag categories:
+     - Environment: `production`, `staging`, `development`
+     - Location: `us-west`, `eu-central`, `ap-southeast`
+     - Ownership: `team-alpha`, `ops-team`, `platform-team`
+     - Function: `database-tunnel`, `web-proxy`, `api-gateway`
+     - Criticality: `high`, `medium`, `low`
+
+3. **Field Length Limits**: All metadata fields have a 256-character maximum
+   - `peer.alias`: Max 256 chars (no specific format required)
+   - `peer.sid`: Max 256 chars (no specific format required)
+   - `peer.iid`: 8-character hexadecimal string (e.g., `a1b2c3d4`)
+   - `peer.mid`: 16-character hexadecimal string (e.g., `1a2b3c4d5e6f7890`)
+   - Tag keys and values: Max 256 chars each
+
+4. **Tag Uniqueness**: Ensure tag keys are unique within an instance
+   - Duplicate keys will result in a 400 Bad Request error
+
+5. **Filtering and Search**: Use metadata for instance filtering
+   - Client-side filtering by tags for dashboard views
+   - Query instances by peer information for relationship mapping
+   - Group instances by tags for batch operations
 
 #### Complete Auto-restart Policy Usage Example
 
@@ -798,6 +1095,19 @@ The instance object in API responses contains the following fields:
   "url": "server://...",      // Instance configuration URL
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
+  "meta": {                   // Metadata for organization and peer tracking
+    "peer": {
+      "alias": "remote-service",  // Remote service friendly name
+      "sid": "service-123",       // Remote service ID
+      "iid": "a1b2c3d4",          // Remote instance ID
+      "mid": "1a2b3c4d5e6f7890"   // Remote master ID
+    },
+    "tags": {                 // Custom key-value tags
+      "environment": "production",
+      "region": "us-west",
+      "team": "platform"
+    }
+  },
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
   "tcptx": 2048,              // TCP transmitted bytes
@@ -811,6 +1121,14 @@ The instance object in API responses contains the following fields:
 - `config` field contains the instance's complete configuration URL, auto-generated by the system
 - `mode` field indicates the current runtime mode of the instance
 - `restart` field controls the auto-restart behavior of the instance
+- `meta` field contains structured metadata for instance organization
+  - `peer` object tracks remote endpoint information for peer-to-peer connections
+    - `alias` and `sid`: Custom strings, max 256 chars, no format restriction
+    - `iid`: 8-character hexadecimal instance ID (e.g., `a1b2c3d4`)
+    - `mid`: 16-character hexadecimal master ID (e.g., `1a2b3c4d5e6f7890`)
+  - `tags` map allows flexible categorization with custom key-value pairs
+  - Tag keys and values have a 256-character maximum length
+  - Tag keys must be unique within an instance
 
 ### Instance Configuration Field
 
@@ -1018,9 +1336,16 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, or perform control operations
+- **Description**: Update instance state, alias, metadata, or perform control operations
 - **Authentication**: Requires API Key
-- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "meta": {...} }`
+- **Metadata Structure**:
+  - `peer`: Object with fields (all optional):
+    - `alias`: Service alias (max 256 chars, no format restriction)
+    - `sid`: Service ID (max 256 chars, no format restriction)
+    - `iid`: Instance ID (8-char hexadecimal, e.g., `a1b2c3d4`)
+    - `mid`: Master ID (16-char hexadecimal, e.g., `1a2b3c4d5e6f7890`)
+  - `tags`: Object with custom key-value pairs (keys and values max 256 chars, keys must be unique)
 - **Example**:
 ```javascript
 // Update alias and restart policy
@@ -1045,6 +1370,49 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ 
     action: "restart"
+  })
+});
+
+// Update metadata with peer information and tags
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {
+        alias: "remote-api-server",
+        sid: "api-service-prod",
+        iid: "b2c3d4e5",
+        mid: "2b3c4d5e6f7a8b9c"
+      },
+      tags: {
+        environment: "production",
+        region: "us-east",
+        team: "backend",
+        criticality: "high"
+      }
+    }
+  })
+});
+
+// Update only tags (peer info remains unchanged)
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {},  // Empty object preserves existing peer info
+      tags: {
+        environment: "staging",
+        updated_at: new Date().toISOString()
+      }
+    }
   })
 });
 ```
@@ -1101,6 +1469,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **Authentication**: Requires API Key
 - **Request body**: `{ "alias": "new alias" }`
 - **Response**: Complete master information (same as GET /info)
+- **Note**: Master alias is stored in the `alias` field of the API Key instance (ID `********`)
 - **Example**:
 ```javascript
 // Update master alias
@@ -1116,6 +1485,18 @@ const response = await fetch(`${API_URL}/info`, {
 const data = await response.json();
 console.log('Updated alias:', data.alias);
 // Response contains full system info with updated alias
+```
+
+**Retrieving Master ID**: The Master ID is stored in the `config` field of the API Key instance and can be retrieved as follows:
+```javascript
+// Get Master ID
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/********`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  return data.data.config; // Returns 16-character hex Master ID
+}
 ```
 
 #### GET /tcping
