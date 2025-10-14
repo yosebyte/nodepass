@@ -70,7 +70,8 @@ API Key authentication is enabled by default, automatically generated and saved 
   "meta": {
     "peer": {
       "alias": "remote-service",
-      "sid": "service-123",
+      "type": "1",
+      "sid": "550e8400-e29b-41d4-a716-446655440000",
       "iid": "a1b2c3d4",
       "mid": "1a2b3c4d5e6f7890"
     },
@@ -101,7 +102,11 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `meta`: Metadata information for instance organization and peer identification
   - `peer`: Peer connection information (remote endpoint details)
     - `alias`: Service alias of the remote endpoint (no format restriction)
-    - `sid`: Service ID of the remote service (no format restriction)
+    - `type`: Remote service type, using standard enumeration values
+      - `"0"`: Single-end Forwarding mode
+      - `"1"`: NAT Traversal mode
+      - `"2"`: Tunnel Forwarding mode
+    - `sid`: Service ID of the remote service, using UUID v4 format (e.g., `550e8400-e29b-41d4-a716-446655440000`)
     - `iid`: Instance ID of the remote instance (8-character hexadecimal)
     - `mid`: Master ID managing the remote instance (16-character hexadecimal)
   - `tags`: Custom key-value tags for flexible categorization and filtering
@@ -599,7 +604,8 @@ To properly manage lifecycles:
          meta: {
            peer: {
              alias: peerInfo.alias,
-             sid: peerInfo.serviceId,
+             type: peerInfo.type, // "0" | "1" | "2"
+             sid: peerInfo.serviceId, // UUID v4 format
              iid: peerInfo.instanceId,
              mid: peerInfo.masterId
            },
@@ -733,7 +739,8 @@ async function establishPeerTunnel(localConfig, remoteConfig) {
       localInstance.data.id,
       {
         alias: remoteConfig.serviceName,
-        sid: remoteConfig.serviceId,
+        type: "2", // Tunnel forwarding
+        sid: remoteConfig.serviceId, // UUID format
         iid: remoteInstance.data.id,
         mid: remoteConfig.masterId
       },
@@ -749,7 +756,8 @@ async function establishPeerTunnel(localConfig, remoteConfig) {
       remoteInstance.data.id,
       {
         alias: localConfig.serviceName,
-        sid: localConfig.serviceId,
+        type: "2", // Tunnel forwarding
+        sid: localConfig.serviceId, // UUID format
         iid: localInstance.data.id,
         mid: localConfig.masterId
       },
@@ -853,11 +861,66 @@ async function updateMetadataOnStatusChange(instanceId, newStatus) {
 
 1. **Peer Information**: Use the `peer` object to track connections between instances
    - `alias`: Friendly name of the remote service (no format restriction, max 256 chars)
-   - `sid`: Unique service identifier for service discovery (no format restriction, max 256 chars)
+   - `type`: Service type identifier (required, string enumeration value)
+     - `"0"`: Single-end Forwarding - For simple client forwarding scenarios
+     - `"1"`: NAT Traversal - For scenarios requiring NAT traversal
+     - `"2"`: Tunnel Forwarding - For establishing encrypted tunnels
+   - `sid`: Service unique identifier (required, UUID v4 format, e.g., `550e8400-e29b-41d4-a716-446655440000`)
+     - Use standard UUID v4 format to ensure global uniqueness
+     - Can use JavaScript's `crypto.randomUUID()` or third-party libraries to generate
    - `iid`: Remote instance ID for direct instance tracking (8-character hexadecimal, e.g., `a1b2c3d4`)
    - `mid`: Remote master ID for multi-master deployments (16-character hexadecimal, e.g., `1a2b3c4d5e6f7890`)
 
-2. **Tags Organization**: Design a consistent tagging strategy
+2. **Frontend Integration Standards**: To ensure consistency, frontends should follow these standards
+   
+   **Service ID (sid) Generation Standards:**
+   ```javascript
+   // Use browser native API to generate UUID v4
+   const serviceId = crypto.randomUUID();
+   // Example output: "550e8400-e29b-41d4-a716-446655440000"
+   
+   // Or use third-party library (e.g., uuid)
+   import { v4 as uuidv4 } from 'uuid';
+   const serviceId = uuidv4();
+   ```
+   
+   **Service Type (type) Usage Standards:**
+   ```javascript
+   // Define service type enumeration
+   const ServiceType = {
+     SINGLE_END: "0",      // Single-end forwarding: client unidirectional forwarding, no server callback needed
+     NAT_TRAVERSAL: "1",   // NAT traversal: traverse NAT for internal network access
+     TUNNEL: "2"           // Tunnel forwarding: establish end-to-end encrypted tunnel
+   };
+   
+   // Usage example
+   const peerInfo = {
+     alias: "Web Server",
+     type: ServiceType.NAT_TRAVERSAL,
+     sid: crypto.randomUUID(),
+     iid: "a1b2c3d4",
+     mid: "1a2b3c4d5e6f7890"
+   };
+   ```
+   
+   **Type Selection Guide:**
+   - **Single-end Forwarding ("0")**:
+     - Scenario: Client only needs to forward traffic to remote server
+     - Feature: One-way connection, no server callback required
+     - Example: Local app connecting to cloud database
+   
+   - **NAT Traversal ("1")**:
+     - Scenario: Need to access internal network services from external network
+     - Feature: Traverse NAT and firewall restrictions
+     - Example: Remote access to home NAS, internal web services
+   
+   - **Tunnel Forwarding ("2")**:
+     - Scenario: Need to establish secure end-to-end connection
+     - Feature: Encrypted transmission, bidirectional communication
+     - Example: Secure interconnection between branch offices and headquarters
+
+3. **Tags Organization**: Design a consistent tagging strategy
+3. **Tags Organization**: Design a consistent tagging strategy
    - Use lowercase keys with underscores (e.g., `cost_center`, `deployment_region`)
    - Limit tag values to meaningful, searchable strings
    - Common tag categories:
@@ -867,17 +930,18 @@ async function updateMetadataOnStatusChange(instanceId, newStatus) {
      - Function: `database-tunnel`, `web-proxy`, `api-gateway`
      - Criticality: `high`, `medium`, `low`
 
-3. **Field Length Limits**: All metadata fields have a 256-character maximum
+4. **Field Length Limits**: All metadata fields have length requirements
    - `peer.alias`: Max 256 chars (no specific format required)
-   - `peer.sid`: Max 256 chars (no specific format required)
+   - `peer.type`: Fixed 1 character (enumeration value: `"0"` | `"1"` | `"2"`)
+   - `peer.sid`: Fixed 36 characters (UUID v4 format, e.g., `550e8400-e29b-41d4-a716-446655440000`)
    - `peer.iid`: 8-character hexadecimal string (e.g., `a1b2c3d4`)
    - `peer.mid`: 16-character hexadecimal string (e.g., `1a2b3c4d5e6f7890`)
    - Tag keys and values: Max 256 chars each
 
-4. **Tag Uniqueness**: Ensure tag keys are unique within an instance
+5. **Tag Uniqueness**: Ensure tag keys are unique within an instance
    - Duplicate keys will result in a 400 Bad Request error
 
-5. **Filtering and Search**: Use metadata for instance filtering
+6. **Filtering and Search**: Use metadata for instance filtering
    - Client-side filtering by tags for dashboard views
    - Query instances by peer information for relationship mapping
    - Group instances by tags for batch operations
@@ -1098,7 +1162,8 @@ The instance object in API responses contains the following fields:
   "meta": {                   // Metadata for organization and peer tracking
     "peer": {
       "alias": "remote-service",  // Remote service friendly name
-      "sid": "service-123",       // Remote service ID
+      "type": "1",                // Remote service type (0=Single-end, 1=NAT Traversal, 2=Tunnel)
+      "sid": "550e8400-e29b-41d4-a716-446655440000",  // Remote service ID (UUID format)
       "iid": "a1b2c3d4",          // Remote instance ID
       "mid": "1a2b3c4d5e6f7890"   // Remote master ID
     },
@@ -1123,7 +1188,12 @@ The instance object in API responses contains the following fields:
 - `restart` field controls the auto-restart behavior of the instance
 - `meta` field contains structured metadata for instance organization
   - `peer` object tracks remote endpoint information for peer-to-peer connections
-    - `alias` and `sid`: Custom strings, max 256 chars, no format restriction
+    - `alias`: Custom string, max 256 chars, no format restriction
+    - `type`: Service type identifier, string enumeration value (`"0"` | `"1"` | `"2"`)
+      - `"0"`: Single-end Forwarding - Client unidirectional forwarding
+      - `"1"`: NAT Traversal - Traverse NAT for internal network access
+      - `"2"`: Tunnel Forwarding - Establish end-to-end encrypted tunnel
+    - `sid`: Service unique identifier, must use UUID v4 format (36 chars, e.g., `550e8400-e29b-41d4-a716-446655440000`)
     - `iid`: 8-character hexadecimal instance ID (e.g., `a1b2c3d4`)
     - `mid`: 16-character hexadecimal master ID (e.g., `1a2b3c4d5e6f7890`)
   - `tags` map allows flexible categorization with custom key-value pairs
@@ -1342,7 +1412,11 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 - **Metadata Structure**:
   - `peer`: Object with fields (all optional):
     - `alias`: Service alias (max 256 chars, no format restriction)
-    - `sid`: Service ID (max 256 chars, no format restriction)
+    - `type`: Service type (enumeration value: `"0"` | `"1"` | `"2"`)
+      - `"0"`: Single-end Forwarding
+      - `"1"`: NAT Traversal
+      - `"2"`: Tunnel Forwarding
+    - `sid`: Service ID (UUID v4 format, 36 chars, e.g., `550e8400-e29b-41d4-a716-446655440000`)
     - `iid`: Instance ID (8-char hexadecimal, e.g., `a1b2c3d4`)
     - `mid`: Master ID (16-char hexadecimal, e.g., `1a2b3c4d5e6f7890`)
   - `tags`: Object with custom key-value pairs (keys and values max 256 chars, keys must be unique)
@@ -1384,7 +1458,8 @@ await fetch(`${API_URL}/instances/abc123`, {
     meta: {
       peer: {
         alias: "remote-api-server",
-        sid: "api-service-prod",
+        type: "1", // NAT Traversal
+        sid: "550e8400-e29b-41d4-a716-446655440000", // UUID format
         iid: "b2c3d4e5",
         mid: "2b3c4d5e6f7a8b9c"
       },

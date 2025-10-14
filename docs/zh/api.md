@@ -70,7 +70,8 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "meta": {
     "peer": {
       "alias": "远程服务",
-      "sid": "service-123",
+      "type": "1",
+      "sid": "550e8400-e29b-41d4-a716-446655440000",
       "iid": "a1b2c3d4",
       "mid": "1a2b3c4d5e6f7890"
     },
@@ -101,7 +102,11 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `meta`：元数据信息，用于实例组织和对端识别
   - `peer`：对端连接信息（远程端点详情）
     - `alias`：远程端点的服务别名（无格式限制）
-    - `sid`：远程服务的服务ID（无格式限制）
+    - `type`：远程服务类型，使用标准枚举值
+      - `"0"`：单端转发模式（Single-end Forwarding）
+      - `"1"`：内网穿透模式（NAT Traversal）
+      - `"2"`：隧道转发模式（Tunnel Forwarding）
+    - `sid`：远程服务的服务ID，使用UUID v4格式（如 `550e8400-e29b-41d4-a716-446655440000`）
     - `iid`：远程实例的实例ID（8位十六进制）
     - `mid`：管理远程实例的主控ID（16位十六进制）
   - `tags`：自定义键值对标签，用于灵活分类和筛选
@@ -599,7 +604,8 @@ NodePass主控模式提供自动备份功能，定期备份状态文件以防止
          meta: {
            peer: {
              alias: peerInfo.alias,
-             sid: peerInfo.serviceId,
+             type: peerInfo.type, // "0" | "1" | "2"
+             sid: peerInfo.serviceId, // UUID v4 格式
              iid: peerInfo.instanceId,
              mid: peerInfo.masterId
            },
@@ -733,7 +739,8 @@ async function establishPeerTunnel(localConfig, remoteConfig) {
       localInstance.data.id,
       {
         alias: remoteConfig.serviceName,
-        sid: remoteConfig.serviceId,
+        type: "2", // 隧道转发
+        sid: remoteConfig.serviceId, // UUID格式
         iid: remoteInstance.data.id,
         mid: remoteConfig.masterId
       },
@@ -749,7 +756,8 @@ async function establishPeerTunnel(localConfig, remoteConfig) {
       remoteInstance.data.id,
       {
         alias: localConfig.serviceName,
-        sid: localConfig.serviceId,
+        type: "2", // 隧道转发
+        sid: localConfig.serviceId, // UUID格式
         iid: localInstance.data.id,
         mid: localConfig.masterId
       },
@@ -853,11 +861,66 @@ async function updateMetadataOnStatusChange(instanceId, newStatus) {
 
 1. **对端信息**：使用 `peer` 对象跟踪实例之间的连接
    - `alias`：远程服务的友好名称（无格式限制，最多256字符）
-   - `sid`：用于服务发现的唯一服务标识符（无格式限制，最多256字符）
+   - `type`：服务类型标识（必填，字符串枚举值）
+     - `"0"`：单端转发（Single-end Forwarding）- 适用于简单的客户端转发场景
+     - `"1"`：内网穿透（NAT Traversal）- 适用于需要穿透NAT的场景
+     - `"2"`：隧道转发（Tunnel Forwarding）- 适用于建立加密隧道的场景
+   - `sid`：服务唯一标识符（必填，UUID v4格式，如 `550e8400-e29b-41d4-a716-446655440000`）
+     - 使用标准UUID v4格式确保全局唯一性
+     - 可使用JavaScript的 `crypto.randomUUID()` 或第三方库生成
    - `iid`：远程实例ID，用于直接实例跟踪（8位十六进制，如 `a1b2c3d4`）
    - `mid`：远程主控ID，用于多主控部署（16位十六进制，如 `1a2b3c4d5e6f7890`）
 
-2. **标签组织**：设计一致的标签策略
+2. **前端集成标准**：为确保一致性，前端应遵循以下标准
+   
+   **服务ID（sid）生成标准：**
+   ```javascript
+   // 使用浏览器原生API生成UUID v4
+   const serviceId = crypto.randomUUID();
+   // 示例输出: "550e8400-e29b-41d4-a716-446655440000"
+   
+   // 或使用第三方库（如uuid）
+   import { v4 as uuidv4 } from 'uuid';
+   const serviceId = uuidv4();
+   ```
+   
+   **服务类型（type）使用标准：**
+   ```javascript
+   // 定义服务类型枚举
+   const ServiceType = {
+     SINGLE_END: "0",      // 单端转发：客户端单向转发，无需服务端回连
+     NAT_TRAVERSAL: "1",   // 内网穿透：穿透NAT进行内网访问
+     TUNNEL: "2"           // 隧道转发：建立端到端加密隧道
+   };
+   
+   // 使用示例
+   const peerInfo = {
+     alias: "Web服务器",
+     type: ServiceType.NAT_TRAVERSAL,
+     sid: crypto.randomUUID(),
+     iid: "a1b2c3d4",
+     mid: "1a2b3c4d5e6f7890"
+   };
+   ```
+   
+   **类型选择指南：**
+   - **单端转发（"0"）**：
+     - 场景：客户端仅需要将流量转发到远程服务器
+     - 特点：单向连接，无需服务端主动回连
+     - 示例：本地应用连接到云端数据库
+   
+   - **内网穿透（"1"）**：
+     - 场景：需要从外网访问内网服务
+     - 特点：穿透NAT和防火墙限制
+     - 示例：远程访问家庭NAS、内网Web服务
+   
+   - **隧道转发（"2"）**：
+     - 场景：需要建立安全的端到端连接
+     - 特点：加密传输，双向通信
+     - 示例：分支机构与总部的安全互联
+
+3. **标签组织**：设计一致的标签策略
+3. **标签组织**：设计一致的标签策略
    - 使用小写字母和下划线的键名（如 `cost_center`、`deployment_region`）
    - 将标签值限制为有意义的、可搜索的字符串
    - 常见标签类别：
@@ -867,17 +930,18 @@ async function updateMetadataOnStatusChange(instanceId, newStatus) {
      - 功能：`database-tunnel`、`web-proxy`、`api-gateway`
      - 重要性：`high`、`medium`、`low`
 
-3. **字段长度限制**：元数据字段的长度要求
+4. **字段长度限制**：元数据字段的长度要求
    - `peer.alias`：最多256字符（无特定格式要求）
-   - `peer.sid`：最多256字符（无特定格式要求）
+   - `peer.type`：固定1字符（枚举值：`"0"` | `"1"` | `"2"`）
+   - `peer.sid`：固定36字符（UUID v4格式，如 `550e8400-e29b-41d4-a716-446655440000`）
    - `peer.iid`：8位十六进制字符串（如 `a1b2c3d4`）
    - `peer.mid`：16位十六进制字符串（如 `1a2b3c4d5e6f7890`）
    - 标签键和值：每个最多256字符
 
-4. **标签唯一性**：确保实例内的标签键唯一
+5. **标签唯一性**：确保实例内的标签键唯一
    - 重复的键将导致400 Bad Request错误
 
-5. **过滤和搜索**：使用元数据进行实例过滤
+6. **过滤和搜索**：使用元数据进行实例过滤
    - 客户端按标签过滤以显示仪表板视图
    - 通过对端信息查询实例以进行关系映射
    - 按标签分组实例以进行批量操作
@@ -1098,7 +1162,8 @@ API响应中的实例对象包含以下字段：
   "meta": {                   // 用于组织和对端跟踪的元数据
     "peer": {
       "alias": "远程服务",       // 远程服务友好名称
-      "sid": "service-123",    // 远程服务ID
+      "type": "1",             // 远程服务类型（0=单端转发，1=内网穿透，2=隧道转发）
+      "sid": "550e8400-e29b-41d4-a716-446655440000",    // 远程服务ID（UUID格式）
       "iid": "a1b2c3d4",       // 远程实例ID
       "mid": "1a2b3c4d5e6f7890"      // 远程主控ID
     },
@@ -1123,7 +1188,12 @@ API响应中的实例对象包含以下字段：
 - `restart` 字段控制实例的自启动行为
 - `meta` 字段包含用于实例组织的结构化元数据
   - `peer` 对象跟踪点对点连接的远程端点信息
-    - `alias` 和 `sid`：自定义字符串，最多256字符，无格式限制
+    - `alias`：自定义字符串，最多256字符，无格式限制
+    - `type`：服务类型标识，字符串枚举值（`"0"` | `"1"` | `"2"`）
+      - `"0"`：单端转发（Single-end Forwarding） - 客户端单向转发流量
+      - `"1"`：内网穿透（NAT Traversal） - 穿透NAT进行内网访问
+      - `"2"`：隧道转发（Tunnel Forwarding） - 建立端到端加密隧道
+    - `sid`：服务唯一标识符，必须使用UUID v4格式（36字符，如 `550e8400-e29b-41d4-a716-446655440000`）
     - `iid`：8位十六进制实例ID（如 `a1b2c3d4`）
     - `mid`：16位十六进制主控ID（如 `1a2b3c4d5e6f7890`）
   - `tags` 映射允许使用自定义键值对进行灵活分类
@@ -1342,7 +1412,11 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 - **元数据结构**：
   - `peer`：对象，包含以下字段（均为可选）：
     - `alias`：服务别名（最多256字符，无格式限制）
-    - `sid`：服务ID（最多256字符，无格式限制）
+    - `type`：服务类型（枚举值：`"0"` | `"1"` | `"2"`）
+      - `"0"`：单端转发（Single-end Forwarding）
+      - `"1"`：内网穿透（NAT Traversal）
+      - `"2"`：隧道转发（Tunnel Forwarding）
+    - `sid`：服务ID（UUID v4格式，36字符，如 `550e8400-e29b-41d4-a716-446655440000`）
     - `iid`：实例ID（8位十六进制，如 `a1b2c3d4`）
     - `mid`：主控ID（16位十六进制，如 `1a2b3c4d5e6f7890`）
   - `tags`：自定义键值对对象（键和值最多256字符，键必须唯一）
@@ -1384,7 +1458,8 @@ await fetch(`${API_URL}/instances/abc123`, {
     meta: {
       peer: {
         alias: "远程API服务器",
-        sid: "api-service-prod",
+        type: "1", // 内网穿透
+        sid: "550e8400-e29b-41d4-a716-446655440000", // UUID格式
         iid: "b2c3d4e5",
         mid: "2b3c4d5e6f7a8b9c"
       },
