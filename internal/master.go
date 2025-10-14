@@ -128,11 +128,9 @@ type Meta struct {
 
 // Peer 对端信息
 type Peer struct {
-	Alias string `json:"alias"` // 服务别名
-	Type  string `json:"type"`  // 服务类型
 	SID   string `json:"sid"`   // 服务ID
-	IID   string `json:"iid"`   // 实例ID
-	MID   string `json:"mid"`   // 主控ID
+	Type  string `json:"type"`  // 服务类型
+	Alias string `json:"alias"` // 服务别名
 }
 
 // InstanceEvent 实例事件信息
@@ -1204,24 +1202,16 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 
 			// 更新元数据
 			if reqData.Meta != nil {
-				if len(reqData.Meta.Peer.Alias) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+				if len(reqData.Meta.Peer.SID) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
 					return
 				}
 				if len(reqData.Meta.Peer.Type) > maxValueLen {
 					httpError(w, fmt.Sprintf("Meta peer.type exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
 					return
 				}
-				if len(reqData.Meta.Peer.SID) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
-					return
-				}
-				if len(reqData.Meta.Peer.IID) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.iid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
-					return
-				}
-				if len(reqData.Meta.Peer.MID) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.mid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+				if len(reqData.Meta.Peer.Alias) > maxValueLen {
+					httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
 					return
 				}
 
@@ -2059,11 +2049,9 @@ func (m *Master) generateOpenAPISpec() string {
 	  "Peer": {
 		"type": "object",
 		"properties": {
-		  "alias": {"type": "string", "description": "Service alias"},
-		  "type": {"type": "string", "description": "Service type"},
 		  "sid": {"type": "string", "description": "Service ID"},
-		  "iid": {"type": "string", "description": "Instance ID"},
-		  "mid": {"type": "string", "description": "Master ID"}
+		  "type": {"type": "string", "description": "Service type"},
+		  "alias": {"type": "string", "description": "Service alias"}
 		}
 	  },
 	  "MasterInfo": {
