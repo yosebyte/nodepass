@@ -589,11 +589,6 @@ func (c *Common) stop() {
 	if c.rateLimiter != nil {
 		c.rateLimiter.Reset()
 	}
-
-	// 发送检查点事件
-	c.logger.Event("CHECK_POINT|MODE=%v|PING=0ms|POOL=0|TCPS=0|UDPS=0|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v", c.runMode,
-		atomic.LoadUint64(&c.tcpRX), atomic.LoadUint64(&c.tcpTX),
-		atomic.LoadUint64(&c.udpRX), atomic.LoadUint64(&c.udpTX))
 }
 
 // shutdown 共用优雅关闭

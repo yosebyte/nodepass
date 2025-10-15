@@ -277,6 +277,12 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			}
 
 			w.instance.lastCheckPoint = time.Now()
+
+			// 自动恢复运行状态
+			if w.instance.Status == "error" {
+				w.instance.Status = "running"
+			}
+
 			// 仅当实例未被删除时才存储和发送更新事件
 			if !w.instance.deleted {
 				w.master.instances.Store(w.instanceID, w.instance)
@@ -284,6 +290,15 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			}
 			// 过滤检查点日志
 			continue
+		}
+
+		// 检测端口占用错误并标记实例状态
+		lowerLine := strings.ToLower(line)
+		if w.instance.Status != "error" && !w.instance.deleted &&
+			(strings.Contains(lowerLine, "listen") || strings.Contains(lowerLine, "bind")) &&
+			(strings.Contains(lowerLine, "already in use") || strings.Contains(lowerLine, "only one usage")) {
+			w.instance.Status = "error"
+			w.master.instances.Store(w.instanceID, w.instance)
 		}
 
 		// 输出日志加实例ID
