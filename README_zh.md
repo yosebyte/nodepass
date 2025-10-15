@@ -47,7 +47,7 @@
 - **📈 高性能优化**
   - 智能流量调度与自动连接调优，极低资源占用。
   - 高并发、高负载状态下卓越的系统稳定性能。
-  - 健康检查、断线重连、故障自愈，确保持续高可用。
+  - 负载均衡、健康检查、故障自愈，确保持续高可用。
 
 - **💡 可视化管理**
   - 配套跨平台、多样化的管理前端应用，具备可视化配置能力。
@@ -100,7 +100,7 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 - **[npsh](https://github.com/NodePassProject/npsh)**: 简单易用的 NodePass 一键脚本合集，包括 API 主控、Dash 面板的安装部署、灵活配置和辅助管理。
 
-- **[NodePass-ApplePlatforms](https://github.com/NodePassProject/NodePass-ApplePlatforms)**: 一款为 Apple 用户提供原生体验的 iOS/macOS 应用程序。
+- **[NodePass-ApplePlatforms](https://github.com/NodePassProject/NodePass-ApplePlatforms)**: 面向服务的 iOS/macOS 应用，为 Apple 用户提供原生体验。
 
 - **[nodepass-core](https://github.com/NodePassProject/nodepass-core)**: 开发分支，包含新功能预览和性能优化测试，适合高级用户和开发者。
 
@@ -112,11 +112,15 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 ## 📄 许可协议
 
-`NodePass`项目根据[BSD 3-Clause许可证](LICENSE)授权。
+**NodePass** 项目根据 [BSD 3-Clause 许可证](LICENSE)授权。
 
 ## ⚖️ 免责声明
 
-本项目以“现状”提供，开发者不提供任何明示或暗示的保证。用户使用风险自担，需遵守当地法律法规，仅限合法用途。开发者对任何直接、间接、偶然或后果性损害概不负责。进行二次开发须承诺合法使用并自负法律责任。开发者保留随时修改软件功能及本声明的权利。最终解释权归开发者所有。
+本项目以"现状"提供，开发者不提供任何明示或暗示的保证。用户使用风险自担，需遵守当地法律法规，仅限合法用途。开发者对任何直接、间接、偶然或后果性损害概不负责。进行二次开发须承诺合法使用并自负法律责任。开发者保留随时修改软件功能及本声明的权利。最终解释权归开发者所有。
+
+## 🔗 NFT 支持
+
+以独特方式支持 **NodePass**，查看我们在 [OpenSea](https://opensea.io/collection/nodepass) 上的 NFT 收藏。
 
 ## 🤝 赞助商
 
