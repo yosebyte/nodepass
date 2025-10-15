@@ -767,7 +767,7 @@ func (m *Master) loadState() {
 		}
 
 		// 初始化标签映射
-		if instance.Meta.Tags == nil && instance.ID != apiKeyID {
+		if instance.Meta.Tags == nil {
 			instance.Meta.Tags = make(map[string]string)
 		}
 
