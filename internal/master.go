@@ -378,6 +378,7 @@ func (m *Master) Run() {
 			ID:     apiKeyID,
 			URL:    generateAPIKey(),
 			Config: generateMID(),
+			Meta:   Meta{Tags: make(map[string]string)},
 		}
 		m.instances.Store(apiKeyID, apiKey)
 		m.saveState()
