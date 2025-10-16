@@ -1139,7 +1139,10 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
-		Meta    *Meta  `json:"meta,omitempty"`
+		Meta    *struct {
+			Peer *Peer             `json:"peer,omitempty"`
+			Tags map[string]string `json:"tags,omitempty"`
+		} `json:"meta,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -1218,19 +1221,24 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 
 			// 更新元数据
 			if reqData.Meta != nil {
-				if len(reqData.Meta.Peer.SID) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
-					return
-				}
-				if len(reqData.Meta.Peer.Type) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.type exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
-					return
-				}
-				if len(reqData.Meta.Peer.Alias) > maxValueLen {
-					httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
-					return
+				// 验证并更新 Peer 信息
+				if reqData.Meta.Peer != nil {
+					if len(reqData.Meta.Peer.SID) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					if len(reqData.Meta.Peer.Type) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.type exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					if len(reqData.Meta.Peer.Alias) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					instance.Meta.Peer = *reqData.Meta.Peer
 				}
 
+				// 验证并更新 Tags 信息
 				if reqData.Meta.Tags != nil {
 					// 检查键值对的唯一性和长度
 					seen := make(map[string]bool)
@@ -1249,9 +1257,9 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 						}
 						seen[key] = true
 					}
+					instance.Meta.Tags = reqData.Meta.Tags
 				}
 
-				instance.Meta = *reqData.Meta
 				m.instances.Store(id, instance)
 				go m.saveState()
 				m.logger.Info("Meta updated [%v]", instance.ID)
