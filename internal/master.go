@@ -292,11 +292,9 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			continue
 		}
 
-		// 检测端口占用错误并标记实例状态
-		lowerLine := strings.ToLower(line)
+		// 检测实例错误并标记状态
 		if w.instance.Status != "error" && !w.instance.deleted &&
-			(strings.Contains(lowerLine, "listen") || strings.Contains(lowerLine, "bind")) &&
-			(strings.Contains(lowerLine, "already in use") || strings.Contains(lowerLine, "only one usage")) {
+			(strings.Contains(line, "Server error:") || strings.Contains(line, "Client error:")) {
 			w.instance.Status = "error"
 			w.master.instances.Store(w.instanceID, w.instance)
 		}
