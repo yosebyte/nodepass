@@ -67,6 +67,18 @@ API Key authentication is enabled by default, automatically generated and saved 
   "url": "...",
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0",
   "restart": true,
+  "meta": {
+    "peer": {
+      "sid": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "1",
+      "alias": "remote-service"
+    },
+    "tags": {
+      "environment": "production",
+      "region": "us-west",
+      "owner": "team-alpha"
+    }
+  },
   "mode": 0,
   "ping": 0,
   "pool": 0,
@@ -85,6 +97,15 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `tcprx`/`tcptx`/`udprx`/`udptx`: Cumulative traffic statistics
 - `config`: Instance configuration URL with complete startup configuration
 - `restart`: Auto-restart policy
+- `meta`: Metadata information for instance organization and peer identification
+  - `peer`: Peer connection information (remote endpoint details)
+    - `sid`: Service ID of the remote service, using UUID v4 format (e.g., `550e8400-e29b-41d4-a716-446655440000`)
+    - `type`: Remote service type, using standard enumeration values
+      - `"0"`: Single-end Forwarding mode
+      - `"1"`: NAT Traversal mode
+      - `"2"`: Tunnel Forwarding mode
+    - `alias`: Service alias of the remote endpoint (no format restriction)
+  - `tags`: Custom key-value tags for flexible categorization and filtering
 
 ### Instance URL Format
 
@@ -131,9 +152,25 @@ async function regenerateApiKey() {
   const result = await response.json();
   return result.url; // New API Key
 }
+
+// Get Master ID
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/${apiKeyID}`, {
+    method: 'GET',
+    headers: {
+      'X-API-Key': 'current-api-key'
+    }
+  });
+  
+  const result = await response.json();
+  return result.data.config; // Master ID (16-character hex)
+}
 ```
 
-**Note**: API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+**Note**: 
+- API Key ID is fixed as `********` (eight asterisks). In the internal implementation, this is a special instance ID used to store and manage the API Key.
+- The API Key instance's `config` field stores the **Master ID**, which is a 16-character hexadecimal string (e.g., `1a2b3c4d5e6f7890`) used to uniquely identify the master service.
+- The Master ID is automatically generated on first startup and persisted, remaining constant throughout the master service's lifecycle.
 
 ### Using SSE for Real-time Event Monitoring
 
@@ -531,9 +568,91 @@ To properly manage lifecycles:
      const data = await response.json();
      return data.success;
    }
+   
+   // Update instance metadata
+   async function updateInstanceMetadata(instanceId, metadata) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey // If API Key is enabled 
+       },
+       body: JSON.stringify({ meta: metadata })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
    ```
 
-5. **Auto-restart Policy Management**: Configure automatic startup behavior
+5. **Metadata Management**: Organize and categorize instances with metadata
+   ```javascript
+   // Set peer connection information
+   async function setPeerInfo(instanceId, peerInfo) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {
+             sid: peerInfo.serviceId, // UUID v4 format
+             type: peerInfo.type, // "0" | "1" | "2"
+             alias: peerInfo.alias
+           },
+           tags: {} // Preserve existing tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Add or update instance tags
+   async function updateInstanceTags(instanceId, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: {}, // Preserve existing peer info
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   
+   // Complete metadata update
+   async function updateCompleteMetadata(instanceId, peerInfo, tags) {
+     const response = await fetch(`${API_URL}/instances/${instanceId}`, {
+       method: 'PATCH',
+       headers: { 
+         'Content-Type': 'application/json',
+         'X-API-Key': apiKey
+       },
+       body: JSON.stringify({
+         meta: {
+           peer: peerInfo,
+           tags: tags
+         }
+       })
+     });
+     
+     const data = await response.json();
+     return data.success;
+   }
+   ```
+
+6. **Auto-restart Policy Management**: Configure automatic startup behavior
    ```javascript
    async function setAutoStartPolicy(instanceId, enableAutoStart) {
      const response = await fetch(`${API_URL}/instances/${instanceId}`, {
@@ -584,6 +703,201 @@ To properly manage lifecycles:
      return data.success;
    }
    ```
+
+#### Metadata Management Usage Examples
+
+Here are comprehensive examples showing how to use metadata for instance organization and management:
+
+```javascript
+// Example 1: Establish peer-to-peer tunnel with metadata
+async function establishPeerTunnel(localConfig, remoteConfig) {
+  // Create local server instance
+  const localInstance = await createNodePassInstance({
+    type: 'server',
+    port: localConfig.port,
+    target: localConfig.target
+  });
+  
+  // Create remote client instance
+  const remoteInstance = await createNodePassInstance({
+    type: 'client',
+    serverHost: localConfig.serverHost,
+    port: remoteConfig.port,
+    target: remoteConfig.target
+  });
+  
+  if (localInstance.success && remoteInstance.success) {
+    // Set peer information on local instance
+    await updateCompleteMetadata(
+      localInstance.data.id,
+      {
+        sid: remoteConfig.serviceId, // UUID format
+        type: "2", // Tunnel forwarding
+        alias: remoteConfig.serviceName
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    // Set peer information on remote instance
+    await updateCompleteMetadata(
+      remoteInstance.data.id,
+      {
+        sid: localConfig.serviceId, // UUID format
+        type: "2", // Tunnel forwarding
+        alias: localConfig.serviceName
+      },
+      {
+        tunnel_type: 'peer-to-peer',
+        protocol: 'tcp',
+        encryption: 'tls'
+      }
+    );
+    
+    console.log('Peer tunnel established with metadata');
+  }
+}
+
+// Example 2: Organize instances by environment and region
+async function organizeInstancesByEnvironment(instances) {
+  for (const instance of instances) {
+    const tags = {
+      environment: instance.isProduction ? 'production' : 'development',
+      region: instance.deploymentRegion,
+      team: instance.owningTeam,
+      cost_center: instance.costCenter,
+      criticality: instance.isCritical ? 'high' : 'normal'
+    };
+    
+    await updateInstanceTags(instance.id, tags);
+    console.log(`Tagged instance ${instance.id} with environment metadata`);
+  }
+}
+
+// Example 3: Query instances by metadata tags
+async function findInstancesByTags(requiredTags) {
+  const response = await fetch(`${API_URL}/instances`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  
+  if (data.success) {
+    return data.data.filter(instance => {
+      if (!instance.meta || !instance.meta.tags) return false;
+      
+      // Check if all required tags match
+      return Object.entries(requiredTags).every(([key, value]) => 
+        instance.meta.tags[key] === value
+      );
+    });
+  }
+  return [];
+}
+
+// Example 4: Update metadata based on operational status
+async function updateMetadataOnStatusChange(instanceId, newStatus) {
+  const instance = await fetch(`${API_URL}/instances/${instanceId}`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await instance.json();
+  
+  if (data.success && data.data.meta) {
+    const updatedTags = {
+      ...data.data.meta.tags,
+      last_status_change: new Date().toISOString(),
+      current_status: newStatus,
+      status_change_count: (parseInt(data.data.meta.tags.status_change_count || '0') + 1).toString()
+    };
+    
+    await updateInstanceTags(instanceId, updatedTags);
+  }
+}
+```
+
+#### Metadata Best Practices
+
+1. **Peer Information**: Use the `peer` object to track connections between instances
+   - `sid`: Service unique identifier (required, UUID v4 format, e.g., `550e8400-e29b-41d4-a716-446655440000`)
+     - Use standard UUID v4 format to ensure global uniqueness
+     - Can use JavaScript's `crypto.randomUUID()` or third-party libraries to generate
+   - `type`: Service type identifier (required, string enumeration value)
+     - `"0"`: Single-end Forwarding - For simple client forwarding scenarios
+     - `"1"`: NAT Traversal - For scenarios requiring NAT traversal
+     - `"2"`: Tunnel Forwarding - For establishing encrypted tunnels
+   - `alias`: Friendly name of the remote service (no format restriction, max 256 chars)
+
+2. **Frontend Integration Standards**: To ensure consistency, frontends should follow these standards
+   
+   **Service ID (sid) Generation Standards:**
+   ```javascript
+   // Use browser native API to generate UUID v4
+   const serviceId = crypto.randomUUID();
+   // Example output: "550e8400-e29b-41d4-a716-446655440000"
+   
+   // Or use third-party library (e.g., uuid)
+   import { v4 as uuidv4 } from 'uuid';
+   const serviceId = uuidv4();
+   ```
+   
+   **Service Type (type) Usage Standards:**
+   ```javascript
+   // Define service type enumeration
+   const ServiceType = {
+     SINGLE_END: "0",      // Single-end forwarding: client unidirectional forwarding, no server callback needed
+     NAT_TRAVERSAL: "1",   // NAT traversal: traverse NAT for internal network access
+     TUNNEL: "2"           // Tunnel forwarding: establish end-to-end encrypted tunnel
+   };
+   
+   // Usage example
+   const peerInfo = {
+     sid: crypto.randomUUID(),
+     type: ServiceType.NAT_TRAVERSAL,
+     alias: "Web Server"
+   };
+   ```
+   
+   **Type Selection Guide:**
+   - **Single-end Forwarding ("0")**:
+     - Scenario: Client only needs to forward traffic to remote server
+     - Feature: One-way connection, no server callback required
+     - Example: Local app connecting to cloud database
+   
+   - **NAT Traversal ("1")**:
+     - Scenario: Need to access internal network services from external network
+     - Feature: Traverse NAT and firewall restrictions
+     - Example: Remote access to home NAS, internal web services
+   
+   - **Tunnel Forwarding ("2")**:
+     - Scenario: Need to establish secure end-to-end connection
+     - Feature: Encrypted transmission, bidirectional communication
+     - Example: Secure interconnection between branch offices and headquarters
+
+3. **Tags Organization**: Design a consistent tagging strategy
+   - Use lowercase keys with underscores (e.g., `cost_center`, `deployment_region`)
+   - Limit tag values to meaningful, searchable strings
+   - Common tag categories:
+     - Environment: `production`, `staging`, `development`
+     - Location: `us-west`, `eu-central`, `ap-southeast`
+     - Ownership: `team-alpha`, `ops-team`, `platform-team`
+     - Function: `database-tunnel`, `web-proxy`, `api-gateway`
+     - Criticality: `high`, `medium`, `low`
+
+4. **Field Length Limits**: All metadata fields have length requirements
+   - `peer.sid`: Fixed 36 characters (UUID v4 format, e.g., `550e8400-e29b-41d4-a716-446655440000`)
+   - `peer.type`: Fixed 1 character (enumeration value: `"0"` | `"1"` | `"2"`)
+   - `peer.alias`: Max 256 chars (no specific format required)
+   - Tag keys and values: Max 256 chars each
+
+5. **Tag Uniqueness**: Ensure tag keys are unique within an instance
+   - Duplicate keys will result in a 400 Bad Request error
+
+6. **Filtering and Search**: Use metadata for instance filtering
+   - Client-side filtering by tags for dashboard views
+   - Query instances by peer information for relationship mapping
+   - Group instances by tags for batch operations
 
 #### Complete Auto-restart Policy Usage Example
 
@@ -798,6 +1112,18 @@ The instance object in API responses contains the following fields:
   "url": "server://...",      // Instance configuration URL
   "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&max=1024&mode=0&read=1h&rate=0&slot=65536&proxy=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
+  "meta": {                   // Metadata for organization and peer tracking
+    "peer": {
+      "sid": "550e8400-e29b-41d4-a716-446655440000",  // Remote service ID (UUID format)
+      "type": "1",                // Remote service type (0=Single-end, 1=NAT Traversal, 2=Tunnel)
+      "alias": "remote-service"   // Remote service friendly name
+    },
+    "tags": {                 // Custom key-value tags
+      "environment": "production",
+      "region": "us-west",
+      "team": "platform"
+    }
+  },
   "mode": 0,                  // Instance mode
   "tcprx": 1024,              // TCP received bytes
   "tcptx": 2048,              // TCP transmitted bytes
@@ -811,6 +1137,17 @@ The instance object in API responses contains the following fields:
 - `config` field contains the instance's complete configuration URL, auto-generated by the system
 - `mode` field indicates the current runtime mode of the instance
 - `restart` field controls the auto-restart behavior of the instance
+- `meta` field contains structured metadata for instance organization
+  - `peer` object tracks remote endpoint information for peer-to-peer connections
+    - `sid`: Service unique identifier, must use UUID v4 format (36 chars, e.g., `550e8400-e29b-41d4-a716-446655440000`)
+    - `type`: Service type identifier, string enumeration value (`"0"` | `"1"` | `"2"`)
+      - `"0"`: Single-end Forwarding - Client unidirectional forwarding
+      - `"1"`: NAT Traversal - Traverse NAT for internal network access
+      - `"2"`: Tunnel Forwarding - Establish end-to-end encrypted tunnel
+    - `alias`: Custom string, max 256 chars, no format restriction
+  - `tags` map allows flexible categorization with custom key-value pairs
+  - Tag keys and values have a 256-character maximum length
+  - Tag keys must be unique within an instance
 
 ### Instance Configuration Field
 
@@ -1018,9 +1355,18 @@ const instance = await fetch(`${API_URL}/instances/abc123`, {
 ```
 
 #### PATCH /instances/{id}
-- **Description**: Update instance state, alias, or perform control operations
+- **Description**: Update instance state, alias, metadata, or perform control operations
 - **Authentication**: Requires API Key
-- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false }`
+- **Request body**: `{ "alias": "new alias", "action": "start|stop|restart|reset", "restart": true|false, "meta": {...} }`
+- **Metadata Structure**:
+  - `peer`: Object with fields (all optional):
+    - `sid`: Service ID (UUID v4 format, 36 chars, e.g., `550e8400-e29b-41d4-a716-446655440000`)
+    - `type`: Service type (enumeration value: `"0"` | `"1"` | `"2"`)
+      - `"0"`: Single-end Forwarding
+      - `"1"`: NAT Traversal
+      - `"2"`: Tunnel Forwarding
+    - `alias`: Service alias (max 256 chars, no format restriction)
+  - `tags`: Object with custom key-value pairs (keys and values max 256 chars, keys must be unique)
 - **Example**:
 ```javascript
 // Update alias and restart policy
@@ -1045,6 +1391,48 @@ await fetch(`${API_URL}/instances/abc123`, {
   },
   body: JSON.stringify({ 
     action: "restart"
+  })
+});
+
+// Update metadata with peer information and tags
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {
+        sid: "550e8400-e29b-41d4-a716-446655440000", // UUID format
+        type: "1", // NAT Traversal
+        alias: "remote-api-server"
+      },
+      tags: {
+        environment: "production",
+        region: "us-east",
+        team: "backend",
+        criticality: "high"
+      }
+    }
+  })
+});
+
+// Update only tags (peer info remains unchanged)
+await fetch(`${API_URL}/instances/abc123`, {
+  method: 'PATCH',
+  headers: { 
+    'Content-Type': 'application/json',
+    'X-API-Key': apiKey 
+  },
+  body: JSON.stringify({ 
+    meta: {
+      peer: {},  // Empty object preserves existing peer info
+      tags: {
+        environment: "staging",
+        updated_at: new Date().toISOString()
+      }
+    }
   })
 });
 ```
@@ -1101,6 +1489,7 @@ await fetch(`${API_URL}/instances/abc123`, {
 - **Authentication**: Requires API Key
 - **Request body**: `{ "alias": "new alias" }`
 - **Response**: Complete master information (same as GET /info)
+- **Note**: Master alias is stored in the `alias` field of the API Key instance (ID `********`)
 - **Example**:
 ```javascript
 // Update master alias
@@ -1116,6 +1505,18 @@ const response = await fetch(`${API_URL}/info`, {
 const data = await response.json();
 console.log('Updated alias:', data.alias);
 // Response contains full system info with updated alias
+```
+
+**Retrieving Master ID**: The Master ID is stored in the `config` field of the API Key instance and can be retrieved as follows:
+```javascript
+// Get Master ID
+async function getMasterID() {
+  const response = await fetch(`${API_URL}/instances/********`, {
+    headers: { 'X-API-Key': apiKey }
+  });
+  const data = await response.json();
+  return data.data.config; // Returns 16-character hex Master ID
+}
 ```
 
 #### GET /tcping

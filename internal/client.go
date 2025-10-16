@@ -63,7 +63,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
 		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v",
-			prefix, c.tunnelKey, c.tunnelTCPAddr, c.targetTCPAddr,
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(),
 			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol)
 	}
 	logInfo("Client started")

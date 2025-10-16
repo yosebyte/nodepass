@@ -264,6 +264,63 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 - 头部格式遵循HAProxy PROXY协议v1规范
 - 如果目标服务不支持PROXY协议，将导致连接失败
 
+## 目标地址组与负载均衡
+
+NodePass支持配置多个目标地址以实现高可用性和负载均衡。目标地址组功能仅适用于出口端（流量最终到达的目的地），不应在入口端使用。
+
+### 目标地址组配置
+
+目标地址组通过逗号分隔多个地址来配置，NodePass会自动在这些地址之间进行轮询和故障转移：
+
+```bash
+# 服务端配置多个后端目标（正向模式，mode=2）
+nodepass "server://0.0.0.0:10101/backend1.example.com:8080,backend2.example.com:8080,backend3.example.com:8080?mode=2&tls=1"
+
+# 客户端配置多个本地服务（单端转发模式，mode=1）
+nodepass "client://127.0.0.1:1080/app1.local:8080,app2.local:8080?mode=1"
+```
+
+### 轮询策略
+
+NodePass采用轮询（Round-Robin）算法，结合故障转移和负载均衡特性：
+
+- **负载均衡**：每次成功建立连接后，自动切换到下一个目标地址，实现流量均匀分布
+- **故障转移**：当某个地址连接失败时，立即尝试下一个地址，确保服务高可用
+- **自动恢复**：失败的地址会在轮询周期中重新尝试，故障恢复后自动接入流量
+
+### 使用场景
+
+目标地址组适用于以下场景：
+
+- **高可用性部署**：多个后端服务器实现故障自动切换
+- **负载均衡**：流量均匀分布到多个后端实例
+- **灰度发布**：逐步将流量切换到新版本服务
+- **地域分布**：根据网络拓扑选择最优路径
+
+### 重要说明
+
+- **仅适用于出口**：目标地址组只能配置在流量的最终目的地
+  - ✓ 服务端正向模式（mode=2）：`server://0.0.0.0:10101/target1:80,target2:80`
+  - ✓ 客户端单端转发模式（mode=1）：`client://127.0.0.1:1080/target1:80,target2:80`
+  - ✗ 隧道地址不支持：不要在隧道地址使用多地址配置
+  
+- **地址格式**：所有地址必须使用相同的端口或明确指定每个地址的端口
+- **协议一致性**：地址组中的所有地址必须支持相同的协议（TCP/UDP）
+- **线程安全**：轮询索引使用原子操作，支持高并发场景
+
+示例配置：
+
+```bash
+# 正确示例：服务端配置3个后端Web服务器
+nodepass "server://0.0.0.0:10101/web1.internal:8080,web2.internal:8080,web3.internal:8080?mode=2&log=info"
+
+# 正确示例：客户端配置2个本地数据库实例
+nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?mode=1&log=warn"
+
+# 错误示例：不要在隧道地址使用多地址（会导致解析错误）
+# nodepass "server://host1:10101,host2:10101/target:8080"  # ✗ 错误用法
+```
+
 ## URL查询参数配置及作用范围
 
 NodePass支持通过URL查询参数进行灵活配置，不同参数在 server、client、master 模式下的适用性如下表：
@@ -281,7 +338,6 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `rate`    | 带宽速率限制         | `0`       |   O    |   O    |   X    |
 | `slot`    | 最大连接数限制       | `65536`   |   O    |   O    |   X    |
 | `proxy`   | PROXY协议支持        | `0`       |   O    |   O    |   X    |
-
 
 - O：参数有效，推荐根据实际场景配置
 - X：参数无效，忽略设置
@@ -302,10 +358,10 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
+| `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
-| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
-| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
+| `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 5s | `export NP_UDP_DIAL_TIMEOUT=30s` |
 | `NP_POOL_GET_TIMEOUT` | 从连接池获取连接的超时时间 | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | 连接创建之间的最小间隔 | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
 | `NP_MAX_POOL_INTERVAL` | 连接创建之间的最大间隔 | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
@@ -363,7 +419,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 对于允许间歇性传输的应用可以增加此值以避免误判超时
 
 - `NP_UDP_DIAL_TIMEOUT`：UDP连接建立超时
-  - 默认值(10s)为大多数应用提供良好平衡
+  - 默认值(5s)为大多数应用提供良好平衡
   - 对于高延迟网络或响应缓慢的应用增加此值
   - 对于需要快速故障切换的低延迟应用减少此值
 
@@ -377,14 +433,14 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
   - 考虑为批量数据传输和流媒体增加到65536或更高
 
 - `NP_TCP_DIAL_TIMEOUT`：TCP连接建立超时
-  - 默认值(30s)适用于大多数网络条件
+  - 默认值(5s)适用于大多数网络条件
   - 对于网络条件不稳定的环境增加此值
   - 对于需要快速判断连接成功与否的应用减少此值
 
 ### 连接池管理设置
 
 - `NP_POOL_GET_TIMEOUT`：从连接池获取连接时的最大等待时间
-  - 默认值(30s)为连接建立提供充足时间
+  - 默认值(5s)为连接建立提供充足时间
   - 对于高延迟环境或使用大型连接池时增加此值
   - 对于需要快速故障检测的应用减少此值
   - 在客户端单端转发模式下不使用连接池，此参数被忽略

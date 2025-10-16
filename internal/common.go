@@ -33,8 +33,9 @@ type Common struct {
 	tunnelKey        string             // 隧道密钥
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
-	targetTCPAddr    *net.TCPAddr       // 目标TCP地址
-	targetUDPAddr    *net.UDPAddr       // 目标UDP地址
+	targetTCPAddrs   []*net.TCPAddr     // 目标TCP地址组
+	targetUDPAddrs   []*net.UDPAddr     // 目标UDP地址组
+	targetIdx        uint64             // 目标地址索引
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
 	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
@@ -75,9 +76,9 @@ var (
 	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
 	tcpDataBufSize   = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
 	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 2048)                      // UDP缓冲区大小
-	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 10*time.Second)       // 握手超时
-	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 30*time.Second)        // TCP拨号超时
-	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 10*time.Second)        // UDP拨号超时
+	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 5*time.Second)        // 握手超时
+	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
+	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
 	udpReadTimeout   = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
 	poolGetTimeout   = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
 	minPoolInterval  = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
@@ -207,6 +208,9 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 解析隧道地址
 	tunnelAddr := parsedURL.Host
+	if tunnelAddr == "" {
+		return fmt.Errorf("getAddress: no valid tunnel address found")
+	}
 
 	// 解析隧道TCP地址
 	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
@@ -222,24 +226,99 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
 	}
 
-	// 处理目标地址
+	// 处理目标地址组
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
-
-	// 解析目标TCP地址
-	if targetTCPAddr, err := net.ResolveTCPAddr("tcp", targetAddr); err == nil {
-		c.targetTCPAddr = targetTCPAddr
-	} else {
-		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
+	if targetAddr == "" {
+		return fmt.Errorf("getAddress: no valid target address found")
 	}
 
-	// 解析目标UDP地址
-	if targetUDPAddr, err := net.ResolveUDPAddr("udp", targetAddr); err == nil {
-		c.targetUDPAddr = targetUDPAddr
-	} else {
-		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
+	addrList := strings.Split(targetAddr, ",")
+	tempTCPAddrs := make([]*net.TCPAddr, 0, len(addrList))
+	tempUDPAddrs := make([]*net.UDPAddr, 0, len(addrList))
+
+	for _, addr := range addrList {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+
+		// 解析目标TCP地址
+		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("getAddress: resolveTCPAddr failed for %s: %w", addr, err)
+		}
+
+		// 解析目标UDP地址
+		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return fmt.Errorf("getAddress: resolveUDPAddr failed for %s: %w", addr, err)
+		}
+
+		tempTCPAddrs = append(tempTCPAddrs, tcpAddr)
+		tempUDPAddrs = append(tempUDPAddrs, udpAddr)
 	}
+
+	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
+		return fmt.Errorf("getAddress: no valid target address found")
+	}
+
+	// 设置目标地址组
+	c.targetTCPAddrs = tempTCPAddrs
+	c.targetUDPAddrs = tempUDPAddrs
+	c.targetIdx = 0
 
 	return nil
+}
+
+// getTargetAddrsString 获取目标地址组的字符串表示
+func (c *Common) getTargetAddrsString() string {
+	addrs := make([]string, len(c.targetTCPAddrs))
+	for i, addr := range c.targetTCPAddrs {
+		addrs[i] = addr.String()
+	}
+	return strings.Join(addrs, ",")
+}
+
+// nextTargetIdx 获取下一个目标地址索引
+func (c *Common) nextTargetIdx() int {
+	if len(c.targetTCPAddrs) <= 1 {
+		return 0
+	}
+	return int((atomic.AddUint64(&c.targetIdx, 1) - 1) % uint64(len(c.targetTCPAddrs)))
+}
+
+// dialWithRotation 轮询拨号到目标地址组
+func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Conn, error) {
+	var addrCount int
+	var getAddr func(int) string
+
+	if network == "tcp" {
+		addrCount = len(c.targetTCPAddrs)
+		getAddr = func(i int) string { return c.targetTCPAddrs[i].String() }
+	} else {
+		addrCount = len(c.targetUDPAddrs)
+		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
+	}
+
+	// 单目标地址：快速路径
+	if addrCount == 1 {
+		return net.DialTimeout(network, getAddr(0), timeout)
+	}
+
+	// 多目标地址：负载均衡 + 故障转移
+	startIdx := c.nextTargetIdx()
+	var lastErr error
+
+	for i := range addrCount {
+		currentIdx := (startIdx + i) % addrCount
+		conn, err := net.DialTimeout(network, getAddr(currentIdx), timeout)
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+
+	return nil, fmt.Errorf("dialWithRotation: all %d targets failed: %w", addrCount, lastErr)
 }
 
 // getTunnelKey 从URL中获取隧道密钥
@@ -418,19 +497,19 @@ func (c *Common) initTunnelListener() error {
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
-	if c.targetTCPAddr == nil || c.targetUDPAddr == nil {
-		return fmt.Errorf("initTargetListener: nil target address")
+	if len(c.targetTCPAddrs) == 0 || len(c.targetUDPAddrs) == 0 {
+		return fmt.Errorf("initTargetListener: no target address")
 	}
 
 	// 初始化目标TCP监听器
-	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddr)
+	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
 	if err != nil {
 		return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
 	}
 	c.targetListener = targetListener
 
 	// 初始化目标UDP监听器
-	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddr)
+	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
 	if err != nil {
 		return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
 	}
@@ -510,11 +589,6 @@ func (c *Common) stop() {
 	if c.rateLimiter != nil {
 		c.rateLimiter.Reset()
 	}
-
-	// 发送检查点事件
-	c.logger.Event("CHECK_POINT|MODE=%v|PING=0ms|POOL=0|TCPS=0|UDPS=0|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v", c.runMode,
-		atomic.LoadUint64(&c.tcpRX), atomic.LoadUint64(&c.tcpTX),
-		atomic.LoadUint64(&c.udpRX), atomic.LoadUint64(&c.udpTX))
 }
 
 // shutdown 共用优雅关闭
@@ -1045,9 +1119,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	defer c.releaseSlot(false)
 
 	// 连接到目标TCP地址
-	targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
+	targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
 	if err != nil {
-		c.logger.Error("commonTCPOnce: dialTimeout failed: %v", err)
+		c.logger.Error("commonTCPOnce: dialWithRotation failed: %v", err)
 		return
 	}
 
@@ -1130,9 +1204,10 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			return
 		}
 
-		newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+		// 创建新的会话
+		newSession, err := c.dialWithRotation("udp", udpDialTimeout)
 		if err != nil {
-			c.logger.Error("commonUDPOnce: dialTimeout failed: %v", err)
+			c.logger.Error("commonUDPOnce: dialWithRotation failed: %v", err)
 			c.releaseSlot(true)
 			return
 		}
@@ -1250,7 +1325,7 @@ func (c *Common) singleEventLoop() error {
 		now := time.Now()
 
 		// 尝试连接到目标地址
-		if conn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), reportInterval); err == nil {
+		if conn, err := net.DialTimeout("tcp", c.targetTCPAddrs[c.nextTargetIdx()].String(), reportInterval); err == nil {
 			ping = int(time.Since(now).Milliseconds())
 			conn.Close()
 		}
@@ -1312,9 +1387,9 @@ func (c *Common) singleTCPLoop() error {
 			defer c.releaseSlot(false)
 
 			// 尝试建立目标连接
-			targetConn, err := net.DialTimeout("tcp", c.targetTCPAddr.String(), tcpDialTimeout)
+			targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
 			if err != nil {
-				c.logger.Error("singleTCPLoop: dialTimeout failed: %v", err)
+				c.logger.Error("singleTCPLoop: dialWithRotation failed: %v", err)
 				return
 			}
 
@@ -1391,9 +1466,9 @@ func (c *Common) singleUDPLoop() error {
 			}
 
 			// 创建新的会话
-			newSession, err := net.DialTimeout("udp", c.targetUDPAddr.String(), udpDialTimeout)
+			newSession, err := c.dialWithRotation("udp", udpDialTimeout)
 			if err != nil {
-				c.logger.Error("singleUDPLoop: dialTimeout failed: %v", err)
+				c.logger.Error("singleUDPLoop: dialWithRotation failed: %v", err)
 				c.releaseSlot(true)
 				c.putUDPBuffer(buffer)
 				continue

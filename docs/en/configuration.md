@@ -264,6 +264,63 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 - The header format follows the HAProxy PROXY protocol v1 specification
 - If the target service doesn't support PROXY protocol, connections may fail or behave unexpectedly
 
+## Target Address Groups and Load Balancing
+
+NodePass supports configuring multiple target addresses to achieve high availability and load balancing. Target address groups are only applicable to the egress side (the final destination of traffic) and should not be used on the ingress side.
+
+### Target Address Group Configuration
+
+Target address groups are configured by separating multiple addresses with commas. NodePass automatically performs round-robin and failover across these addresses:
+
+```bash
+# Server with multiple backend targets (forward mode, mode=2)
+nodepass "server://0.0.0.0:10101/backend1.example.com:8080,backend2.example.com:8080,backend3.example.com:8080?mode=2&tls=1"
+
+# Client with multiple local services (single-end forwarding mode, mode=1)
+nodepass "client://127.0.0.1:1080/app1.local:8080,app2.local:8080?mode=1"
+```
+
+### Rotation Strategy
+
+NodePass employs a Round-Robin algorithm that combines failover and load balancing features:
+
+- **Load Balancing**: After each successful connection establishment, automatically switches to the next target address for even traffic distribution
+- **Failover**: When a connection to an address fails, immediately tries the next address to ensure service availability
+- **Automatic Recovery**: Failed addresses are retried in subsequent rotation cycles and automatically resume receiving traffic after recovery
+
+### Use Cases
+
+Target address groups are suitable for the following scenarios:
+
+- **High Availability Deployment**: Multiple backend servers for automatic failover
+- **Load Balancing**: Even traffic distribution across multiple backend instances
+- **Canary Releases**: Gradually shifting traffic to new service versions
+- **Geographic Distribution**: Selecting optimal paths based on network topology
+
+### Important Notes
+
+- **Egress Only**: Target address groups can only be configured at the final traffic destination
+  - ✓ Server forward mode (mode=2): `server://0.0.0.0:10101/target1:80,target2:80`
+  - ✓ Client single-end forwarding mode (mode=1): `client://127.0.0.1:1080/target1:80,target2:80`
+  - ✗ Tunnel addresses do not support: Do not use multi-address configuration for tunnel addresses
+  
+- **Address Format**: All addresses must use the same port or explicitly specify the port for each address
+- **Protocol Consistency**: All addresses in the group must support the same protocol (TCP/UDP)
+- **Thread Safety**: Rotation index uses atomic operations, supporting high-concurrency scenarios
+
+Example configurations:
+
+```bash
+# Correct example: Server with 3 backend web servers
+nodepass "server://0.0.0.0:10101/web1.internal:8080,web2.internal:8080,web3.internal:8080?mode=2&log=info"
+
+# Correct example: Client with 2 local database instances
+nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?mode=1&log=warn"
+
+# Incorrect example: Do not use multi-address for tunnel addresses (will cause parsing errors)
+# nodepass "server://host1:10101,host2:10101/target:8080"  # ✗ Wrong usage
+```
+
 ## URL Query Parameter Scope and Applicability
 
 NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
@@ -301,10 +358,10 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 10s | `export NP_HANDSHAKE_TIMEOUT=30s` |
+| `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
-| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 30s | `export NP_TCP_DIAL_TIMEOUT=60s` |
-| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 10s | `export NP_UDP_DIAL_TIMEOUT=30s` |
+| `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
+| `NP_UDP_DIAL_TIMEOUT` | Timeout for establishing UDP connections | 5s | `export NP_UDP_DIAL_TIMEOUT=30s` |
 | `NP_POOL_GET_TIMEOUT` | Timeout for getting connections from pool | 5s | `export NP_POOL_GET_TIMEOUT=60s` |
 | `NP_MIN_POOL_INTERVAL` | Minimum interval between connection creations | 100ms | `export NP_MIN_POOL_INTERVAL=200ms` |
 | `NP_MAX_POOL_INTERVAL` | Maximum interval between connection creations | 1s | `export NP_MAX_POOL_INTERVAL=3s` |
@@ -362,7 +419,7 @@ For applications relying heavily on UDP traffic:
   - For applications allowing intermittent transmission, increase this value to avoid false timeout detection
 
 - `NP_UDP_DIAL_TIMEOUT`: Timeout for establishing UDP connections
-  - Default (10s) provides good balance for most applications
+  - Default (5s) provides good balance for most applications
   - Increase for high-latency networks or applications with slow response times
   - Decrease for low-latency applications requiring quick failover
 
@@ -376,14 +433,14 @@ For optimizing TCP connections:
   - Consider increasing to 65536 or higher for bulk data transfers and streaming
 
 - `NP_TCP_DIAL_TIMEOUT`: Timeout for establishing TCP connections
-  - Default (30s) is suitable for most network conditions
+  - Default (5s) is suitable for most network conditions
   - Increase for unstable network conditions
   - Decrease for applications that need quick connection success/failure determination
 
 ### Pool Management Settings
 
 - `NP_POOL_GET_TIMEOUT`: Maximum time to wait when getting connections from pool
-  - Default (30s) provides sufficient time for connection establishment
+  - Default (5s) provides sufficient time for connection establishment
   - Increase for high-latency environments or when using large pool sizes
   - Decrease for applications requiring fast failure detection
   - In client single-end forwarding mode, connection pools are not used and this parameter is ignored

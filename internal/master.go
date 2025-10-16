@@ -65,6 +65,7 @@ const swaggerUIHTML = `<!DOCTYPE html>
 // Master 实现主控模式功能
 type Master struct {
 	Common                            // 继承通用功能
+	mid           string              // 主控ID
 	alias         string              // 主控别名
 	prefix        string              // API前缀
 	version       string              // NP版本
@@ -94,7 +95,7 @@ type Instance struct {
 	URL            string             `json:"url"`       // 实例URL
 	Config         string             `json:"config"`    // 实例配置
 	Restart        bool               `json:"restart"`   // 是否自启动
-	Tags           []Tag              `json:"tags"`      // 标签数组
+	Meta           Meta               `json:"meta"`      // 元数据信息
 	Mode           int32              `json:"mode"`      // 实例模式
 	Ping           int32              `json:"ping"`      // 端内延迟
 	Pool           int32              `json:"pool"`      // 池连接数
@@ -108,6 +109,10 @@ type Instance struct {
 	TCPTXBase      uint64             `json:"-" gob:"-"` // TCP发送字节数基线（不序列化）
 	UDPRXBase      uint64             `json:"-" gob:"-"` // UDP接收字节数基线（不序列化）
 	UDPTXBase      uint64             `json:"-" gob:"-"` // UDP发送字节数基线（不序列化）
+	TCPRXReset     uint64             `json:"-" gob:"-"` // TCP接收重置偏移量（不序列化）
+	TCPTXReset     uint64             `json:"-" gob:"-"` // TCP发送重置偏移量（不序列化）
+	UDPRXReset     uint64             `json:"-" gob:"-"` // UDP接收重置偏移量（不序列化）
+	UDPTXReset     uint64             `json:"-" gob:"-"` // UDP发送重置偏移量（不序列化）
 	cmd            *exec.Cmd          `json:"-" gob:"-"` // 命令对象（不序列化）
 	stopped        chan struct{}      `json:"-" gob:"-"` // 停止信号通道（不序列化）
 	deleted        bool               `json:"-" gob:"-"` // 删除标志（不序列化）
@@ -115,10 +120,17 @@ type Instance struct {
 	lastCheckPoint time.Time          `json:"-" gob:"-"` // 上次检查点时间（不序列化）
 }
 
-// Tag 标签结构体
-type Tag struct {
-	Key   string `json:"key"`   // 标签键
-	Value string `json:"value"` // 标签值
+// Meta 元数据信息
+type Meta struct {
+	Peer Peer              `json:"peer"` // 对端信息
+	Tags map[string]string `json:"tags"` // 标签映射
+}
+
+// Peer 对端信息
+type Peer struct {
+	SID   string `json:"sid"`   // 服务ID
+	Type  string `json:"type"`  // 服务类型
+	Alias string `json:"alias"` // 服务别名
 }
 
 // InstanceEvent 实例事件信息
@@ -250,13 +262,27 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 
 			stats := []*uint64{&w.instance.TCPRX, &w.instance.TCPTX, &w.instance.UDPRX, &w.instance.UDPTX}
 			bases := []uint64{w.instance.TCPRXBase, w.instance.TCPTXBase, w.instance.UDPRXBase, w.instance.UDPTXBase}
+			resets := []*uint64{&w.instance.TCPRXReset, &w.instance.TCPTXReset, &w.instance.UDPRXReset, &w.instance.UDPTXReset}
 			for i, stat := range stats {
 				if v, err := strconv.ParseUint(matches[i+6], 10, 64); err == nil {
-					*stat = bases[i] + v
+					// 累计值 = 基线 + 检查点值 - 重置偏移
+					if v >= *resets[i] {
+						*stat = bases[i] + v - *resets[i]
+					} else {
+						// 发生重启，更新算法，清零偏移
+						*stat = bases[i] + v
+						*resets[i] = 0
+					}
 				}
 			}
 
 			w.instance.lastCheckPoint = time.Now()
+
+			// 自动恢复运行状态
+			if w.instance.Status == "error" {
+				w.instance.Status = "running"
+			}
+
 			// 仅当实例未被删除时才存储和发送更新事件
 			if !w.instance.deleted {
 				w.master.instances.Store(w.instanceID, w.instance)
@@ -264,6 +290,13 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 			}
 			// 过滤检查点日志
 			continue
+		}
+
+		// 检测实例错误并标记状态
+		if w.instance.Status != "error" && !w.instance.deleted &&
+			(strings.Contains(line, "Server error:") || strings.Contains(line, "Client error:")) {
+			w.instance.Status = "error"
+			w.master.instances.Store(w.instanceID, w.instance)
 		}
 
 		// 输出日志加实例ID
@@ -355,13 +388,26 @@ func (m *Master) Run() {
 	if !ok {
 		// 如果不存在API Key实例，则创建一个
 		apiKey = &Instance{
-			ID:  apiKeyID,
-			URL: generateAPIKey(),
+			ID:     apiKeyID,
+			URL:    generateAPIKey(),
+			Config: generateMID(),
+			Meta:   Meta{Tags: make(map[string]string)},
 		}
 		m.instances.Store(apiKeyID, apiKey)
 		m.saveState()
 		m.logger.Info("API Key created: %v", apiKey.URL)
 	} else {
+		// 从API Key实例加载别名和主控ID
+		m.alias = apiKey.Alias
+
+		if apiKey.Config == "" {
+			apiKey.Config = generateMID()
+			m.instances.Store(apiKeyID, apiKey)
+			m.saveState()
+			m.logger.Info("Master ID created: %v", apiKey.Config)
+		}
+		m.mid = apiKey.Config
+
 		m.logger.Info("API Key loaded: %v", apiKey.URL)
 	}
 
@@ -734,7 +780,10 @@ func (m *Master) loadState() {
 			instance.Config = m.generateConfigURL(instance)
 		}
 
-		instance.Tags = nil
+		// 初始化标签映射
+		if instance.Meta.Tags == nil {
+			instance.Meta.Tags = make(map[string]string)
+		}
 
 		m.instances.Store(id, instance)
 
@@ -742,6 +791,7 @@ func (m *Master) loadState() {
 		if instance.Restart {
 			m.logger.Info("Auto-starting instance: %v [%v]", instance.URL, instance.ID)
 			m.startInstance(instance)
+			time.Sleep(baseDuration)
 		}
 	}
 
@@ -784,6 +834,13 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 		}
 		m.alias = reqData.Alias
 
+		// 持久化别名到API Key实例
+		if apiKey, ok := m.findInstance(apiKeyID); ok {
+			apiKey.Alias = m.alias
+			m.instances.Store(apiKeyID, apiKey)
+			go m.saveState()
+		}
+
 		writeJSON(w, http.StatusOK, m.getMasterInfo())
 
 	default:
@@ -794,6 +851,7 @@ func (m *Master) handleInfo(w http.ResponseWriter, r *http.Request) {
 // getMasterInfo 获取完整的主控信息
 func (m *Master) getMasterInfo() map[string]any {
 	info := map[string]any{
+		"mid":        m.mid,
 		"alias":      m.alias,
 		"os":         runtime.GOOS,
 		"arch":       runtime.GOARCH,
@@ -1013,6 +1071,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
 			Restart: true,
+			Meta:    Meta{Tags: make(map[string]string)},
 			stopped: make(chan struct{}),
 		}
 
@@ -1078,6 +1137,10 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 		Alias   string `json:"alias,omitempty"`
 		Action  string `json:"action,omitempty"`
 		Restart *bool  `json:"restart,omitempty"`
+		Meta    *struct {
+			Peer *Peer             `json:"peer,omitempty"`
+			Tags map[string]string `json:"tags,omitempty"`
+		} `json:"meta,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&reqData); err == nil {
 		if id == apiKeyID {
@@ -1088,31 +1151,6 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 		} else {
-			// 重置流量统计
-			if reqData.Action == "reset" {
-				instance.TCPRX = 0
-				instance.TCPTX = 0
-				instance.UDPRX = 0
-				instance.UDPTX = 0
-				m.instances.Store(id, instance)
-				go m.saveState()
-				m.logger.Info("Traffic stats reset: [%v]", instance.ID)
-
-				// 发送流量统计重置事件
-				m.sendSSEEvent("update", instance)
-			}
-
-			// 更新自启动设置
-			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
-				instance.Restart = *reqData.Restart
-				m.instances.Store(id, instance)
-				go m.saveState()
-				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
-
-				// 发送restart策略变更事件
-				m.sendSSEEvent("update", instance)
-			}
-
 			// 更新实例别名
 			if reqData.Alias != "" && instance.Alias != reqData.Alias {
 				if len(reqData.Alias) > maxValueLen {
@@ -1128,10 +1166,106 @@ func (m *Master) handlePatchInstance(w http.ResponseWriter, r *http.Request, id 
 				m.sendSSEEvent("update", instance)
 			}
 
-			// 处理当前实例操作
-			if reqData.Action != "" && reqData.Action != "reset" {
-				m.processInstanceAction(instance, reqData.Action)
+			// 处理实例操作
+			if reqData.Action != "" {
+				// 验证 action 是否合法
+				validActions := map[string]bool{
+					"start":   true,
+					"stop":    true,
+					"restart": true,
+					"reset":   true,
+				}
+				if !validActions[reqData.Action] {
+					httpError(w, fmt.Sprintf("Invalid action: %s", reqData.Action), http.StatusBadRequest)
+					return
+				}
+
+				// 重置流量统计
+				if reqData.Action == "reset" {
+					instance.TCPRXReset = instance.TCPRX - instance.TCPRXBase
+					instance.TCPTXReset = instance.TCPTX - instance.TCPTXBase
+					instance.UDPRXReset = instance.UDPRX - instance.UDPRXBase
+					instance.UDPTXReset = instance.UDPTX - instance.UDPTXBase
+					instance.TCPRX = 0
+					instance.TCPTX = 0
+					instance.UDPRX = 0
+					instance.UDPTX = 0
+					instance.TCPRXBase = 0
+					instance.TCPTXBase = 0
+					instance.UDPRXBase = 0
+					instance.UDPTXBase = 0
+					m.instances.Store(id, instance)
+					go m.saveState()
+					m.logger.Info("Traffic stats reset: 0 [%v]", instance.ID)
+
+					// 发送流量统计重置事件
+					m.sendSSEEvent("update", instance)
+				} else {
+					// 处理 start/stop/restart 操作
+					m.processInstanceAction(instance, reqData.Action)
+				}
 			}
+
+			// 更新自启动设置
+			if reqData.Restart != nil && instance.Restart != *reqData.Restart {
+				instance.Restart = *reqData.Restart
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Restart policy updated: %v [%v]", *reqData.Restart, instance.ID)
+
+				// 发送restart策略变更事件
+				m.sendSSEEvent("update", instance)
+			}
+
+			// 更新元数据
+			if reqData.Meta != nil {
+				// 验证并更新 Peer 信息
+				if reqData.Meta.Peer != nil {
+					if len(reqData.Meta.Peer.SID) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.sid exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					if len(reqData.Meta.Peer.Type) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.type exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					if len(reqData.Meta.Peer.Alias) > maxValueLen {
+						httpError(w, fmt.Sprintf("Meta peer.alias exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+						return
+					}
+					instance.Meta.Peer = *reqData.Meta.Peer
+				}
+
+				// 验证并更新 Tags 信息
+				if reqData.Meta.Tags != nil {
+					// 检查键值对的唯一性和长度
+					seen := make(map[string]bool)
+					for key, value := range reqData.Meta.Tags {
+						if len(key) > maxValueLen {
+							httpError(w, fmt.Sprintf("Meta tag key exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+							return
+						}
+						if len(value) > maxValueLen {
+							httpError(w, fmt.Sprintf("Meta tag value exceeds maximum length %d", maxValueLen), http.StatusBadRequest)
+							return
+						}
+						if seen[key] {
+							httpError(w, fmt.Sprintf("Duplicate meta tag key: %s", key), http.StatusBadRequest)
+							return
+						}
+						seen[key] = true
+					}
+					instance.Meta.Tags = reqData.Meta.Tags
+				}
+
+				m.instances.Store(id, instance)
+				go m.saveState()
+				m.logger.Info("Meta updated [%v]", instance.ID)
+
+				// 发送元数据更新事件
+				m.sendSSEEvent("update", instance)
+			}
+
 		}
 	}
 	writeJSON(w, http.StatusOK, instance)
@@ -1681,9 +1815,16 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	return parsedURL.String()
 }
 
-// generateID 生成随机ID
+// generateID 生成实例ID
 func generateID() string {
 	bytes := make([]byte, 4)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+// generateMID 生成主控ID
+func generateMID() string {
+	bytes := make([]byte, 8)
 	rand.Read(bytes)
 	return hex.EncodeToString(bytes)
 }
@@ -1889,6 +2030,7 @@ func (m *Master) generateOpenAPISpec() string {
 	  "url": {"type": "string", "description": "Command string or API Key"},
 	  "config": {"type": "string", "description": "Instance configuration URL"},
 	  "restart": {"type": "boolean", "description": "Restart policy"},
+	  "meta": {"$ref": "#/components/schemas/Meta"},
 	  "mode": {"type": "integer", "description": "Instance mode"},
 	  "ping": {"type": "integer", "description": "TCPing latency"},
 	  "pool": {"type": "integer", "description": "Pool active count"},
@@ -1910,7 +2052,8 @@ func (m *Master) generateOpenAPISpec() string {
 		"properties": {
 		  "alias": {"type": "string", "description": "Instance alias"},
 		  "action": {"type": "string", "enum": ["start", "stop", "restart", "reset"], "description": "Action for the instance"},
-		  "restart": {"type": "boolean", "description": "Instance restart policy"}
+		  "restart": {"type": "boolean", "description": "Instance restart policy"},
+		  "meta": {"$ref": "#/components/schemas/Meta"}
 		}
 	  },
 	  "PutInstanceRequest": {
@@ -1918,9 +2061,25 @@ func (m *Master) generateOpenAPISpec() string {
 		"required": ["url"],
 		"properties": {"url": {"type": "string", "description": "New command string(scheme://host:port/host:port)"}}
 	  },
+	  "Meta": {
+		"type": "object",
+		"properties": {
+		  "peer": {"$ref": "#/components/schemas/Peer"},
+		  "tags": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Key-value tags"}
+		}
+	  },
+	  "Peer": {
+		"type": "object",
+		"properties": {
+		  "sid": {"type": "string", "description": "Service ID"},
+		  "type": {"type": "string", "description": "Service type"},
+		  "alias": {"type": "string", "description": "Service alias"}
+		}
+	  },
 	  "MasterInfo": {
 		"type": "object",
 		"properties": {
+		  "mid": {"type": "string", "description": "Master ID"},
 		  "alias": {"type": "string", "description": "Master alias"},
 		  "os": {"type": "string", "description": "Operating system"},
 		  "arch": {"type": "string", "description": "System architecture"},

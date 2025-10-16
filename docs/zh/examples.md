@@ -235,9 +235,84 @@ nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 - 使开发人员能够访问环境而无需直接网络暴露
 - 将远程服务映射到不同的本地端口，便于识别
 
+## 高可用性与负载均衡
+
+### 示例14：多后端服务器负载均衡
+
+使用目标地址组实现流量均衡分配和自动故障转移：
+
+```bash
+# 服务端：配置3个后端Web服务器
+nodepass "server://0.0.0.0:10101/web1.internal:8080,web2.internal:8080,web3.internal:8080?mode=2&tls=1&log=info"
+
+# 客户端：连接到服务端
+nodepass "client://server.example.com:10101/127.0.0.1:8080?log=info"
+```
+
+此配置：
+- 流量自动轮询分配到3个后端服务器，实现负载均衡
+- 当某个后端服务器故障时，自动切换到其他可用服务器
+- 故障服务器恢复后自动重新接入流量
+- 使用TLS加密确保隧道安全
+
+### 示例15：数据库主从切换
+
+为数据库配置主从实例，实现高可用访问：
+
+```bash
+# 客户端：配置主从数据库地址（单端转发模式）
+nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?mode=1&log=warn"
+```
+
+此设置：
+- 优先连接主数据库，主库故障时自动切换到从库
+- 单端转发模式提供高性能本地代理
+- 应用程序无需修改，透明地实现故障转移
+- 仅记录警告和错误，减少日志输出
+
+### 示例16：API网关后端池
+
+为API网关配置多个后端服务实例：
+
+```bash
+# 服务端：配置4个API服务实例
+nodepass "server://0.0.0.0:10101/api1.backend:8080,api2.backend:8080,api3.backend:8080,api4.backend:8080?mode=2&tls=1&rate=200&slot=5000"
+
+# 客户端：从API网关连接
+nodepass "client://apigateway.example.com:10101/127.0.0.1:8080?rate=100&slot=2000"
+```
+
+此配置：
+- 4个API服务实例形成后端池，轮询分配请求
+- 服务端限制带宽200 Mbps，最大5000并发连接
+- 客户端限制带宽100 Mbps，最大2000并发连接
+- 单个实例故障不影响整体服务可用性
+
+### 示例17：地域分布式服务
+
+配置多地域服务节点，优化网络延迟：
+
+```bash
+# 服务端：配置多地域节点
+nodepass "server://0.0.0.0:10101/us-west.service:8080,us-east.service:8080,eu-central.service:8080?mode=2&log=debug"
+```
+
+此设置：
+- 配置3个不同地域的服务节点
+- 轮询算法自动分配流量到各个地域
+- Debug日志帮助分析流量分布和故障情况
+- 适用于全球分布式应用场景
+
+**目标地址组最佳实践：**
+- **地址数量**：建议配置2-5个地址，过多会增加故障检测时间
+- **健康检查**：确保后端服务有自己的健康检查机制
+- **端口一致性**：所有地址使用相同端口或明确指定每个地址的端口
+- **监控告警**：配置监控系统跟踪故障转移事件
+- **测试验证**：部署前在测试环境验证故障转移和负载均衡行为
+
 ## PROXY协议集成
 
-### 示例14：负载均衡器与PROXY协议集成
+### 示例18：负载均衡器与PROXY协议集成
 
 启用PROXY协议支持，与负载均衡器和反向代理集成：
 
@@ -256,7 +331,7 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:3000?log=info&proxy=1"
 - 兼容HAProxy、Nginx和其他支持PROXY协议的服务
 - 有助于维护准确的访问日志和基于IP的访问控制
 
-### 示例15：Web应用的反向代理支持
+### 示例19：Web应用的反向代理支持
 
 使NodePass后的Web应用能够接收原始客户端信息：
 
@@ -280,7 +355,7 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=warn&tls=2&crt=/path/to/cert
 - 支持连接审计的合规性要求
 - 适用于支持PROXY协议的Web服务器（Nginx、HAProxy等）
 
-### 示例16：数据库访问与客户端IP保留
+### 示例20：数据库访问与客户端IP保留
 
 为数据库访问日志记录和安全维护客户端IP信息：
 
@@ -307,7 +382,7 @@ nodepass "client://dbproxy.example.com:10101/127.0.0.1:5432?proxy=1"
 
 ## 容器部署
 
-### 示例17：容器化NodePass
+### 示例21：容器化NodePass
 
 在Docker环境中部署NodePass：
 
@@ -342,7 +417,7 @@ docker run -d --name nodepass-client \
 
 ## 主控API管理
 
-### 示例18：集中化管理
+### 示例22：集中化管理
 
 为多个NodePass实例设置中央控制器：
 
@@ -379,7 +454,7 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 - 提供用于自动化和集成的RESTful API
 - 包含内置的Swagger UI，位于http://localhost:9090/api/v1/docs
 
-### 示例19：自定义API前缀
+### 示例23：自定义API前缀
 
 为主控模式使用自定义API前缀：
 
@@ -398,7 +473,7 @@ curl -X POST http://localhost:9090/admin/v1/instances \
 - 用于安全或组织目的的自定义URL路径
 - 在http://localhost:9090/admin/v1/docs访问Swagger UI
 
-### 示例20：实时连接和流量监控
+### 示例24：实时连接和流量监控
 
 通过主控API监控实例的连接数和流量统计：
 
