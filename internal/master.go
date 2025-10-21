@@ -1689,6 +1689,10 @@ func (m *Master) stopInstance(instance *Instance) {
 	instance.Status = "stopped"
 	instance.stopped = make(chan struct{})
 	instance.cancelFunc = nil
+	instance.Ping = 0
+	instance.Pool = 0
+	instance.TCPS = 0
+	instance.UDPS = 0
 	m.instances.Store(instance.ID, instance)
 
 	// 保存状态变更
