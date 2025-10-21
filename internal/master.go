@@ -934,9 +934,8 @@ func getLinuxSysInfo() SystemInfo {
 	idle1, total1 := readStat()
 	time.Sleep(baseDuration)
 	idle2, total2 := readStat()
-	numCPU := runtime.NumCPU()
-	if deltaIdle, deltaTotal := idle2-idle1, total2-total1; deltaTotal > 0 && numCPU > 0 {
-		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal/uint64(numCPU)), 100)
+	if deltaIdle, deltaTotal := idle2-idle1, total2-total1; deltaTotal > 0 {
+		info.CPU = min(int((deltaTotal-deltaIdle)*100/deltaTotal), 100)
 	}
 
 	// RAM占用：解析/proc/meminfo
