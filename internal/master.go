@@ -597,7 +597,7 @@ func (m *Master) startPeriodicBackup() {
 func (m *Master) startPeriodicCleanup() {
 	for {
 		select {
-		case <-time.After(reportInterval):
+		case <-time.After(ReloadInterval):
 			// 收集实例并按ID分组
 			idInstances := make(map[string][]*Instance)
 			m.instances.Range(func(key, value any) bool {
@@ -643,7 +643,7 @@ func (m *Master) startPeriodicCleanup() {
 func (m *Master) startPeriodicRestart() {
 	for {
 		select {
-		case <-time.After(reportInterval):
+		case <-time.After(ReloadInterval):
 			// 收集所有error状态的实例
 			var errorInstances []*Instance
 			m.instances.Range(func(key, value any) bool {
