@@ -4,6 +4,7 @@ package internal
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -113,14 +114,13 @@ func (c *Client) start() error {
 	// 运行模式判断
 	switch c.runMode {
 	case "1": // 单端模式
-		if err := c.initTunnelListener(); err != nil {
-			return fmt.Errorf("start: initTunnelListener failed: %w", err)
+		if err := c.initTunnelListener(); err == nil {
+			return c.singleStart()
+		} else {
+			return c.hybridStart()
 		}
-		return c.singleStart()
 	case "2": // 双端模式
 		return c.commonStart()
-	case "3": // NAT穿透模式
-		return c.natStart()
 	default: // 自动判断
 		if err := c.initTunnelListener(); err == nil {
 			c.runMode = "1"
@@ -228,25 +228,25 @@ func (c *Client) tunnelHandshake() error {
 	return nil
 }
 
-// natStart NAT穿透模式：STUN发现外部地址，本地监听并转发连接
-func (c *Client) natStart() error {
+// hybridStart 启动混合穿透模式
+func (c *Client) hybridStart() error {
 	udpConn, err := net.DialTimeout("udp", c.tunnelTCPAddr.String(), udpDialTimeout)
 	if err != nil {
-		return fmt.Errorf("natStart: STUN dial failed: %w", err)
+		return fmt.Errorf("hybridStart: STUN dial failed: %w", err)
 	}
 	defer udpConn.Close()
+
+	magic := [4]byte{0x21, 0x12, 0xA4, 0x42}
 
 	// 构造STUN请求
 	req := make([]byte, 20)
 	req[0], req[1] = 0x00, 0x01
-	req[4], req[5], req[6], req[7] = 0x21, 0x12, 0xA4, 0x42
-	for i := 8; i < 20; i++ {
-		req[i] = byte(time.Now().UnixNano() % 256)
-	}
+	req[4], req[5], req[6], req[7] = magic[0], magic[1], magic[2], magic[3]
+	rand.Read(req[8:20])
 
 	// 发送STUN请求
 	if _, err := udpConn.Write(req); err != nil {
-		return fmt.Errorf("natStart: STUN write failed: %w", err)
+		return fmt.Errorf("hybridStart: STUN write failed: %w", err)
 	}
 
 	// 解析STUN响应
@@ -254,85 +254,39 @@ func (c *Client) natStart() error {
 	udpConn.SetReadDeadline(time.Now().Add(udpReadTimeout))
 	n, err := udpConn.Read(resp)
 	if err != nil {
-		return fmt.Errorf("natStart: STUN read failed: %w", err)
+		return fmt.Errorf("hybridStart: STUN read failed: %w", err)
 	}
 	if n < 20 || resp[0] != 0x01 || resp[1] != 0x01 {
-		return fmt.Errorf("natStart: invalid STUN response")
+		return fmt.Errorf("hybridStart: invalid STUN response")
 	}
 
 	// 查找映射地址
-	magic := []byte{0x21, 0x12, 0xA4, 0x42}
 	var extAddr string
-	var localPort int
-	for pos := 20; pos+4 <= n; {
-		typ := uint16(resp[pos])<<8 | uint16(resp[pos+1])
-		sz := uint16(resp[pos+2])<<8 | uint16(resp[pos+3])
-		if typ == 0x0020 && pos+4+int(sz) <= n && sz >= 8 && resp[pos+5] == 0x01 {
+	for pos := 20; pos+4 <= n; pos += 4 + int(uint16(resp[pos+2])<<8|uint16(resp[pos+3])) + (4 - int((uint16(resp[pos+2])<<8|uint16(resp[pos+3]))%4)) {
+		if uint16(resp[pos])<<8|uint16(resp[pos+1]) == 0x0020 && pos+12 <= n && resp[pos+5] == 0x01 {
 			port := (uint16(resp[pos+6])<<8 | uint16(resp[pos+7])) ^ 0x2112
-			a := make([]byte, 4)
-			for i := 0; i < 4; i++ {
-				a[i] = resp[pos+8+i] ^ magic[i]
-			}
-			extAddr = fmt.Sprintf("%d.%d.%d.%d:%d", a[0], a[1], a[2], a[3], port)
-			if udpAddr, ok := udpConn.LocalAddr().(*net.UDPAddr); ok {
-				localPort = udpAddr.Port
-			}
+			extAddr = net.JoinHostPort(net.IPv4(resp[pos+8]^magic[0], resp[pos+9]^magic[1], resp[pos+10]^magic[2], resp[pos+11]^magic[3]).String(), fmt.Sprintf("%d", port))
 			break
-		}
-		pos += 4 + int(sz)
-		if sz%4 != 0 {
-			pos += 4 - int(sz%4)
 		}
 	}
 	if extAddr == "" {
-		return fmt.Errorf("natStart: address not found in STUN response")
+		return fmt.Errorf("hybridStart: address not found in STUN response")
 	}
 
-	// 本地监听TCP连接
-	tcpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", localPort))
-	if err != nil {
-		return fmt.Errorf("natStart: listen TCP failed: %w", err)
+	// 设置隧道地址
+	c.tunnelTCPAddr = &net.TCPAddr{IP: net.IPv4zero, Port: udpConn.LocalAddr().(*net.UDPAddr).Port}
+	c.tunnelUDPAddr = nil
+
+	// 初始化隧道监听器
+	if err := c.initTunnelListener(); err != nil {
+		return fmt.Errorf("hybridStart: initTunnelListener failed: %w", err)
 	}
-	defer tcpListener.Close()
 
-	c.logger.Info("NAT: external endpoint %v -> %v", extAddr, c.getTargetAddrsString())
+	// 输出映射地址信息
+	c.logger.Info("External endpoint: %v -> %v -> %v", extAddr, c.tunnelTCPAddr, c.getTargetAddrsString())
 
-	for c.ctx.Err() == nil {
-		incomingConn, err := tcpListener.Accept()
-		if err != nil {
-			if c.ctx.Err() != nil || err == net.ErrClosed {
-				return nil
-			}
-			c.logger.Error("NAT accept failed: %v", err)
-			select {
-			case <-c.ctx.Done():
-				return nil
-			case <-time.After(50 * time.Millisecond):
-			}
-			continue
-		}
-
-		go func(incomingConn net.Conn) {
-			defer incomingConn.Close()
-
-			if !c.tryAcquireSlot(false) {
-				return
-			}
-			defer c.releaseSlot(false)
-
-			outgoingConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
-			if err != nil {
-				c.logger.Error("NAT dial failed: %v", err)
-				return
-			}
-			defer outgoingConn.Close()
-
-			buf1, buf2 := c.getTCPBuffer(), c.getTCPBuffer()
-			defer c.putTCPBuffer(buf1)
-			defer c.putTCPBuffer(buf2)
-
-			conn.DataExchange(incomingConn, outgoingConn, c.readTimeout, buf1, buf2)
-		}(incomingConn)
+	if err := c.singleControl(); err != nil {
+		return fmt.Errorf("hybridStart: singleControl failed: %w", err)
 	}
 	return nil
 }

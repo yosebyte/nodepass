@@ -474,46 +474,54 @@ func (c *Common) initContext() {
 
 // initTunnelListener 初始化隧道监听器
 func (c *Common) initTunnelListener() error {
-	if c.tunnelTCPAddr == nil || c.tunnelUDPAddr == nil {
+	if c.tunnelTCPAddr == nil && c.tunnelUDPAddr == nil {
 		return fmt.Errorf("initTunnelListener: nil tunnel address")
 	}
 
 	// 初始化隧道TCP监听器
-	tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
-	if err != nil {
-		return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
+	if c.tunnelTCPAddr != nil {
+		tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
+		if err != nil {
+			return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
+		}
+		c.tunnelListener = tunnelListener
 	}
-	c.tunnelListener = tunnelListener
 
 	// 初始化隧道UDP监听器
-	tunnelUDPConn, err := net.ListenUDP("udp", c.tunnelUDPAddr)
-	if err != nil {
-		return fmt.Errorf("initTunnelListener: listenUDP failed: %w", err)
+	if c.tunnelUDPAddr != nil {
+		tunnelUDPConn, err := net.ListenUDP("udp", c.tunnelUDPAddr)
+		if err != nil {
+			return fmt.Errorf("initTunnelListener: listenUDP failed: %w", err)
+		}
+		c.tunnelUDPConn = &conn.StatConn{Conn: tunnelUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 	}
-	c.tunnelUDPConn = &conn.StatConn{Conn: tunnelUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 
 	return nil
 }
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
-	if len(c.targetTCPAddrs) == 0 || len(c.targetUDPAddrs) == 0 {
+	if len(c.targetTCPAddrs) == 0 && len(c.targetUDPAddrs) == 0 {
 		return fmt.Errorf("initTargetListener: no target address")
 	}
 
 	// 初始化目标TCP监听器
-	targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
-	if err != nil {
-		return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
+	if len(c.targetTCPAddrs) > 0 {
+		targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
+		if err != nil {
+			return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
+		}
+		c.targetListener = targetListener
 	}
-	c.targetListener = targetListener
 
 	// 初始化目标UDP监听器
-	targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
-	if err != nil {
-		return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
+	if len(c.targetUDPAddrs) > 0 {
+		targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
+		if err != nil {
+			return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
+		}
+		c.targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 	}
-	c.targetUDPConn = &conn.StatConn{Conn: targetUDPConn, RX: &c.udpRX, TX: &c.udpTX, Rate: c.rateLimiter}
 
 	return nil
 }
@@ -1302,9 +1310,15 @@ func (c *Common) singleControl() error {
 	errChan := make(chan error, 3)
 
 	// 启动单端控制、TCP和UDP处理循环
-	go func() { errChan <- c.singleEventLoop() }()
-	go func() { errChan <- c.singleTCPLoop() }()
-	go func() { errChan <- c.singleUDPLoop() }()
+	if len(c.targetTCPAddrs) > 0 {
+		go func() { errChan <- c.singleEventLoop() }()
+	}
+	if c.tunnelListener != nil {
+		go func() { errChan <- c.singleTCPLoop() }()
+	}
+	if c.tunnelUDPConn != nil {
+		go func() { errChan <- c.singleUDPLoop() }()
+	}
 
 	select {
 	case <-c.ctx.Done():
