@@ -775,6 +775,11 @@ func (m *Master) loadState() {
 	for id, instance := range persistentData {
 		instance.stopped = make(chan struct{})
 
+		// 重置实例状态
+		if instance.ID != apiKeyID {
+			instance.Status = "stopped"
+		}
+
 		// 生成完整配置
 		if instance.Config == "" && instance.ID != apiKeyID {
 			instance.Config = m.generateConfigURL(instance)
