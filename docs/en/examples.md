@@ -194,9 +194,73 @@ This configuration:
 
 ## IoT Device Management
 
-### Example 12: IoT Gateway
+### Example 12: IoT Gateway with STUN NAT Traversal
 
-Create a central access point for IoT devices:
+Create a central access point for IoT devices behind NAT without port forwarding:
+
+```bash
+# IoT device behind home router - expose web interface
+nodepass "client://stun.l.google.com:19302/127.0.0.1:80?mode=1&log=info"
+
+# IoT device with MQTT broker behind CGNAT
+nodepass "client://stun1.l.google.com:19302/127.0.0.1:1883?mode=1&log=event"
+
+# Smart home hub with multiple services
+nodepass "client://stun2.l.google.com:19302/192.168.1.100:8080?mode=1"
+```
+
+This configuration:
+- Enables secure connections from distributed IoT devices to external clients
+- Uses Google's STUN servers to discover public endpoints
+- Allows embedded devices to expose their local interfaces without router configuration
+- Automatically handles NAT traversal for devices behind carrier-grade NAT
+- Logs the external endpoint for connecting from outside: `External endpoint: <public_ip:port> -> <local_ip:port> -> <target>`
+
+### Example 13: Home Server Access Through NAT
+
+Access home services without opening router ports:
+
+```bash
+# Home NAS file server
+nodepass "client://stun3.l.google.com:19302/localhost:445?mode=1&log=info"
+
+# Home media server (Plex, Jellyfin, etc.)
+nodepass "client://stun4.l.google.com:19302/127.0.0.1:32400?mode=1"
+
+# Home automation server
+nodepass "client://stun.l.google.com:19302/192.168.1.50:8123?mode=1&log=event"
+```
+
+This setup:
+- Provides external access to home services without DMZ or port forwarding
+- Maintains security by avoiding router configuration changes
+- Works with dynamic IP addresses from ISPs
+- Suitable for residential internet connections with NAT
+
+### Example 14: Remote Development Environment
+
+Enable remote access to development servers behind NAT:
+
+```bash
+# Development web server behind corporate NAT
+nodepass "client://stun1.l.google.com:19302/localhost:3000?mode=1&log=debug"
+
+# Database development instance
+nodepass "client://stun2.l.google.com:19302/127.0.0.1:5432?mode=1"
+
+# API development server with hot reload
+nodepass "client://stun3.l.google.com:19302/localhost:8080?mode=1&log=info"
+```
+
+This configuration:
+- Allows team members to access development environments remotely
+- Works through corporate NAT and firewall restrictions
+- No VPN or complex network configuration required
+- Ideal for distributed development teams
+
+### Example 15: Traditional IoT Gateway (Dual-End Mode)
+
+Create a central management server for traditional tunneling scenarios:
 
 ```bash
 # Central management server
@@ -212,9 +276,74 @@ This configuration:
 - Allows embedded devices to expose their local web interfaces securely
 - Centralizes device management through a single endpoint
 
+## STUN NAT Traversal for Remote Access
+
+### Example 16: SSH Access Behind NAT
+
+Provide SSH access to machines behind NAT without port forwarding:
+
+```bash
+# Home computer SSH access
+nodepass "client://stun.l.google.com:19302/localhost:22?mode=1&log=info"
+
+# Raspberry Pi SSH behind carrier-grade NAT
+nodepass "client://stun1.l.google.com:19302/127.0.0.1:22?mode=1"
+
+# Remote server behind corporate firewall
+nodepass "client://stun2.l.google.com:19302/192.168.1.10:22?mode=1&log=event"
+```
+
+This setup:
+- Enables SSH access without router configuration or VPN
+- Works through carrier-grade NAT (CGNAT) that blocks port forwarding
+- Maintains security with SSH's built-in authentication
+- Ideal for remote system administration and troubleshooting
+
+### Example 17: Game Server Hosting Behind NAT
+
+Host game servers from home networks without port forwarding:
+
+```bash
+# Minecraft server behind NAT
+nodepass "client://stun3.l.google.com:19302/localhost:25565?mode=1&log=info"
+
+# Counter-Strike server
+nodepass "client://stun4.l.google.com:19302/127.0.0.1:27015?mode=1"
+
+# Terraria server with NAT traversal
+nodepass "client://stun.l.google.com:19302/192.168.1.100:7777?mode=1&log=event"
+```
+
+This configuration:
+- Allows hosting game servers from residential connections
+- No need for router port forwarding or DMZ setup
+- Works with dynamic IP addresses
+- Players connect to the discovered public endpoint
+
+### Example 18: VoIP and Real-Time Communication
+
+Enable peer-to-peer VoIP and communication services behind NAT:
+
+```bash
+# SIP server behind NAT
+nodepass "client://stun1.l.google.com:19302/localhost:5060?mode=1&log=info"
+
+# Mumble voice chat server
+nodepass "client://stun2.l.google.com:19302/127.0.0.1:64738?mode=1"
+
+# TeamSpeak server with NAT traversal
+nodepass "client://stun3.l.google.com:19302/192.168.1.50:9987?mode=1&log=event"
+```
+
+This setup:
+- Provides external access to VoIP and voice chat servers
+- Eliminates need for complex NAT traversal in the application itself
+- Works with existing SIP phones and voice chat clients
+- Suitable for home offices and small businesses
+
 ## Multi-environment Development
 
-### Example 13: Development Environment Access
+### Example 19: Development Environment Access
 
 Access different development environments through tunnels:
 
@@ -237,7 +366,7 @@ This setup:
 
 ## High Availability and Load Balancing
 
-### Example 14: Multi-Backend Server Load Balancing
+### Example 20: Multi-Backend Server Load Balancing
 
 Use target address groups for even traffic distribution and automatic failover:
 

@@ -194,9 +194,73 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:3000?log=debug&rate=500"
 
 ## 物联网设备管理
 
-### 示例12：物联网网关
+### 示例12：带STUN NAT穿透的物联网网关
 
-创建物联网设备的中央访问点：
+为NAT后的物联网设备创建中央访问点，无需端口转发：
+
+```bash
+# 家用路由器后的物联网设备 - 暴露Web界面
+nodepass "client://stun.l.google.com:19302/127.0.0.1:80?mode=1&log=info"
+
+# CGNAT后带MQTT代理的物联网设备
+nodepass "client://stun1.l.google.com:19302/127.0.0.1:1883?mode=1&log=event"
+
+# 带多个服务的智能家居中枢
+nodepass "client://stun2.l.google.com:19302/192.168.1.100:8080?mode=1"
+```
+
+此配置：
+- 允许从分布式物联网设备到外部客户端的安全连接
+- 使用Google的STUN服务器发现公网端点
+- 允许嵌入式设备暴露其本地接口而无需路由器配置
+- 自动处理运营商级NAT后设备的NAT穿透
+- 记录外部端点以便从外部连接：`External endpoint: <公网IP:端口> -> <本地IP:端口> -> <目标>`
+
+### 示例13：通过NAT访问家庭服务器
+
+无需开放路由器端口即可访问家庭服务：
+
+```bash
+# 家庭NAS文件服务器
+nodepass "client://stun3.l.google.com:19302/localhost:445?mode=1&log=info"
+
+# 家庭媒体服务器（Plex、Jellyfin等）
+nodepass "client://stun4.l.google.com:19302/127.0.0.1:32400?mode=1"
+
+# 家庭自动化服务器
+nodepass "client://stun.l.google.com:19302/192.168.1.50:8123?mode=1&log=event"
+```
+
+此设置：
+- 无需DMZ或端口转发即可提供对家庭服务的外部访问
+- 通过避免路由器配置更改来保持安全性
+- 适用于ISP的动态IP地址
+- 适合带NAT的住宅互联网连接
+
+### 示例14：远程开发环境
+
+在NAT后启用对开发服务器的远程访问：
+
+```bash
+# 企业NAT后的开发Web服务器
+nodepass "client://stun1.l.google.com:19302/localhost:3000?mode=1&log=debug"
+
+# 数据库开发实例
+nodepass "client://stun2.l.google.com:19302/127.0.0.1:5432?mode=1"
+
+# 带热重载的API开发服务器
+nodepass "client://stun3.l.google.com:19302/localhost:8080?mode=1&log=info"
+```
+
+此配置：
+- 允许团队成员远程访问开发环境
+- 适用于企业NAT和防火墙限制
+- 无需VPN或复杂的网络配置
+- 适合分布式开发团队
+
+### 示例15：传统物联网网关（双端模式）
+
+为传统隧道场景创建中央管理服务器：
 
 ```bash
 # 中央管理服务器
@@ -212,9 +276,74 @@ nodepass client://mgmt.example.com:10101/127.0.0.1:80
 - 允许嵌入式设备安全地暴露其本地Web界面
 - 通过单一端点集中设备管理
 
+## STUN NAT穿透用于远程访问
+
+### 示例16：NAT后的SSH访问
+
+为NAT后的机器提供SSH访问，无需端口转发：
+
+```bash
+# 家用计算机SSH访问
+nodepass "client://stun.l.google.com:19302/localhost:22?mode=1&log=info"
+
+# 运营商级NAT后的树莓派SSH
+nodepass "client://stun1.l.google.com:19302/127.0.0.1:22?mode=1"
+
+# 企业防火墙后的远程服务器
+nodepass "client://stun2.l.google.com:19302/192.168.1.10:22?mode=1&log=event"
+```
+
+此设置：
+- 无需路由器配置或VPN即可启用SSH访问
+- 适用于阻止端口转发的运营商级NAT（CGNAT）
+- 使用SSH的内置身份验证保持安全性
+- 适合远程系统管理和故障排除
+
+### 示例17：NAT后的游戏服务器托管
+
+从家庭网络托管游戏服务器，无需端口转发：
+
+```bash
+# NAT后的Minecraft服务器
+nodepass "client://stun3.l.google.com:19302/localhost:25565?mode=1&log=info"
+
+# 反恐精英服务器
+nodepass "client://stun4.l.google.com:19302/127.0.0.1:27015?mode=1"
+
+# 带NAT穿透的泰拉瑞亚服务器
+nodepass "client://stun.l.google.com:19302/192.168.1.100:7777?mode=1&log=event"
+```
+
+此配置：
+- 允许从住宅连接托管游戏服务器
+- 无需路由器端口转发或DMZ设置
+- 适用于动态IP地址
+- 玩家连接到发现的公网端点
+
+### 示例18：VoIP和实时通信
+
+在NAT后启用点对点VoIP和通信服务：
+
+```bash
+# NAT后的SIP服务器
+nodepass "client://stun1.l.google.com:19302/localhost:5060?mode=1&log=info"
+
+# Mumble语音聊天服务器
+nodepass "client://stun2.l.google.com:19302/127.0.0.1:64738?mode=1"
+
+# 带NAT穿透的TeamSpeak服务器
+nodepass "client://stun3.l.google.com:19302/192.168.1.50:9987?mode=1&log=event"
+```
+
+此设置：
+- 提供对VoIP和语音聊天服务器的外部访问
+- 消除应用程序本身复杂的NAT穿透需求
+- 适用于现有的SIP电话和语音聊天客户端
+- 适合家庭办公室和小型企业
+
 ## 多环境开发
 
-### 示例13：开发环境访问
+### 示例19：开发环境访问
 
 通过隧道访问不同的开发环境：
 
@@ -237,7 +366,7 @@ nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
 
 ## 高可用性与负载均衡
 
-### 示例14：多后端服务器负载均衡
+### 示例20：多后端服务器负载均衡
 
 使用目标地址组实现流量均衡分配和自动故障转移：
 

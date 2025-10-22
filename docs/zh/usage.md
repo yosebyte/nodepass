@@ -134,6 +134,15 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
 4. 无需与服务端握手，实现点对点的直接转发
 5. 适用于本地代理和简单转发场景
 
+**模式1的STUN NAT穿透（混合模式）**：
+当客户端无法绑定指定的隧道地址时，NodePass会自动启用混合模式：
+1. 使用STUN协议发现外部（公网）端点
+2. STUN服务器地址从客户端URL中指定的隧道地址获取
+3. 绑定到本地随机端口并获取NAT映射的公网IP:端口
+4. 无需端口转发即可实现NAT后服务的外部访问
+5. 记录映射信息：`External endpoint: <公网IP:端口> -> <本地IP:端口> -> <目标>`
+6. 适用于点对点连接、家庭服务器和NAT后的物联网设备
+
 **模式2：双端握手模式**
 - **客户端接收流量**（当服务端发送流量时）
   1. 连接到服务端的TCP隧道端点（控制通道）
@@ -154,6 +163,9 @@ nodepass "client://127.0.0.1:1080/target.example.com:8080?log=debug"
 
 # 强制单端转发模式 - 高性能本地代理
 nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
+
+# STUN NAT穿透 - 使用Google的STUN服务器进行公网端点发现
+nodepass "client://stun.l.google.com:19302/local.service:8080?mode=1&log=info"
 
 # 强制双端握手模式 - 连接到NodePass服务端并采用其TLS安全策略
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"

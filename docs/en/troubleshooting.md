@@ -78,6 +78,96 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Adjust `max` parameter and `NP_SEMAPHORE_LIMIT` to handle the load
    - Consider scaling horizontally with multiple NodePass instances
 
+## STUN NAT Traversal Issues
+
+### STUN Discovery Fails
+
+**Symptoms**: Client cannot discover external endpoint, or hybrid mode fails with STUN errors.
+
+**Possible Causes and Solutions**:
+
+1. **STUN Server Unreachable**
+   - Verify the STUN server address is correct and accessible
+   - Test connectivity: `nc -u stun.l.google.com 19302`
+   - Try alternative STUN servers (stun1-4.l.google.com:19302)
+   - Check if UDP traffic is blocked by firewall or ISP
+
+2. **Invalid STUN Response**
+   - Ensure the server at the tunnel address is a valid STUN server
+   - Google's STUN servers: stun.l.google.com, stun1-4.l.google.com (port 19302)
+   - STUN response must contain XOR-MAPPED-ADDRESS attribute
+   - Check for network middleware interfering with UDP packets
+
+3. **UDP Port Blocking**
+   - Verify UDP traffic is not blocked by local firewall
+   - Check router/firewall settings for UDP restrictions
+   - Some corporate networks block all UDP traffic
+   - Try using a different network (mobile hotspot) for testing
+
+4. **Timeout Issues**
+   - STUN discovery uses `NP_UDP_READ_TIMEOUT` (default: 3s)
+   - Increase timeout if network latency is high
+   - Check for packet loss affecting STUN request/response
+
+### NAT Prevents External Connections
+
+**Symptoms**: STUN discovers external endpoint but external clients cannot connect.
+
+**Possible Causes and Solutions**:
+
+1. **Symmetric NAT**
+   - Symmetric NAT creates different mappings for different remote endpoints
+   - STUN can discover the endpoint but connections from other IPs fail
+   - Check NAT type: use online NAT detection tools
+   - Consider using dual-end handshake mode (mode=2) with a server instead
+
+2. **Port Restricted NAT**
+   - NAT only allows connections from IPs that the client has contacted first
+   - This is a security feature of many consumer routers
+   - Solution: Have both peers perform STUN discovery and exchange endpoints
+   - Or use server relay mode (mode=2) for guaranteed connectivity
+
+3. **Firewall Rules**
+   - Local firewall may block incoming connections even with STUN
+   - Check iptables/Windows Firewall rules for the discovered port
+   - Allow incoming UDP/TCP traffic on the mapped port
+   - Verify with: `netstat -tuln | grep <port>`
+
+4. **Dynamic Port Mapping**
+   - Some NATs change port mapping after period of inactivity
+   - The discovered endpoint may become invalid
+   - Implement periodic keepalive traffic to maintain mapping
+   - Consider restarting NodePass to rediscover endpoint
+
+### Hybrid Mode Not Activating
+
+**Symptoms**: Client in mode=1 doesn't fallback to STUN when local binding fails.
+
+**Possible Causes and Solutions**:
+
+1. **Port Already in Use**
+   - If local port is in use, binding fails as expected
+   - Check: `netstat -tuln | grep <port>`
+   - Release the port or choose a different tunnel address
+   - Hybrid mode should activate automatically after binding failure
+
+2. **Permission Issues**
+   - Binding to ports <1024 requires root/administrator privileges
+   - Use higher port numbers (>1024) for regular users
+   - Or run NodePass with elevated privileges: `sudo nodepass ...`
+
+3. **Configuration Error**
+   - Ensure tunnel address points to a valid STUN server
+   - Format: `client://stun.l.google.com:19302/target:port?mode=1`
+   - Check logs for STUN-related error messages
+   - Verify mode is set to 1 or 0 (auto) for hybrid mode support
+
+4. **Network Interface Issues**
+   - Binding may fail due to network interface not available
+   - Check network connectivity: `ip addr` or `ifconfig`
+   - Ensure the system has an active network connection
+   - Try binding to 0.0.0.0 instead of specific interface
+
 ## Certificate Issues
 
 ### TLS Handshake Failures
