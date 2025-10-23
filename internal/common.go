@@ -675,6 +675,9 @@ func (c *Common) commonQueue() error {
 
 // healthCheck 共用健康度检查
 func (c *Common) healthCheck() error {
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+
 	for {
 		if c.ctx.Err() != nil {
 			return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
@@ -716,7 +719,7 @@ func (c *Common) healthCheck() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
-			case <-time.After(reportInterval):
+			case <-ticker.C:
 			}
 
 			c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
@@ -736,7 +739,7 @@ func (c *Common) healthCheck() error {
 		select {
 		case <-c.ctx.Done():
 			return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
-		case <-time.After(reportInterval):
+		case <-ticker.C:
 		}
 	}
 }
@@ -1339,6 +1342,9 @@ func (c *Common) singleControl() error {
 
 // singleEventLoop 单端转发事件循环
 func (c *Common) singleEventLoop() error {
+	ticker := time.NewTicker(reportInterval)
+	defer ticker.Stop()
+
 	for {
 		if c.ctx.Err() != nil {
 			return fmt.Errorf("singleEventLoop: context error: %w", c.ctx.Err())
@@ -1363,7 +1369,7 @@ func (c *Common) singleEventLoop() error {
 		select {
 		case <-c.ctx.Done():
 			return fmt.Errorf("singleEventLoop: context error: %w", c.ctx.Err())
-		case <-time.After(reportInterval):
+		case <-ticker.C:
 		}
 	}
 }

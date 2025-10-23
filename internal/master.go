@@ -569,102 +569,95 @@ func (m *Master) Shutdown(ctx context.Context) error {
 
 // startPeriodicTasks 启动所有定期任务
 func (m *Master) startPeriodicTasks() {
-	go m.startPeriodicBackup()
-	go m.startPeriodicCleanup()
-	go m.startPeriodicRestart()
-}
+	ticker := time.NewTicker(ReloadInterval)
+	defer ticker.Stop()
 
-// startPeriodicBackup 启动定期备份
-func (m *Master) startPeriodicBackup() {
 	for {
 		select {
-		case <-time.After(ReloadInterval):
-			// 固定备份文件名
-			backupPath := fmt.Sprintf("%s.backup", m.statePath)
-
-			if err := m.saveStateToPath(backupPath); err != nil {
-				m.logger.Error("startPeriodicBackup: backup state failed: %v", err)
-			} else {
-				m.logger.Info("State backup saved: %v", backupPath)
-			}
+		case <-ticker.C:
+			// 执行定期备份
+			m.performPeriodicBackup()
+			// 执行定期清理
+			m.performPeriodicCleanup()
+			// 执行定期重启
+			m.performPeriodicRestart()
 		case <-m.periodicDone:
+			ticker.Stop()
 			return
 		}
 	}
 }
 
-// startPeriodicCleanup 启动定期清理重复ID的实例
-func (m *Master) startPeriodicCleanup() {
-	for {
-		select {
-		case <-time.After(ReloadInterval):
-			// 收集实例并按ID分组
-			idInstances := make(map[string][]*Instance)
-			m.instances.Range(func(key, value any) bool {
-				if id := key.(string); id != apiKeyID {
-					idInstances[id] = append(idInstances[id], value.(*Instance))
-				}
-				return true
-			})
+// performPeriodicBackup 定期备份任务
+func (m *Master) performPeriodicBackup() {
+	// 固定备份文件名
+	backupPath := fmt.Sprintf("%s.backup", m.statePath)
 
-			// 清理重复实例
-			for _, instances := range idInstances {
-				if len(instances) <= 1 {
-					continue
-				}
+	if err := m.saveStateToPath(backupPath); err != nil {
+		m.logger.Error("performPeriodicBackup: backup state failed: %v", err)
+	} else {
+		m.logger.Info("State backup saved: %v", backupPath)
+	}
+}
 
-				// 选择保留实例
-				keepIdx := 0
-				for i, inst := range instances {
-					if inst.Status == "running" && instances[keepIdx].Status != "running" {
-						keepIdx = i
-					}
-				}
+// performPeriodicCleanup 定期清理重复ID的实例
+func (m *Master) performPeriodicCleanup() {
+	// 收集实例并按ID分组
+	idInstances := make(map[string][]*Instance)
+	m.instances.Range(func(key, value any) bool {
+		if id := key.(string); id != apiKeyID {
+			idInstances[id] = append(idInstances[id], value.(*Instance))
+		}
+		return true
+	})
 
-				// 清理多余实例
-				for i, inst := range instances {
-					if i == keepIdx {
-						continue
-					}
-					inst.deleted = true
-					if inst.Status != "stopped" {
-						m.stopInstance(inst)
-					}
-					m.instances.Delete(inst.ID)
-				}
+	// 清理重复实例
+	for _, instances := range idInstances {
+		if len(instances) <= 1 {
+			continue
+		}
+
+		// 选择保留实例
+		keepIdx := 0
+		for i, inst := range instances {
+			if inst.Status == "running" && instances[keepIdx].Status != "running" {
+				keepIdx = i
 			}
-		case <-m.periodicDone:
-			return
+		}
+
+		// 清理多余实例
+		for i, inst := range instances {
+			if i == keepIdx {
+				continue
+			}
+			inst.deleted = true
+			if inst.Status != "stopped" {
+				m.stopInstance(inst)
+			}
+			m.instances.Delete(inst.ID)
 		}
 	}
 }
 
-// startPeriodicRestart 启动定期错误实例重启
-func (m *Master) startPeriodicRestart() {
-	for {
-		select {
-		case <-time.After(ReloadInterval):
-			// 收集所有error状态的实例
-			var errorInstances []*Instance
-			m.instances.Range(func(key, value any) bool {
-				if id := key.(string); id != apiKeyID {
-					instance := value.(*Instance)
-					if instance.Status == "error" && !instance.deleted {
-						errorInstances = append(errorInstances, instance)
-					}
-				}
-				return true
-			})
-
-			// 重启所有error状态的实例
-			for _, instance := range errorInstances {
-				m.stopInstance(instance)
-				time.Sleep(baseDuration)
-				m.startInstance(instance)
+// performPeriodicRestart 定期错误实例重启
+func (m *Master) performPeriodicRestart() {
+	// 收集所有error状态的实例
+	var errorInstances []*Instance
+	m.instances.Range(func(key, value any) bool {
+		if id := key.(string); id != apiKeyID {
+			instance := value.(*Instance)
+			if instance.Status == "error" && !instance.deleted {
+				errorInstances = append(errorInstances, instance)
 			}
-		case <-m.periodicDone:
-			return
 		}
+		return true
+	})
+
+	// 重启所有error状态的实例
+	for _, instance := range errorInstances {
+		m.stopInstance(instance)
+		time.Sleep(baseDuration)
+		m.startInstance(instance)
 	}
 }
 
