@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -945,7 +946,7 @@ func (c *Common) commonUDPLoop() {
 					if err != nil {
 						if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 							c.logger.Debug("UDP session abort: %v", err)
-						} else {
+						} else if err != io.EOF {
 							c.logger.Error("commonUDPLoop: read from tunnel failed: %v", err)
 						}
 						return
@@ -954,7 +955,9 @@ func (c *Common) commonUDPLoop() {
 					// 将数据写入目标UDP连接
 					_, err = c.targetUDPConn.WriteToUDP(buffer[:x], clientAddr)
 					if err != nil {
-						c.logger.Error("commonUDPLoop: writeToUDP failed: %v", err)
+						if err != io.EOF {
+							c.logger.Error("commonUDPLoop: writeToUDP failed: %v", err)
+						}
 						return
 					}
 					// 传输完成
@@ -987,7 +990,9 @@ func (c *Common) commonUDPLoop() {
 		// 将原始数据写入池连接
 		_, err = remoteConn.Write(buffer[:x])
 		if err != nil {
-			c.logger.Error("commonUDPLoop: write to tunnel failed: %v", err)
+			if err != io.EOF {
+				c.logger.Error("commonUDPLoop: write to tunnel failed: %v", err)
+			}
 			c.targetUDPSession.Delete(sessionKey)
 			remoteConn.Close()
 			c.putUDPBuffer(buffer)
@@ -1252,7 +1257,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Debug("UDP session abort: %v", err)
-				} else {
+				} else if err != io.EOF {
 					c.logger.Error("commonUDPOnce: read from tunnel failed: %v", err)
 				}
 				return
@@ -1261,7 +1266,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			// 将数据写入目标UDP连接
 			_, err = targetConn.Write(buffer[:x])
 			if err != nil {
-				c.logger.Error("commonUDPOnce: write to target failed: %v", err)
+				if err != io.EOF {
+					c.logger.Error("commonUDPOnce: write to target failed: %v", err)
+				}
 				return
 			}
 
@@ -1283,7 +1290,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			if err != nil {
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					c.logger.Debug("UDP session abort: %v", err)
-				} else {
+				} else if err != io.EOF {
 					c.logger.Error("commonUDPOnce: read from target failed: %v", err)
 				}
 				return
@@ -1292,7 +1299,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 			// 将数据写回隧道连接
 			_, err = remoteConn.Write(buffer[:x])
 			if err != nil {
-				c.logger.Error("commonUDPOnce: write to tunnel failed: %v", err)
+				if err != io.EOF {
+					c.logger.Error("commonUDPOnce: write to tunnel failed: %v", err)
+				}
 				return
 			}
 
@@ -1513,7 +1522,7 @@ func (c *Common) singleUDPLoop() error {
 					if err != nil {
 						if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 							c.logger.Debug("UDP session abort: %v", err)
-						} else {
+						} else if err != io.EOF {
 							c.logger.Error("singleUDPLoop: read from target failed: %v", err)
 						}
 						c.targetUDPSession.Delete(sessionKey)
@@ -1526,7 +1535,9 @@ func (c *Common) singleUDPLoop() error {
 					// 将响应写回隧道UDP连接
 					_, err = c.tunnelUDPConn.WriteToUDP(buffer[:x], clientAddr)
 					if err != nil {
-						c.logger.Error("singleUDPLoop: writeToUDP failed: %v", err)
+						if err != io.EOF {
+							c.logger.Error("singleUDPLoop: writeToUDP failed: %v", err)
+						}
 						c.targetUDPSession.Delete(sessionKey)
 						if targetConn != nil {
 							targetConn.Close()
@@ -1543,7 +1554,9 @@ func (c *Common) singleUDPLoop() error {
 		c.logger.Debug("Starting transfer: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
 		_, err = targetConn.Write(buffer[:x])
 		if err != nil {
-			c.logger.Error("singleUDPLoop: write to target failed: %v", err)
+			if err != io.EOF {
+				c.logger.Error("singleUDPLoop: write to target failed: %v", err)
+			}
 			c.targetUDPSession.Delete(sessionKey)
 			if targetConn != nil {
 				targetConn.Close()
