@@ -260,6 +260,21 @@ func (c *Client) hybridStart() error {
 		return fmt.Errorf("hybridStart: invalid STUN response")
 	}
 
+	// 保活NAT映射
+	go func() {
+		dummy := []byte{0}
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case <-ticker.C:
+				udpConn.Write(dummy)
+			}
+		}
+	}()
+
 	// 查找映射地址
 	var extAddr string
 	for pos := 20; pos+4 <= n; pos += 4 + int(uint16(resp[pos+2])<<8|uint16(resp[pos+3])) + (4 - int((uint16(resp[pos+2])<<8|uint16(resp[pos+3]))%4)) {
