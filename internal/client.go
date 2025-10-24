@@ -72,10 +72,7 @@ func (c *Client) Run() {
 
 	// 启动客户端服务并处理重启
 	go func() {
-		for {
-			if ctx.Err() != nil {
-				return
-			}
+		for ctx.Err() == nil {
 			// 启动客户端
 			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)
@@ -113,10 +110,11 @@ func (c *Client) start() error {
 	// 运行模式判断
 	switch c.runMode {
 	case "1": // 单端模式
-		if err := c.initTunnelListener(); err != nil {
+		if err := c.initTunnelListener(); err == nil {
+			return c.singleStart()
+		} else {
 			return fmt.Errorf("start: initTunnelListener failed: %w", err)
 		}
-		return c.singleStart()
 	case "2": // 双端模式
 		return c.commonStart()
 	default: // 自动判断
