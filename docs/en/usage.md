@@ -134,15 +134,6 @@ Client mode supports automatic mode detection or forced mode selection through t
 4. No handshake with server required, enables point-to-point direct forwarding
 5. Suitable for local proxy and simple forwarding scenarios
 
-**Mode 1 with STUN NAT Traversal (Hybrid Mode)**:
-When the client cannot bind to the specified tunnel address, NodePass automatically enables hybrid mode:
-1. Discovers external (public) endpoint using STUN protocol
-2. The STUN server address is derived from the tunnel address specified in the client URL
-3. Binds to a local random port and obtains the NAT-mapped public IP:port
-4. Enables external access to services behind NAT without port forwarding
-5. Logs the mapping: `External endpoint: <public_ip:port> -> <local_ip:port> -> <target>`
-6. Suitable for peer-to-peer connections, home servers, and IoT devices behind NAT
-
 **Mode 2: Dual-End Handshake Mode**
 - **Client Receives Traffic** (when server sends traffic)
   1. Connects to the server's TCP tunnel endpoint (control channel)
@@ -164,9 +155,6 @@ nodepass "client://127.0.0.1:1080/target.example.com:8080?log=debug"
 # Force single-end forwarding mode - High performance local proxy
 nodepass "client://127.0.0.1:1080/target.example.com:8080?mode=1&log=debug"
 
-# STUN NAT traversal - Use Google's STUN server for public endpoint discovery
-nodepass "client://stun.l.google.com:19302/local.service:8080?mode=1&log=info"
-
 # Force dual-end handshake mode - Connect to NodePass server and adopt its TLS security policy
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
@@ -175,9 +163,6 @@ nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128
 
 # Resource-constrained configuration with forced mode
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=info"
-
-# Resource-constrained configuration - Small connection pool
-nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 ```
 
 ### Master Mode (API)

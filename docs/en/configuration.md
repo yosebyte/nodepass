@@ -62,13 +62,8 @@ For client instances, the `mode` parameter controls the connection strategy:
   
 - **Mode 1**: Force single-end forwarding mode
   - Binds to tunnel address locally and forwards traffic directly to target
-  - Uses direct connection establishment for high performance forwarding
+  - Uses direct connection establishment for high performance
   - No handshake with server required
-  - **Hybrid Mode**: If local binding fails, automatically enables STUN NAT traversal
-    - Uses the tunnel address as the STUN server address
-    - Discovers external (public) IP:port through STUN protocol
-    - Enables services behind NAT to be accessed without port forwarding
-    - Suitable for home servers, IoT devices, and peer-to-peer scenarios
   
 - **Mode 2**: Force dual-end handshake mode
   - Always connects to remote server for tunnel establishment
@@ -325,60 +320,6 @@ nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?
 # Incorrect example: Do not use multi-address for tunnel addresses (will cause parsing errors)
 # nodepass "server://host1:10101,host2:10101/target:8080"  # ✗ Wrong usage
 ```
-
-## STUN NAT Traversal
-
-NodePass client mode 1 supports automatic NAT traversal using the STUN (Session Traversal Utilities for NAT) protocol. When the client cannot bind to the specified tunnel address, it automatically enables hybrid mode with STUN support.
-
-### How STUN NAT Traversal Works
-
-1. **Automatic Fallback**: When binding to the tunnel address fails, NodePass attempts STUN discovery
-2. **STUN Server Discovery**: The tunnel address in the client URL is used as the STUN server address
-3. **Public Endpoint Discovery**: Client queries the STUN server to discover its public IP and port
-4. **Local Binding**: Client binds to a random local port and logs the NAT mapping
-5. **External Access**: External clients can connect to the discovered public endpoint
-
-### Recommended STUN Servers
-
-Google provides free public STUN servers that work well with NodePass:
-
-- `stun.l.google.com:19302` (Primary)
-- `stun1.l.google.com:19302`
-- `stun2.l.google.com:19302`
-- `stun3.l.google.com:19302`
-- `stun4.l.google.com:19302`
-
-### STUN Configuration Examples
-
-```bash
-# Use Google's primary STUN server for NAT traversal
-nodepass "client://stun.l.google.com:19302/localhost:8080?mode=1"
-
-# Expose SSH service behind NAT
-nodepass "client://stun1.l.google.com:19302/localhost:22?mode=1&log=info"
-
-# Home web server with STUN NAT traversal
-nodepass "client://stun2.l.google.com:19302/192.168.1.100:80?mode=1"
-
-# IoT device management behind NAT
-nodepass "client://stun3.l.google.com:19302/127.0.0.1:8883?mode=1&log=event"
-```
-
-### STUN Use Cases
-
-- **Home Servers**: Access home services without router port forwarding
-- **IoT Devices**: Connect to devices behind carrier-grade NAT (CGNAT)
-- **Peer-to-Peer Applications**: Direct connections between clients behind NAT
-- **Development Testing**: Test applications with external accessibility
-- **Remote Access**: Secure access to services in restricted network environments
-
-### Important Notes
-
-- STUN only discovers the public endpoint; the NAT must allow incoming connections
-- Symmetric NAT may prevent successful connections even with STUN discovery
-- The discovered public endpoint is logged: `External endpoint: <public_ip:port> -> <local_ip:port> -> <target>`
-- STUN traffic is unencrypted; only used for endpoint discovery, not data transfer
-- Other mode 1 features remain fully functional with STUN
 
 ## URL Query Parameter Scope and Applicability
 

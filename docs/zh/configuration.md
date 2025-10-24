@@ -62,13 +62,8 @@ NodePass支持通过`mode`查询参数配置运行模式，以控制客户端和
   
 - **模式1**：强制单端转发模式
   - 本地绑定隧道地址并直接转发流量到目标
-  - 通过直接连接实现高性能转发
-  - 无需与服务端握手
-  - **混合模式**：如果本地绑定失败，自动启用STUN NAT穿透
-    - 使用隧道地址作为STUN服务器地址
-    - 通过STUN协议发现外部（公网）IP:端口
-    - 使NAT后的服务无需端口转发即可被访问
-    - 适用于家庭服务器、物联网设备和点对点场景
+  - 使用直接连接建立实现高性能
+  - 无需与服务器握手
   
 - **模式2**：强制双端握手模式
   - 始终连接到远程服务器建立隧道
@@ -325,60 +320,6 @@ nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?
 # 错误示例：不要在隧道地址使用多地址（会导致解析错误）
 # nodepass "server://host1:10101,host2:10101/target:8080"  # ✗ 错误用法
 ```
-
-## STUN NAT穿透
-
-NodePass客户端模式1支持使用STUN（NAT会话穿透工具）协议的自动NAT穿透。当客户端无法绑定到指定的隧道地址时，会自动启用支持STUN的混合模式。
-
-### STUN NAT穿透工作原理
-
-1. **自动回退**：当绑定隧道地址失败时，NodePass尝试STUN发现
-2. **STUN服务器发现**：客户端URL中的隧道地址被用作STUN服务器地址
-3. **公网端点发现**：客户端查询STUN服务器以发现其公网IP和端口
-4. **本地绑定**：客户端绑定到随机本地端口并记录NAT映射
-5. **外部访问**：外部客户端可以连接到发现的公网端点
-
-### 推荐的STUN服务器
-
-Google提供了适用于NodePass的免费公共STUN服务器：
-
-- `stun.l.google.com:19302`（主服务器）
-- `stun1.l.google.com:19302`
-- `stun2.l.google.com:19302`
-- `stun3.l.google.com:19302`
-- `stun4.l.google.com:19302`
-
-### STUN配置示例
-
-```bash
-# 使用Google的主STUN服务器进行NAT穿透
-nodepass "client://stun.l.google.com:19302/localhost:8080?mode=1"
-
-# 暴露NAT后的SSH服务
-nodepass "client://stun1.l.google.com:19302/localhost:22?mode=1&log=info"
-
-# 带STUN NAT穿透的家庭Web服务器
-nodepass "client://stun2.l.google.com:19302/192.168.1.100:80?mode=1"
-
-# NAT后的物联网设备管理
-nodepass "client://stun3.l.google.com:19302/127.0.0.1:8883?mode=1&log=event"
-```
-
-### STUN使用场景
-
-- **家庭服务器**：无需路由器端口转发即可访问家庭服务
-- **物联网设备**：连接到运营商级NAT（CGNAT）后的设备
-- **点对点应用**：NAT后客户端之间的直接连接
-- **开发测试**：测试具有外部可访问性的应用程序
-- **远程访问**：在受限网络环境中安全访问服务
-
-### 重要说明
-
-- STUN仅发现公网端点；NAT必须允许入站连接
-- 对称NAT可能会阻止成功连接，即使STUN发现成功
-- 发现的公网端点会被记录：`External endpoint: <公网IP:端口> -> <本地IP:端口> -> <目标>`
-- STUN流量未加密；仅用于端点发现，不用于数据传输
-- 其他模式1功能在STUN下保持完全功能
 
 ## URL查询参数配置及作用范围
 
