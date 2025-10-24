@@ -163,6 +163,9 @@ nodepass "client://server.example.com:10101/192.168.1.100:8080?log=debug&min=128
 
 # Resource-constrained configuration with forced mode
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=info"
+
+# Resource-constrained configuration - Small connection pool
+nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 ```
 
 ### Master Mode (API)
