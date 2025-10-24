@@ -73,10 +73,7 @@ func (c *Client) Run() {
 
 	// 启动客户端服务并处理重启
 	go func() {
-		for {
-			if ctx.Err() != nil {
-				return
-			}
+		for ctx.Err() == nil {
 			// 启动客户端
 			if err := c.start(); err != nil && err != io.EOF {
 				c.logger.Error("Client error: %v", err)

@@ -74,10 +74,7 @@ func (s *Server) Run() {
 
 	// 启动服务端并处理重启
 	go func() {
-		for {
-			if ctx.Err() != nil {
-				return
-			}
+		for ctx.Err() == nil {
 			// 启动服务端
 			if err := s.start(); err != nil && err != io.EOF {
 				s.logger.Error("Server error: %v", err)
@@ -167,11 +164,7 @@ func (s *Server) start() error {
 // tunnelHandshake 与客户端进行握手
 func (s *Server) tunnelHandshake() error {
 	// 接受隧道连接
-	for {
-		if s.ctx.Err() != nil {
-			return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-		}
-
+	for s.ctx.Err() == nil {
 		tunnelTCPConn, err := s.tunnelListener.Accept()
 		if err != nil {
 			s.logger.Error("tunnelHandshake: accept error: %v", err)
@@ -233,6 +226,10 @@ func (s *Server) tunnelHandshake() error {
 		// 记录客户端IP
 		s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
 		break
+	}
+
+	if s.ctx.Err() != nil {
+		return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 	}
 
 	// 发送客户端配置
