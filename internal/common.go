@@ -635,11 +635,7 @@ func (c *Common) commonControl() error {
 
 // commonQueue 共用信号队列
 func (c *Common) commonQueue() error {
-	for {
-		if c.ctx.Err() != nil {
-			return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
-		}
-
+	for c.ctx.Err() == nil {
 		// 读取原始信号
 		rawSignal, err := c.bufReader.ReadBytes('\n')
 		if err != nil {
@@ -671,6 +667,8 @@ func (c *Common) commonQueue() error {
 			}
 		}
 	}
+
+	return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
 }
 
 // healthCheck 共用健康度检查
@@ -678,11 +676,7 @@ func (c *Common) healthCheck() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
-	for {
-		if c.ctx.Err() != nil {
-			return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
-		}
-
+	for c.ctx.Err() == nil {
 		// 尝试获取锁
 		if !c.mu.TryLock() {
 			continue
@@ -742,15 +736,13 @@ func (c *Common) healthCheck() error {
 		case <-ticker.C:
 		}
 	}
+
+	return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
 }
 
 // commonLoop 共用处理循环
 func (c *Common) commonLoop() {
-	for {
-		if c.ctx.Err() != nil {
-			return
-		}
-
+	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
 			go c.commonTCPLoop()
@@ -768,11 +760,7 @@ func (c *Common) commonLoop() {
 
 // commonTCPLoop 共用TCP请求处理循环
 func (c *Common) commonTCPLoop() {
-	for {
-		if c.ctx.Err() != nil {
-			return
-		}
-
+	for c.ctx.Err() == nil {
 		// 接受来自目标的TCP连接
 		targetConn, err := c.targetListener.Accept()
 		if err != nil {
@@ -867,11 +855,7 @@ func (c *Common) commonTCPLoop() {
 
 // commonUDPLoop 共用UDP请求处理循环
 func (c *Common) commonUDPLoop() {
-	for {
-		if c.ctx.Err() != nil {
-			return
-		}
-
+	for c.ctx.Err() == nil {
 		buffer := c.getUDPBuffer()
 
 		// 读取来自目标的UDP数据
@@ -943,7 +927,7 @@ func (c *Common) commonUDPLoop() {
 				defer c.putUDPBuffer(buffer)
 				reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: udpReadTimeout}
 
-				for {
+				for c.ctx.Err() == nil {
 					// 从池连接读取数据
 					x, err := reader.Read(buffer)
 					if err != nil {
@@ -1010,7 +994,7 @@ func (c *Common) commonUDPLoop() {
 
 // commonOnce 共用处理单个请求
 func (c *Common) commonOnce() error {
-	for {
+	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if !c.tunnelPool.Ready() {
 			select {
@@ -1089,6 +1073,8 @@ func (c *Common) commonOnce() error {
 			}
 		}
 	}
+
+	return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
 }
 
 // commonTCPOnce 共用处理单个TCP请求
@@ -1254,7 +1240,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: remoteConn, Timeout: udpReadTimeout}
 
-		for {
+		for c.ctx.Err() == nil {
 			// 从隧道连接读取数据
 			x, err := reader.Read(buffer)
 			if err != nil {
@@ -1287,7 +1273,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 		defer c.putUDPBuffer(buffer)
 		reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 
-		for {
+		for c.ctx.Err() == nil {
 			// 从目标UDP连接读取数据
 			x, err := reader.Read(buffer)
 			if err != nil {
@@ -1345,11 +1331,7 @@ func (c *Common) singleEventLoop() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
-	for {
-		if c.ctx.Err() != nil {
-			return fmt.Errorf("singleEventLoop: context error: %w", c.ctx.Err())
-		}
-
+	for c.ctx.Err() == nil {
 		ping := 0
 		now := time.Now()
 
@@ -1372,15 +1354,13 @@ func (c *Common) singleEventLoop() error {
 		case <-ticker.C:
 		}
 	}
+
+	return fmt.Errorf("singleEventLoop: context error: %w", c.ctx.Err())
 }
 
 // singleTCPLoop 单端转发TCP处理循环
 func (c *Common) singleTCPLoop() error {
-	for {
-		if c.ctx.Err() != nil {
-			return fmt.Errorf("singleTCPLoop: context error: %w", c.ctx.Err())
-		}
-
+	for c.ctx.Err() == nil {
 		// 接受来自隧道的TCP连接
 		tunnelConn, err := c.tunnelListener.Accept()
 		if err != nil {
@@ -1447,15 +1427,13 @@ func (c *Common) singleTCPLoop() error {
 			c.logger.Debug("Exchange complete: %v", conn.DataExchange(tunnelConn, targetConn, c.readTimeout, buffer1, buffer2))
 		}(tunnelConn)
 	}
+
+	return fmt.Errorf("singleTCPLoop: context error: %w", c.ctx.Err())
 }
 
 // singleUDPLoop 单端转发UDP处理循环
 func (c *Common) singleUDPLoop() error {
-	for {
-		if c.ctx.Err() != nil {
-			return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
-		}
-
+	for c.ctx.Err() == nil {
 		buffer := c.getUDPBuffer()
 
 		// 读取来自隧道的UDP数据
@@ -1518,11 +1496,7 @@ func (c *Common) singleUDPLoop() error {
 				defer c.putUDPBuffer(buffer)
 				reader := &conn.TimeoutReader{Conn: targetConn, Timeout: udpReadTimeout}
 
-				for {
-					if c.ctx.Err() != nil {
-						return
-					}
-
+				for c.ctx.Err() == nil {
 					// 从UDP读取响应
 					x, err := reader.Read(buffer)
 					if err != nil {
@@ -1575,4 +1549,6 @@ func (c *Common) singleUDPLoop() error {
 		c.logger.Debug("Transfer complete: %v <-> %v", targetConn.LocalAddr(), c.tunnelUDPConn.LocalAddr())
 		c.putUDPBuffer(buffer)
 	}
+
+	return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
 }
