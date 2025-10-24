@@ -4,7 +4,6 @@ package internal
 import (
 	"bufio"
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -114,7 +113,7 @@ func (c *Client) start() error {
 		if err := c.initTunnelListener(); err == nil {
 			return c.singleStart()
 		} else {
-			return c.hybridStart()
+			return fmt.Errorf("start: initTunnelListener failed: %w", err)
 		}
 	case "2": // 双端模式
 		return c.commonStart()
@@ -222,83 +221,5 @@ func (c *Client) tunnelHandshake() error {
 
 	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
 	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
-	return nil
-}
-
-// hybridStart 启动混合穿透模式
-func (c *Client) hybridStart() error {
-	udpConn, err := net.DialTimeout("udp", c.tunnelTCPAddr.String(), udpDialTimeout)
-	if err != nil {
-		return fmt.Errorf("hybridStart: STUN dial failed: %w", err)
-	}
-	defer udpConn.Close()
-
-	magic := [4]byte{0x21, 0x12, 0xA4, 0x42}
-
-	// 构造STUN请求
-	req := make([]byte, 20)
-	req[0], req[1] = 0x00, 0x01
-	req[4], req[5], req[6], req[7] = magic[0], magic[1], magic[2], magic[3]
-	rand.Read(req[8:20])
-
-	// 发送STUN请求
-	if _, err := udpConn.Write(req); err != nil {
-		return fmt.Errorf("hybridStart: STUN write failed: %w", err)
-	}
-
-	// 解析STUN响应
-	resp := make([]byte, 1500)
-	udpConn.SetReadDeadline(time.Now().Add(udpReadTimeout))
-	n, err := udpConn.Read(resp)
-	if err != nil {
-		return fmt.Errorf("hybridStart: STUN read failed: %w", err)
-	}
-	if n < 20 || resp[0] != 0x01 || resp[1] != 0x01 {
-		return fmt.Errorf("hybridStart: invalid STUN response")
-	}
-
-	// 保活NAT映射
-	go func() {
-		dummy := []byte{0}
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-c.ctx.Done():
-				return
-			case <-ticker.C:
-				udpConn.Write(dummy)
-			}
-		}
-	}()
-
-	// 查找映射地址
-	var extAddr string
-	for pos := 20; pos+4 <= n; pos += 4 + int(uint16(resp[pos+2])<<8|uint16(resp[pos+3])) + (4 - int((uint16(resp[pos+2])<<8|uint16(resp[pos+3]))%4)) {
-		if uint16(resp[pos])<<8|uint16(resp[pos+1]) == 0x0020 && pos+12 <= n && resp[pos+5] == 0x01 {
-			port := (uint16(resp[pos+6])<<8 | uint16(resp[pos+7])) ^ 0x2112
-			extAddr = net.JoinHostPort(net.IPv4(resp[pos+8]^magic[0], resp[pos+9]^magic[1], resp[pos+10]^magic[2], resp[pos+11]^magic[3]).String(), fmt.Sprintf("%d", port))
-			break
-		}
-	}
-	if extAddr == "" {
-		return fmt.Errorf("hybridStart: address not found in STUN response")
-	}
-
-	// 设置隧道地址
-	c.tunnelTCPAddr = &net.TCPAddr{IP: net.IPv4zero, Port: udpConn.LocalAddr().(*net.UDPAddr).Port}
-	c.tunnelUDPAddr = nil
-
-	// 初始化隧道监听器
-	if err := c.initTunnelListener(); err != nil {
-		return fmt.Errorf("hybridStart: initTunnelListener failed: %w", err)
-	}
-
-	// 输出映射地址信息
-	c.logger.Info("External endpoint: %v -> %v -> %v", extAddr, c.tunnelTCPAddr, c.getTargetAddrsString())
-
-	if err := c.singleControl(); err != nil {
-		return fmt.Errorf("hybridStart: singleControl failed: %w", err)
-	}
 	return nil
 }
