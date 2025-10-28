@@ -296,6 +296,10 @@ func (w *InstanceLogWriter) Write(p []byte) (n int, err error) {
 		if w.instance.Status != "error" && !w.instance.deleted &&
 			(strings.Contains(line, "Server error:") || strings.Contains(line, "Client error:")) {
 			w.instance.Status = "error"
+			w.instance.Ping = 0
+			w.instance.Pool = 0
+			w.instance.TCPS = 0
+			w.instance.UDPS = 0
 			w.master.instances.Store(w.instanceID, w.instance)
 		}
 
