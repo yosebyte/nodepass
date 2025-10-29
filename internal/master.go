@@ -1775,7 +1775,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: min, mode, read, rate, slot, proxy
+		// client参数: min, mode, read, rate, slot, proxy, noudp
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
@@ -1794,8 +1794,11 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
 		}
+		if query.Get("noudp") == "" {
+			query.Set("noudp", defaultUDPStrategy)
+		}
 	case "server":
-		// server参数: max, mode, read, rate, slot, proxy
+		// server参数: max, mode, read, rate, slot, proxy, noudp
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
 		}
@@ -1813,6 +1816,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		}
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
+		}
+		if query.Get("noudp") == "" {
+			query.Set("noudp", defaultUDPStrategy)
 		}
 	}
 
