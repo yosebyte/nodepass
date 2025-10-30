@@ -148,6 +148,7 @@ The data flow mode is automatically determined based on tunnel address and targe
    - For UDP: Direct datagram forwarding to target address with minimal latency
    - Simplified data path ensuring reliable and efficient forwarding
 
+### Specific protocol characteristics
 - **TCP Exchange**: 
   - Persistent connections for full-duplex communication
   - Continuous data streaming until connection termination
@@ -156,7 +157,7 @@ The data flow mode is automatically determined based on tunnel address and targe
 
 - **UDP Exchange**:
   - One-shot datagram forwarding with configurable buffer sizes (`UDP_DATA_BUF_SIZE`)
-  - Read timeout control for response waiting (`read` parameter or default 10m)
+  - Read timeout control for response waiting (`read` parameter or default 0)
   - Optimized for low-latency, stateless communication
   - **Client Single-End Forwarding Optimization**: Direct forwarding mechanism with minimal latency
 
@@ -266,10 +267,10 @@ The connection pool design follows the principle of "warm-up over cold start," e
    - Intelligent session timeout management, balancing resource usage and responsiveness
    - Session reuse mechanisms, reducing connection establishment overhead
 
-2. **TCP Connection Reuse**:
-   - Long connection keep-alive technology, reducing connection establishment/closure overhead
-   - Intelligent connection reuse strategies, maximizing connection utilization
-   - Connection health checks, ensuring reliability of reused connections
+2. **TCP Connection Management**:
+   - Connection pool management for efficient resource utilization
+   - One-time use model for connection pool entries to ensure state cleanliness
+   - Connection health monitoring and automatic cleanup
 
 3. **Cross-Protocol Unified Management**:
    - Unified connection lifecycle management, simplifying system complexity

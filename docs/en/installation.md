@@ -4,7 +4,7 @@ This guide provides detailed instructions for installing NodePass using differen
 
 ## System Requirements
 
-- Go 1.24 or higher (for building from source)
+- Go 1.25 or higher (for building from source)
 - Network connectivity between server and client endpoints
 - Admin privileges may be required for binding to ports below 1024
 

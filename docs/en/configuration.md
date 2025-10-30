@@ -125,39 +125,37 @@ Example:
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 ```
 
-## Data Read Timeout and Connection Reuse
+## Data Read Timeout
 
-The `read` parameter controls both data read timeout and connection pool reuse behavior:
+The `read` parameter controls data read timeout behavior:
 
-- `read`: Data read timeout and connection reuse (default: 0, meaning no timeout and no connection recycling)
-  - Value 0 or omitted: No data read timeout, connections are not recycled to the pool after data transfer completes
-  - Positive integer with time unit: Sets read timeout and enables connection reuse
+- `read`: Data read timeout (default: 0, meaning no timeout)
+  - Value 0 or omitted: No data read timeout
+  - Positive integer with time unit: Sets read timeout
     - Value format: integer followed by unit (`s` for seconds, `m` for minutes, `h` for hours)
     - Examples: `30s` (30 seconds), `5m` (5 minutes), `1h` (1 hour)
     - If no data is received within the timeout period, the connection is closed
-    - After data transfer completes, the connection is recycled to the pool for reuse
   - Applies to both client and server modes
 
 Example:
 ```bash
-# Set data read timeout to 5 minutes, enable connection reuse
+# Set data read timeout to 5 minutes
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=5m"
 
-# Set data read timeout to 30 seconds for fast-response applications, enable connection reuse
+# Set data read timeout to 30 seconds for fast-response applications
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=30s"
 
-# Set data read timeout to 1 hour for long-running transfers, enable connection reuse
+# Set data read timeout to 1 hour for long-running transfers
 nodepass "client://server.example.com:10101/127.0.0.1:8080?read=1h"
 
-# Default behavior: no timeout and no connection recycling (omit read parameter or set to 0)
+# Default behavior: no timeout (omit read parameter or set to 0)
 nodepass "client://server.example.com:10101/127.0.0.1:8080"
 ```
 
-**Connection Reuse Use Cases:**
-- **HTTP Short Connections**: Set reasonable read timeout and enable connection reuse for frequent short connections to improve pool utilization
-- **Long Connection Optimization**: Set larger timeout values for long-lived connections while avoiding resource waste
-- **Resource Control**: Enable connection recycling by setting timeout in scenarios requiring strict connection lifecycle control
-- **Default Mode**: Use the default no-timeout no-recycling mode for scenarios requiring maximum flexibility
+**Data Read Timeout Use Cases:**
+- **Connection Management**: Prevent idle connections from consuming resources indefinitely
+- **Resource Control**: Set appropriate timeouts based on expected data transfer patterns
+- **Network Reliability**: Handle network interruptions gracefully with automatic cleanup
 
 ## Rate Limiting
 NodePass supports bandwidth rate limiting for traffic control through the `rate` parameter. This feature helps prevent network congestion and ensures fair resource allocation across multiple connections.
@@ -264,6 +262,43 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 - The header format follows the HAProxy PROXY protocol v1 specification
 - If the target service doesn't support PROXY protocol, connections may fail or behave unexpectedly
 
+## UDP Support Control
+
+NodePass supports UDP traffic tunneling in addition to TCP. The `noudp` parameter allows you to disable UDP support when only TCP traffic needs to be handled, which can reduce resource usage and simplify configuration.
+
+- `noudp`: UDP support control (default: 0)
+  - Value 0: UDP support enabled - both TCP and UDP traffic will be tunneled
+  - Value 1: UDP support disabled - only TCP traffic will be tunneled, UDP packets are ignored
+  - Applies to both client and server modes
+  - When disabled, UDP-related resources (buffers, connections, sessions) are not allocated
+
+Example:
+```bash
+# Enable UDP support (default behavior)
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?noudp=0"
+
+# Disable UDP support for TCP-only scenarios
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?noudp=1"
+
+# Client with UDP disabled
+nodepass "client://server.example.com:10101/127.0.0.1:8080?noudp=1"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&noudp=1"
+```
+
+**UDP Support Control Use Cases:**
+- **TCP-Only Services**: Disable UDP when tunneling only TCP-based applications
+- **Resource Optimization**: Reduce memory and CPU usage by avoiding UDP processing overhead
+- **Security**: Prevent UDP-based attacks or unwanted traffic in restricted environments
+- **Simplified Configuration**: Easier setup when UDP tunneling is not required
+- **Network Isolation**: Isolate TCP and UDP traffic handling for better control
+
+**Important Notes:**
+- When UDP is disabled, any UDP packets sent to the tunnel will be silently dropped
+- Existing UDP sessions will be terminated when switching to noudp=1
+- UDP buffer pools and session management are disabled when noudp=1
+
 ## Target Address Groups and Load Balancing
 
 NodePass supports configuring multiple target addresses to achieve high availability and load balancing. Target address groups are only applicable to the egress side (the final destination of traffic) and should not be used on the ingress side.
@@ -334,10 +369,11 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `min`     | Minimum pool capacity | `64`    |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity | `1024`  |   O    |   X    |   X    |
 | `mode`    | Run mode control      | `0`     |   O    |   O    |   X    |
-| `read`    | Data read timeout and connection reuse | `0` |   O    |   O    |   X    |
+| `read`    | Data read timeout      | `0` |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit  | `0`     |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |
 | `proxy`   | PROXY protocol support| `0`     |   O    |   O    |   X    |
+| `noudp`   | UDP support control    | `0`     |   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored
@@ -347,6 +383,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
+- Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables

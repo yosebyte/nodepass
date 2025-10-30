@@ -22,7 +22,7 @@ Common query parameters:
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
-- `read=<timeout>`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
+- `read=<timeout>`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
 - `proxy=<mode>`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header transmission)
 
@@ -59,7 +59,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
   - `1`: Force reverse mode - server binds to target address locally and receives traffic
   - `2`: Force forward mode - server connects to remote target address
-- `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
+- `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
 
@@ -114,7 +114,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
   - `2`: Force dual-end handshake mode - requires server coordination
-- `read`: Data read timeout duration (default: 10m, supports time units like 30s, 5m, 30m, etc.)
+- `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
 
