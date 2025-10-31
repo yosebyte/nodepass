@@ -70,7 +70,7 @@ This guide helps you diagnose and resolve common issues you might encounter when
 
 3. **Timeout Configuration**
    - Adjust `NP_UDP_DIAL_TIMEOUT` if using UDP with slow response times
-   - Increase `read` parameter in URL for long-running transfers (default: 10m)
+   - Increase `read` parameter in URL for long-running transfers (default: 0)
    - Consider adjusting `NP_TCP_DIAL_TIMEOUT` for unstable network conditions
 
 4. **Overloaded Server**

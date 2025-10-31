@@ -47,10 +47,10 @@ type Common struct {
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
+	disableUDP       string             // 禁用UDP
 	rateLimit        int                // 速率限制
 	rateLimiter      *conn.RateLimiter  // 全局限速器
 	readTimeout      time.Duration      // 读取超时
-	poolReuse        bool               // 池重用标志
 	bufReader        *bufio.Reader      // 缓冲读取器
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
@@ -99,6 +99,7 @@ const (
 	defaultRateLimit     = 0               // 默认速率限制
 	defaultSlotLimit     = 65536           // 默认槽位限制
 	defaultProxyProtocol = "0"             // 默认代理协议
+	defaultUDPStrategy   = "0"             // 默认UDP策略
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -361,13 +362,12 @@ func (c *Common) getRunMode(parsedURL *url.URL) {
 	}
 }
 
-// getReadTimeout 获取读取超时设置并配置池重用
+// getReadTimeout 获取读取超时设置
 func (c *Common) getReadTimeout(parsedURL *url.URL) {
 	if timeout := parsedURL.Query().Get("read"); timeout != "" {
 		if value, err := time.ParseDuration(timeout); err == nil && value > 0 {
 			c.readTimeout = value
 		}
-		c.poolReuse = true
 	} else {
 		c.readTimeout = defaultReadTimeout
 	}
@@ -404,6 +404,15 @@ func (c *Common) getProxyProtocol(parsedURL *url.URL) {
 	}
 }
 
+// getUDPStrategy 获取UDP策略
+func (c *Common) getUDPStrategy(parsedURL *url.URL) {
+	if udpStrategy := parsedURL.Query().Get("noudp"); udpStrategy != "" {
+		c.disableUDP = udpStrategy
+	} else {
+		c.disableUDP = defaultUDPStrategy
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) error {
 	if err := c.getAddress(parsedURL); err != nil {
@@ -417,6 +426,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
 	c.getProxyProtocol(parsedURL)
+	c.getUDPStrategy(parsedURL)
 
 	return nil
 }
@@ -489,7 +499,7 @@ func (c *Common) initTunnelListener() error {
 	}
 
 	// 初始化隧道UDP监听器
-	if c.tunnelUDPAddr != nil {
+	if c.tunnelUDPAddr != nil && c.disableUDP != "1" {
 		tunnelUDPConn, err := net.ListenUDP("udp", c.tunnelUDPAddr)
 		if err != nil {
 			return fmt.Errorf("initTunnelListener: listenUDP failed: %w", err)
@@ -516,7 +526,7 @@ func (c *Common) initTargetListener() error {
 	}
 
 	// 初始化目标UDP监听器
-	if len(c.targetUDPAddrs) > 0 {
+	if len(c.targetUDPAddrs) > 0 && c.disableUDP != "1" {
 		targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
 		if err != nil {
 			return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
@@ -745,8 +755,12 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
-			go c.commonTCPLoop()
-			go c.commonUDPLoop()
+			if c.targetListener != nil {
+				go c.commonTCPLoop()
+			}
+			if c.targetUDPConn != nil {
+				go c.commonUDPLoop()
+			}
 			return
 		}
 
@@ -796,7 +810,7 @@ func (c *Common) commonTCPLoop() {
 			defer c.releaseSlot(false)
 
 			// 从连接池获取连接
-			id, remoteConn, err := c.tunnelPool.ServerGet(poolGetTimeout)
+			id, remoteConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
 			if err != nil {
 				c.logger.Warn("commonTCPLoop: request timeout: %v", err)
 				return
@@ -805,15 +819,11 @@ func (c *Common) commonTCPLoop() {
 			c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 			defer func() {
-				// 池连接关闭或复用
-				if !c.poolReuse && remoteConn != nil {
+				// 池连接关闭
+				if remoteConn != nil {
 					remoteConn.Close()
 					c.logger.Debug("Tunnel connection: closed %v", id)
-					return
 				}
-				remoteConn.SetReadDeadline(time.Time{})
-				c.tunnelPool.Put(id, remoteConn)
-				c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 			}()
 
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -896,7 +906,7 @@ func (c *Common) commonUDPLoop() {
 			}
 
 			// 获取池连接
-			id, remoteConn, err = c.tunnelPool.ServerGet(poolGetTimeout)
+			id, remoteConn, err = c.tunnelPool.IncomingGet(poolGetTimeout)
 			if err != nil {
 				c.logger.Warn("commonUDPLoop: request timeout: %v", err)
 				c.releaseSlot(true)
@@ -912,15 +922,11 @@ func (c *Common) commonUDPLoop() {
 					c.targetUDPSession.Delete(sessionKey)
 					c.releaseSlot(true)
 
-					// 池连接关闭或复用
-					if !c.poolReuse && remoteConn != nil {
+					// 池连接关闭
+					if remoteConn != nil {
 						remoteConn.Close()
 						c.logger.Debug("Tunnel connection: closed %v", id)
-						return
 					}
-					remoteConn.SetReadDeadline(time.Time{})
-					c.tunnelPool.Put(id, remoteConn)
-					c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 				}()
 
 				buffer := c.getUDPBuffer()
@@ -1024,9 +1030,13 @@ func (c *Common) commonOnce() error {
 			// 处理信号
 			switch signalURL.Fragment {
 			case "1": // TCP
-				go c.commonTCPOnce(signalURL)
+				if len(c.targetTCPAddrs) > 0 {
+					go c.commonTCPOnce(signalURL)
+				}
 			case "2": // UDP
-				go c.commonUDPOnce(signalURL)
+				if c.disableUDP != "1" {
+					go c.commonUDPOnce(signalURL)
+				}
 			case "c": // 连接池清理
 				go func() {
 					c.tunnelPool.Clean()
@@ -1089,7 +1099,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 从连接池获取连接
-	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
+	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
 	if err != nil {
 		c.logger.Error("commonTCPOnce: request timeout: %v", err)
 		c.tunnelPool.AddError()
@@ -1099,15 +1109,11 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: get %v <- pool active %v", id, c.tunnelPool.Active())
 
 	defer func() {
-		// 池连接关闭或复用
-		if !c.poolReuse && remoteConn != nil {
+		// 池连接关闭
+		if remoteConn != nil {
 			remoteConn.Close()
 			c.logger.Debug("Tunnel connection: closed %v", id)
-			return
 		}
-		remoteConn.SetReadDeadline(time.Time{})
-		c.tunnelPool.Put(id, remoteConn)
-		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
@@ -1166,7 +1172,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
 
 	// 获取池连接
-	remoteConn, err := c.tunnelPool.ClientGet(id, poolGetTimeout)
+	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
 	if err != nil {
 		c.logger.Error("commonUDPOnce: request timeout: %v", err)
 		c.tunnelPool.AddError()
@@ -1177,15 +1183,11 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 	defer func() {
-		// 池连接关闭或复用
-		if !c.poolReuse && remoteConn != nil {
+		// 池连接关闭
+		if remoteConn != nil {
 			remoteConn.Close()
 			c.logger.Debug("Tunnel connection: closed %v", id)
-			return
 		}
-		remoteConn.SetReadDeadline(time.Time{})
-		c.tunnelPool.Put(id, remoteConn)
-		c.logger.Debug("Tunnel connection: put %v -> pool active %v", id, c.tunnelPool.Active())
 	}()
 
 	var targetConn net.Conn

@@ -22,7 +22,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
 - `max=<max_pool>`：最大连接池容量（默认：1024，服务端设置并传递给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
-- `read=<timeout>`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
+- `read=<timeout>`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
 - `proxy=<mode>`：PROXY协议支持（默认：`0`，`1`启用PROXY协议v1头部传输）
 
@@ -59,7 +59,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果不可用则回退
   - `1`：强制反向模式 - 服务器本地绑定目标地址并接收流量
   - `2`：强制正向模式 - 服务器连接到远程目标地址
-- `read`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
+- `read`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
 - `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
 
@@ -114,7 +114,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
   - `1`：强制单端转发模式 - 带连接池的本地代理
   - `2`：强制双端握手模式 - 需要服务器协调
-- `read`：数据读取超时时间（默认：10m，支持时间单位如30s、5m、30m等）
+- `read`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
 - `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
 
