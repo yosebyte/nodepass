@@ -45,7 +45,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 					return &buf
 				},
 			},
-			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
 			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},

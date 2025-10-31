@@ -47,7 +47,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 					return &buf
 				},
 			},
-			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
 			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},

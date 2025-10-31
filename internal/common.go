@@ -56,8 +56,6 @@ type Common struct {
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
 	checkPoint       time.Time          // 检查点时间
-	lastClean        time.Time          // 上次清理时间
-	cleanURL         *url.URL           // 清理信号
 	flushURL         *url.URL           // 重置信号
 	pingURL          *url.URL           // PING信号
 	pongURL          *url.URL           // PONG信号
@@ -692,21 +690,6 @@ func (c *Common) healthCheck() error {
 			continue
 		}
 
-		// 连接池定期清理
-		if time.Since(c.lastClean) >= ReloadInterval {
-			// 发送清理信号到对端
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.cleanURL.String())))
-				if err != nil {
-					c.mu.Unlock()
-					return fmt.Errorf("healthCheck: write clean signal failed: %w", err)
-				}
-			}
-			c.tunnelPool.Clean()
-			c.lastClean = time.Now()
-			c.logger.Debug("Tunnel pool cleaned: %v active connections", c.tunnelPool.Active())
-		}
-
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
@@ -1037,18 +1020,6 @@ func (c *Common) commonOnce() error {
 				if c.disableUDP != "1" {
 					go c.commonUDPOnce(signalURL)
 				}
-			case "c": // 连接池清理
-				go func() {
-					c.tunnelPool.Clean()
-
-					select {
-					case <-c.ctx.Done():
-						return
-					case <-time.After(reportInterval):
-					}
-
-					c.logger.Debug("Tunnel pool cleaned: %v active connections", c.tunnelPool.Active())
-				}()
 			case "f": // 连接池刷新
 				go func() {
 					c.tunnelPool.Flush()
