@@ -1582,4 +1582,5 @@ Examples:
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
 | `slot` | Connection slot count | Integer (1-65536) | `65536` | Both |
 | `proxy` | PROXY protocol support | `0`(disabled), `1`(enabled) | `0` | Both |
+| `notcp` | TCP support control | `0`(enabled), `1`(disabled) | `0` | Both |
 | `noudp` | UDP support control | `0`(enabled), `1`(disabled) | `0` | Both |

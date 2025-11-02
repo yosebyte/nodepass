@@ -1582,4 +1582,5 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |
 | `slot` | 连接槽位数 | 整数 (1-65536) | `65536` | 两者 |
 | `proxy` | PROXY协议支持 | `0`(禁用), `1`(启用) | `0` | 两者 |
+| `notcp` | TCP支持控制 | `0`(启用), `1`(禁用) | `0` | 两者 |
 | `noudp` | UDP支持控制 | `0`(启用), `1`(禁用) | `0` | 两者 |

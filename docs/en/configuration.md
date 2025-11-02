@@ -262,6 +262,43 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&proxy=1&rate=100"
 - The header format follows the HAProxy PROXY protocol v1 specification
 - If the target service doesn't support PROXY protocol, connections may fail or behave unexpectedly
 
+## TCP Support Control
+
+NodePass supports TCP traffic tunneling by default. The `notcp` parameter allows you to disable TCP support when only UDP traffic needs to be handled, which can reduce resource usage and simplify configuration.
+
+- `notcp`: TCP support control (default: 0)
+  - Value 0: TCP support enabled - both TCP and UDP traffic will be tunneled
+  - Value 1: TCP support disabled - only UDP traffic will be tunneled, TCP connections are ignored
+  - Applies to both client and server modes
+  - When disabled, TCP-related resources (buffers, connections, sessions) are not allocated
+
+Example:
+```bash
+# Enable TCP support (default behavior)
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?notcp=0"
+
+# Disable TCP support for UDP-only scenarios
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?notcp=1"
+
+# Client with TCP disabled
+nodepass "client://server.example.com:10101/127.0.0.1:8080?notcp=1"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&notcp=1"
+```
+
+**TCP Support Control Use Cases:**
+- **UDP-Only Services**: Disable TCP when tunneling only UDP-based applications
+- **Resource Optimization**: Reduce memory and CPU usage by avoiding TCP processing overhead
+- **Security**: Prevent TCP-based attacks or unwanted traffic in restricted environments
+- **Simplified Configuration**: Easier setup when TCP tunneling is not required
+- **Network Isolation**: Isolate TCP and UDP traffic handling for better control
+
+**Important Notes:**
+- When TCP is disabled, any TCP connections sent to the tunnel will be silently dropped
+- Existing TCP sessions will be terminated when switching to notcp=1
+- TCP buffer pools and session management are disabled when notcp=1
+
 ## UDP Support Control
 
 NodePass supports UDP traffic tunneling in addition to TCP. The `noudp` parameter allows you to disable UDP support when only TCP traffic needs to be handled, which can reduce resource usage and simplify configuration.
@@ -373,6 +410,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `rate`    | Bandwidth rate limit  | `0`     |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |
 | `proxy`   | PROXY protocol support| `0`     |   O    |   O    |   X    |
+| `notcp`   | TCP support control    | `0`     |   O    |   O    |   X    |
 | `noudp`   | UDP support control    | `0`     |   O    |   O    |   X    |
 
 - O: Parameter is valid and recommended for configuration
@@ -383,6 +421,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
+- Set `notcp=1` when only UDP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 

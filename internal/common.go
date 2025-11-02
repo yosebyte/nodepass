@@ -47,6 +47,7 @@ type Common struct {
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
+	disableTCP       string             // 禁用TCP
 	disableUDP       string             // 禁用UDP
 	rateLimit        int                // 速率限制
 	rateLimiter      *conn.RateLimiter  // 全局限速器
@@ -97,6 +98,7 @@ const (
 	defaultRateLimit     = 0               // 默认速率限制
 	defaultSlotLimit     = 65536           // 默认槽位限制
 	defaultProxyProtocol = "0"             // 默认代理协议
+	defaultTCPStrategy   = "0"             // 默认TCP策略
 	defaultUDPStrategy   = "0"             // 默认UDP策略
 )
 
@@ -402,6 +404,15 @@ func (c *Common) getProxyProtocol(parsedURL *url.URL) {
 	}
 }
 
+// getTCPStrategy 获取TCP策略
+func (c *Common) getTCPStrategy(parsedURL *url.URL) {
+	if tcpStrategy := parsedURL.Query().Get("notcp"); tcpStrategy != "" {
+		c.disableTCP = tcpStrategy
+	} else {
+		c.disableTCP = defaultTCPStrategy
+	}
+}
+
 // getUDPStrategy 获取UDP策略
 func (c *Common) getUDPStrategy(parsedURL *url.URL) {
 	if udpStrategy := parsedURL.Query().Get("noudp"); udpStrategy != "" {
@@ -424,6 +435,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
 	c.getProxyProtocol(parsedURL)
+	c.getTCPStrategy(parsedURL)
 	c.getUDPStrategy(parsedURL)
 
 	return nil
@@ -488,7 +500,7 @@ func (c *Common) initTunnelListener() error {
 	}
 
 	// 初始化隧道TCP监听器
-	if c.tunnelTCPAddr != nil {
+	if c.tunnelTCPAddr != nil && c.disableTCP != "1" {
 		tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
 		if err != nil {
 			return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
@@ -515,7 +527,7 @@ func (c *Common) initTargetListener() error {
 	}
 
 	// 初始化目标TCP监听器
-	if len(c.targetTCPAddrs) > 0 {
+	if len(c.targetTCPAddrs) > 0 && c.disableTCP != "1" {
 		targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
 		if err != nil {
 			return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
@@ -1013,7 +1025,7 @@ func (c *Common) commonOnce() error {
 			// 处理信号
 			switch signalURL.Fragment {
 			case "1": // TCP
-				if len(c.targetTCPAddrs) > 0 {
+				if c.disableTCP != "1" {
 					go c.commonTCPOnce(signalURL)
 				}
 			case "2": // UDP
