@@ -151,6 +151,58 @@ func (s *Server) start() error {
 		reportInterval)
 	go s.tunnelPool.ServerManager()
 
+	// 验证TLS证书指纹
+	if s.tlsCode == "1" || s.tlsCode == "2" {
+		if s.tlsConfig == nil || len(s.tlsConfig.Certificates) == 0 {
+			return fmt.Errorf("start: tlsConfig missing certificates for TLS verification")
+		}
+
+		cert := s.tlsConfig.Certificates[0]
+		if len(cert.Certificate) == 0 {
+			return fmt.Errorf("start: no certificates found in tlsConfig for TLS verification")
+		}
+
+		// 打印证书指纹
+		s.logger.Info("TLS cert verified: %v", s.formatCertFingerprint(cert.Certificate[0]))
+
+		for s.ctx.Err() == nil {
+			if s.tunnelPool.Ready() {
+				break
+			}
+			select {
+			case <-s.ctx.Done():
+				return fmt.Errorf("start: context error: %w", s.ctx.Err())
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+
+		id, testConn, err := s.tunnelPool.IncomingGet(poolGetTimeout)
+		if err != nil {
+			return fmt.Errorf("start: failed to get test connection from pool: %w", err)
+		}
+
+		// 构建并发送验证信号
+		verifyURL := &url.URL{
+			Scheme:   "np",
+			Host:     s.tunnelTCPConn.RemoteAddr().String(),
+			Path:     url.PathEscape(id),
+			Fragment: "v", // TLS验证
+		}
+
+		if s.ctx.Err() == nil && s.tunnelTCPConn != nil {
+			s.mu.Lock()
+			_, err = s.tunnelTCPConn.Write(s.encode([]byte(verifyURL.String())))
+			s.mu.Unlock()
+			if err != nil {
+				testConn.Close()
+				return fmt.Errorf("start: write TLS verify signal failed: %w", err)
+			}
+		}
+
+		s.logger.Debug("TLS verify signal: cid %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
+		testConn.Close()
+	}
+
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}

@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -182,6 +184,22 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// formatCertFingerprint 格式化证书指纹为标准格式
+func (c *Common) formatCertFingerprint(certRaw []byte) string {
+	hash := sha256.Sum256(certRaw)
+	hashHex := hex.EncodeToString(hash[:])
+
+	var formatted strings.Builder
+	for i := 0; i < len(hashHex); i += 2 {
+		if i > 0 {
+			formatted.WriteByte(':')
+		}
+		formatted.WriteString(strings.ToUpper(hashHex[i : i+2]))
+	}
+
+	return "sha256:" + formatted.String()
 }
 
 // xor 对数据进行异或处理
@@ -1024,6 +1042,50 @@ func (c *Common) commonOnce() error {
 
 			// 处理信号
 			switch signalURL.Fragment {
+			case "v": // 验证
+				for c.ctx.Err() == nil {
+					if c.tunnelPool.Ready() {
+						break
+					}
+					select {
+					case <-c.ctx.Done():
+						continue
+					case <-time.After(50 * time.Millisecond):
+					}
+				}
+				id := strings.TrimPrefix(signalURL.Path, "/")
+				if unescapedID, err := url.PathUnescape(id); err != nil {
+					c.logger.Error("commonOnce: unescape id failed: %v", err)
+					continue
+				} else {
+					id = unescapedID
+				}
+				c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+				testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
+				if err != nil {
+					c.logger.Error("commonOnce: request timeout: %v", err)
+					c.tunnelPool.AddError()
+					continue
+				}
+
+				if testConn != nil {
+					tlsConn, ok := testConn.(*tls.Conn)
+					if !ok {
+						c.logger.Error("commonOnce: connection is not TLS")
+						continue
+					}
+
+					state := tlsConn.ConnectionState()
+					if len(state.PeerCertificates) == 0 {
+						c.logger.Error("commonOnce: no peer certificates found")
+						continue
+					}
+
+					// 打印证书指纹
+					c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
+					testConn.Close()
+				}
 			case "1": // TCP
 				if c.disableTCP != "1" {
 					go c.commonTCPOnce(signalURL)
