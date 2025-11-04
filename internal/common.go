@@ -31,6 +31,7 @@ type Common struct {
 	mu               sync.Mutex         // 互斥锁
 	logger           *logs.Logger       // 日志记录器
 	tlsCode          string             // TLS模式代码
+	tlsConfig        *tls.Config        // TLS配置
 	runMode          string             // 运行模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
@@ -714,6 +715,14 @@ func (c *Common) healthCheck() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
+	go func() {
+		select {
+		case <-c.ctx.Done():
+		case <-ticker.C:
+			c.incomingVerify()
+		}
+	}()
+
 	for c.ctx.Err() == nil {
 		// 尝试获取锁
 		if !c.mu.TryLock() {
@@ -761,6 +770,57 @@ func (c *Common) healthCheck() error {
 	}
 
 	return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
+}
+
+// incomingVerify 入口连接验证
+func (c *Common) incomingVerify() {
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() {
+			break
+		}
+		select {
+		case <-c.ctx.Done():
+			continue
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
+		return
+	}
+
+	cert := c.tlsConfig.Certificates[0]
+	if len(cert.Certificate) == 0 {
+		return
+	}
+
+	// 打印证书指纹
+	c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(cert.Certificate[0]))
+
+	id, testConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
+	if err != nil {
+		return
+	}
+	defer testConn.Close()
+
+	// 构建并发送验证信号
+	verifyURL := &url.URL{
+		Scheme:   "np",
+		Host:     c.tunnelTCPConn.RemoteAddr().String(),
+		Path:     url.PathEscape(id),
+		Fragment: "v", // TLS验证
+	}
+
+	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+		c.mu.Lock()
+		_, err = c.tunnelTCPConn.Write(c.encode([]byte(verifyURL.String())))
+		c.mu.Unlock()
+		if err != nil {
+			return
+		}
+	}
+
+	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 }
 
 // commonLoop 共用处理循环
@@ -1043,48 +1103,8 @@ func (c *Common) commonOnce() error {
 			// 处理信号
 			switch signalURL.Fragment {
 			case "v": // 验证
-				for c.ctx.Err() == nil {
-					if c.tunnelPool.Ready() {
-						break
-					}
-					select {
-					case <-c.ctx.Done():
-						continue
-					case <-time.After(50 * time.Millisecond):
-					}
-				}
-				id := strings.TrimPrefix(signalURL.Path, "/")
-				if unescapedID, err := url.PathUnescape(id); err != nil {
-					c.logger.Error("commonOnce: unescape id failed: %v", err)
-					continue
-				} else {
-					id = unescapedID
-				}
-				c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
-
-				testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
-				if err != nil {
-					c.logger.Error("commonOnce: request timeout: %v", err)
-					c.tunnelPool.AddError()
-					continue
-				}
-
-				if testConn != nil {
-					tlsConn, ok := testConn.(*tls.Conn)
-					if !ok {
-						c.logger.Error("commonOnce: connection is not TLS")
-						continue
-					}
-
-					state := tlsConn.ConnectionState()
-					if len(state.PeerCertificates) == 0 {
-						c.logger.Error("commonOnce: no peer certificates found")
-						continue
-					}
-
-					// 打印证书指纹
-					c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
-					testConn.Close()
+				if c.tlsCode == "1" || c.tlsCode == "2" {
+					go c.outgoingVerify(signalURL)
 				}
 			case "1": // TCP
 				if c.disableTCP != "1" {
@@ -1130,6 +1150,54 @@ func (c *Common) commonOnce() error {
 	}
 
 	return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
+}
+
+// outgoingVerify 出口连接验证
+func (c *Common) outgoingVerify(signalURL *url.URL) {
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() {
+			break
+		}
+		select {
+		case <-c.ctx.Done():
+			continue
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	id := strings.TrimPrefix(signalURL.Path, "/")
+	if unescapedID, err := url.PathUnescape(id); err != nil {
+		c.logger.Error("outgoingVerify: unescape id failed: %v", err)
+		return
+	} else {
+		id = unescapedID
+	}
+	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
+	if err != nil {
+		c.logger.Error("outgoingVerify: request timeout: %v", err)
+		c.tunnelPool.AddError()
+		return
+	}
+	defer testConn.Close()
+
+	if testConn != nil {
+		tlsConn, ok := testConn.(*tls.Conn)
+		if !ok {
+			c.logger.Error("outgoingVerify: connection is not TLS")
+			return
+		}
+
+		state := tlsConn.ConnectionState()
+		if len(state.PeerCertificates) == 0 {
+			c.logger.Error("outgoingVerify: no peer certificates found")
+			return
+		}
+
+		// 打印证书指纹
+		c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
+	}
 }
 
 // commonTCPOnce 共用处理单个TCP请求

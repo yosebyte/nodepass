@@ -23,9 +23,8 @@ import (
 
 // Server 实现服务端模式功能
 type Server struct {
-	Common                // 继承共享功能
-	tlsConfig *tls.Config // TLS配置
-	clientIP  string      // 客户端IP
+	Common          // 继承共享功能
+	clientIP string // 客户端IP
 }
 
 // NewServer 创建新的服务端实例
@@ -33,6 +32,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
+			tlsConfig:  tlsConfig,
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
@@ -51,7 +51,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
-		tlsConfig: tlsConfig,
 	}
 	if err := server.initConfig(parsedURL); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
@@ -151,61 +150,12 @@ func (s *Server) start() error {
 		reportInterval)
 	go s.tunnelPool.ServerManager()
 
-	// 验证TLS证书指纹
-	if s.tlsCode == "1" || s.tlsCode == "2" {
-		if s.tlsConfig == nil || len(s.tlsConfig.Certificates) == 0 {
-			return fmt.Errorf("start: tlsConfig missing certificates for TLS verification")
-		}
-
-		cert := s.tlsConfig.Certificates[0]
-		if len(cert.Certificate) == 0 {
-			return fmt.Errorf("start: no certificates found in tlsConfig for TLS verification")
-		}
-
-		// 打印证书指纹
-		s.logger.Info("TLS cert verified: %v", s.formatCertFingerprint(cert.Certificate[0]))
-
-		for s.ctx.Err() == nil {
-			if s.tunnelPool.Ready() {
-				break
-			}
-			select {
-			case <-s.ctx.Done():
-				return fmt.Errorf("start: context error: %w", s.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
-			}
-		}
-
-		id, testConn, err := s.tunnelPool.IncomingGet(poolGetTimeout)
-		if err != nil {
-			return fmt.Errorf("start: failed to get test connection from pool: %w", err)
-		}
-
-		// 构建并发送验证信号
-		verifyURL := &url.URL{
-			Scheme:   "np",
-			Host:     s.tunnelTCPConn.RemoteAddr().String(),
-			Path:     url.PathEscape(id),
-			Fragment: "v", // TLS验证
-		}
-
-		if s.ctx.Err() == nil && s.tunnelTCPConn != nil {
-			s.mu.Lock()
-			_, err = s.tunnelTCPConn.Write(s.encode([]byte(verifyURL.String())))
-			s.mu.Unlock()
-			if err != nil {
-				testConn.Close()
-				return fmt.Errorf("start: write TLS verify signal failed: %w", err)
-			}
-		}
-
-		s.logger.Debug("TLS verify signal: cid %v -> %v", id, s.tunnelTCPConn.RemoteAddr())
-		testConn.Close()
-	}
-
+	// 判断数据流向
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}
+
+	// 启动共用控制
 	if err := s.commonControl(); err != nil {
 		return fmt.Errorf("start: commonControl failed: %w", err)
 	}

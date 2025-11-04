@@ -156,13 +156,15 @@ func (c *Client) commonStart() error {
 		})
 	go c.tunnelPool.ClientManager()
 
+	// 判断数据流向
 	if c.dataFlow == "+" {
-		// 初始化目标监听器
 		if err := c.initTargetListener(); err != nil {
 			return fmt.Errorf("commonStart: initTargetListener failed: %w", err)
 		}
 		go c.commonLoop()
 	}
+
+	// 启动共用控制
 	if err := c.commonControl(); err != nil {
 		return fmt.Errorf("commonStart: commonControl failed: %w", err)
 	}
