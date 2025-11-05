@@ -45,7 +45,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 					return &buf
 				},
 			},
-			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
 			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
@@ -62,9 +61,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&noudp=%v",
+		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(),
-			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol, c.disableUDP)
+			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol, c.disableTCP, c.disableUDP)
 	}
 	logInfo("Client started")
 
@@ -157,13 +156,15 @@ func (c *Client) commonStart() error {
 		})
 	go c.tunnelPool.ClientManager()
 
+	// 判断数据流向
 	if c.dataFlow == "+" {
-		// 初始化目标监听器
 		if err := c.initTargetListener(); err != nil {
 			return fmt.Errorf("commonStart: initTargetListener failed: %w", err)
 		}
 		go c.commonLoop()
 	}
+
+	// 启动共用控制
 	if err := c.commonControl(); err != nil {
 		return fmt.Errorf("commonStart: commonControl failed: %w", err)
 	}

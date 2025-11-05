@@ -23,9 +23,8 @@ import (
 
 // Server 实现服务端模式功能
 type Server struct {
-	Common                // 继承共享功能
-	tlsConfig *tls.Config // TLS配置
-	clientIP  string      // 客户端IP
+	Common          // 继承共享功能
+	clientIP string // 客户端IP
 }
 
 // NewServer 创建新的服务端实例
@@ -33,6 +32,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 	server := &Server{
 		Common: Common{
 			tlsCode:    tlsCode,
+			tlsConfig:  tlsConfig,
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
@@ -47,12 +47,10 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 					return &buf
 				},
 			},
-			cleanURL: &url.URL{Scheme: "np", Fragment: "c"},
 			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
-		tlsConfig: tlsConfig,
 	}
 	if err := server.initConfig(parsedURL); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
@@ -64,9 +62,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&noudp=%v",
+		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(),
-			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol, s.disableUDP)
+			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}
 	logInfo("Server started")
 
@@ -152,9 +150,12 @@ func (s *Server) start() error {
 		reportInterval)
 	go s.tunnelPool.ServerManager()
 
+	// 判断数据流向
 	if s.dataFlow == "-" {
 		go s.commonLoop()
 	}
+
+	// 启动共用控制
 	if err := s.commonControl(); err != nil {
 		return fmt.Errorf("start: commonControl failed: %w", err)
 	}

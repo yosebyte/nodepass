@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -29,6 +31,7 @@ type Common struct {
 	mu               sync.Mutex         // 互斥锁
 	logger           *logs.Logger       // 日志记录器
 	tlsCode          string             // TLS模式代码
+	tlsConfig        *tls.Config        // TLS配置
 	runMode          string             // 运行模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
@@ -47,6 +50,7 @@ type Common struct {
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
+	disableTCP       string             // 禁用TCP
 	disableUDP       string             // 禁用UDP
 	rateLimit        int                // 速率限制
 	rateLimiter      *conn.RateLimiter  // 全局限速器
@@ -56,8 +60,6 @@ type Common struct {
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
 	checkPoint       time.Time          // 检查点时间
-	lastClean        time.Time          // 上次清理时间
-	cleanURL         *url.URL           // 清理信号
 	flushURL         *url.URL           // 重置信号
 	pingURL          *url.URL           // PING信号
 	pongURL          *url.URL           // PONG信号
@@ -99,6 +101,7 @@ const (
 	defaultRateLimit     = 0               // 默认速率限制
 	defaultSlotLimit     = 65536           // 默认槽位限制
 	defaultProxyProtocol = "0"             // 默认代理协议
+	defaultTCPStrategy   = "0"             // 默认TCP策略
 	defaultUDPStrategy   = "0"             // 默认UDP策略
 )
 
@@ -182,6 +185,22 @@ func getEnvAsDuration(name string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// formatCertFingerprint 格式化证书指纹为标准格式
+func (c *Common) formatCertFingerprint(certRaw []byte) string {
+	hash := sha256.Sum256(certRaw)
+	hashHex := hex.EncodeToString(hash[:])
+
+	var formatted strings.Builder
+	for i := 0; i < len(hashHex); i += 2 {
+		if i > 0 {
+			formatted.WriteByte(':')
+		}
+		formatted.WriteString(strings.ToUpper(hashHex[i : i+2]))
+	}
+
+	return "sha256:" + formatted.String()
 }
 
 // xor 对数据进行异或处理
@@ -404,6 +423,15 @@ func (c *Common) getProxyProtocol(parsedURL *url.URL) {
 	}
 }
 
+// getTCPStrategy 获取TCP策略
+func (c *Common) getTCPStrategy(parsedURL *url.URL) {
+	if tcpStrategy := parsedURL.Query().Get("notcp"); tcpStrategy != "" {
+		c.disableTCP = tcpStrategy
+	} else {
+		c.disableTCP = defaultTCPStrategy
+	}
+}
+
 // getUDPStrategy 获取UDP策略
 func (c *Common) getUDPStrategy(parsedURL *url.URL) {
 	if udpStrategy := parsedURL.Query().Get("noudp"); udpStrategy != "" {
@@ -426,6 +454,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
 	c.getProxyProtocol(parsedURL)
+	c.getTCPStrategy(parsedURL)
 	c.getUDPStrategy(parsedURL)
 
 	return nil
@@ -490,7 +519,7 @@ func (c *Common) initTunnelListener() error {
 	}
 
 	// 初始化隧道TCP监听器
-	if c.tunnelTCPAddr != nil {
+	if c.tunnelTCPAddr != nil && c.disableTCP != "1" {
 		tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
 		if err != nil {
 			return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
@@ -517,7 +546,7 @@ func (c *Common) initTargetListener() error {
 	}
 
 	// 初始化目标TCP监听器
-	if len(c.targetTCPAddrs) > 0 {
+	if len(c.targetTCPAddrs) > 0 && c.disableTCP != "1" {
 		targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
 		if err != nil {
 			return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
@@ -686,25 +715,18 @@ func (c *Common) healthCheck() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
+	go func() {
+		select {
+		case <-c.ctx.Done():
+		case <-ticker.C:
+			c.incomingVerify()
+		}
+	}()
+
 	for c.ctx.Err() == nil {
 		// 尝试获取锁
 		if !c.mu.TryLock() {
 			continue
-		}
-
-		// 连接池定期清理
-		if time.Since(c.lastClean) >= ReloadInterval {
-			// 发送清理信号到对端
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.cleanURL.String())))
-				if err != nil {
-					c.mu.Unlock()
-					return fmt.Errorf("healthCheck: write clean signal failed: %w", err)
-				}
-			}
-			c.tunnelPool.Clean()
-			c.lastClean = time.Now()
-			c.logger.Debug("Tunnel pool cleaned: %v active connections", c.tunnelPool.Active())
 		}
 
 		// 连接池健康度检查
@@ -748,6 +770,57 @@ func (c *Common) healthCheck() error {
 	}
 
 	return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
+}
+
+// incomingVerify 入口连接验证
+func (c *Common) incomingVerify() {
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() {
+			break
+		}
+		select {
+		case <-c.ctx.Done():
+			continue
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
+		return
+	}
+
+	cert := c.tlsConfig.Certificates[0]
+	if len(cert.Certificate) == 0 {
+		return
+	}
+
+	// 打印证书指纹
+	c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(cert.Certificate[0]))
+
+	id, testConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
+	if err != nil {
+		return
+	}
+	defer testConn.Close()
+
+	// 构建并发送验证信号
+	verifyURL := &url.URL{
+		Scheme:   "np",
+		Host:     c.tunnelTCPConn.RemoteAddr().String(),
+		Path:     url.PathEscape(id),
+		Fragment: "v", // TLS验证
+	}
+
+	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+		c.mu.Lock()
+		_, err = c.tunnelTCPConn.Write(c.encode([]byte(verifyURL.String())))
+		c.mu.Unlock()
+		if err != nil {
+			return
+		}
+	}
+
+	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
 }
 
 // commonLoop 共用处理循环
@@ -1029,26 +1102,18 @@ func (c *Common) commonOnce() error {
 
 			// 处理信号
 			switch signalURL.Fragment {
+			case "v": // 验证
+				if c.tlsCode == "1" || c.tlsCode == "2" {
+					go c.outgoingVerify(signalURL)
+				}
 			case "1": // TCP
-				if len(c.targetTCPAddrs) > 0 {
+				if c.disableTCP != "1" {
 					go c.commonTCPOnce(signalURL)
 				}
 			case "2": // UDP
 				if c.disableUDP != "1" {
 					go c.commonUDPOnce(signalURL)
 				}
-			case "c": // 连接池清理
-				go func() {
-					c.tunnelPool.Clean()
-
-					select {
-					case <-c.ctx.Done():
-						return
-					case <-time.After(reportInterval):
-					}
-
-					c.logger.Debug("Tunnel pool cleaned: %v active connections", c.tunnelPool.Active())
-				}()
 			case "f": // 连接池刷新
 				go func() {
 					c.tunnelPool.Flush()
@@ -1085,6 +1150,54 @@ func (c *Common) commonOnce() error {
 	}
 
 	return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
+}
+
+// outgoingVerify 出口连接验证
+func (c *Common) outgoingVerify(signalURL *url.URL) {
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() {
+			break
+		}
+		select {
+		case <-c.ctx.Done():
+			continue
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	id := strings.TrimPrefix(signalURL.Path, "/")
+	if unescapedID, err := url.PathUnescape(id); err != nil {
+		c.logger.Error("outgoingVerify: unescape id failed: %v", err)
+		return
+	} else {
+		id = unescapedID
+	}
+	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+
+	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
+	if err != nil {
+		c.logger.Error("outgoingVerify: request timeout: %v", err)
+		c.tunnelPool.AddError()
+		return
+	}
+	defer testConn.Close()
+
+	if testConn != nil {
+		tlsConn, ok := testConn.(*tls.Conn)
+		if !ok {
+			c.logger.Error("outgoingVerify: connection is not TLS")
+			return
+		}
+
+		state := tlsConn.ConnectionState()
+		if len(state.PeerCertificates) == 0 {
+			c.logger.Error("outgoingVerify: no peer certificates found")
+			return
+		}
+
+		// 打印证书指纹
+		c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
+	}
 }
 
 // commonTCPOnce 共用处理单个TCP请求

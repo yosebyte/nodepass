@@ -31,14 +31,15 @@ import (
 
 // 常量定义
 const (
-	openAPIVersion = "v1"                   // OpenAPI版本
-	stateFilePath  = "gob"                  // 实例状态持久化文件路径
-	stateFileName  = "nodepass.gob"         // 实例状态持久化文件名
-	sseRetryTime   = 3000                   // 重试间隔时间（毫秒）
-	apiKeyID       = "********"             // API Key的特殊ID
-	tcpingSemLimit = 10                     // TCPing最大并发数
-	baseDuration   = 100 * time.Millisecond // 基准持续时间
-	maxValueLen    = 256                    // 字符长度限制
+	openAPIVersion  = "v1"                   // OpenAPI版本
+	stateFilePath   = "gob"                  // 实例状态持久化文件路径
+	stateFileName   = "nodepass.gob"         // 实例状态持久化文件名
+	sseRetryTime    = 3000                   // 重试间隔时间（毫秒）
+	apiKeyID        = "********"             // API Key的特殊ID
+	tcpingSemLimit  = 10                     // TCPing最大并发数
+	baseDuration    = 100 * time.Millisecond // 基准持续时间
+	gracefulTimeout = 5 * time.Second        // 优雅关闭超时
+	maxValueLen     = 256                    // 字符长度限制
 )
 
 // Swagger UI HTML模板
@@ -1662,30 +1663,39 @@ func (m *Master) stopInstance(instance *Instance) {
 		return
 	}
 
-	// 发送终止信号
-	if instance.cmd.Process != nil {
-		if runtime.GOOS == "windows" {
-			instance.cmd.Process.Signal(os.Interrupt)
-		} else {
-			instance.cmd.Process.Signal(syscall.SIGTERM)
-		}
-		time.Sleep(baseDuration)
+	// 关闭停止通道
+	select {
+	case <-instance.stopped:
+	default:
+		close(instance.stopped)
 	}
 
-	// 关闭停止通道
-	close(instance.stopped)
-
-	// 取消执行或强制终止
+	// 发送终止信号并取消上下文
+	process := instance.cmd.Process
+	if runtime.GOOS == "windows" {
+		process.Signal(os.Interrupt)
+	} else {
+		process.Signal(syscall.SIGTERM)
+	}
 	if instance.cancelFunc != nil {
 		instance.cancelFunc()
-	} else {
-		err := instance.cmd.Process.Kill()
-		if err != nil {
-			m.logger.Error("stopInstance: instance error: %v [%v]", err, instance.ID)
-		}
 	}
 
-	m.logger.Info("Instance stopped [%v]", instance.ID)
+	// 等待优雅退出或超时强制终止
+	done := make(chan struct{})
+	go func() {
+		process.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		m.logger.Info("Instance stopped [%v]", instance.ID)
+	case <-time.After(gracefulTimeout):
+		process.Kill()
+		<-done
+		m.logger.Warn("Instance force killed [%v]", instance.ID)
+	}
 
 	// 重置实例状态
 	instance.Status = "stopped"
@@ -1775,7 +1785,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: min, mode, read, rate, slot, proxy, noudp
+		// client参数: min, mode, read, rate, slot, proxy, notcp, noudp
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
@@ -1794,11 +1804,14 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
 		}
+		if query.Get("notcp") == "" {
+			query.Set("notcp", defaultTCPStrategy)
+		}
 		if query.Get("noudp") == "" {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: max, mode, read, rate, slot, proxy, noudp
+		// server参数: max, mode, read, rate, slot, proxy, notcp, noudp
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
 		}
@@ -1816,6 +1829,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		}
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
+		}
+		if query.Get("notcp") == "" {
+			query.Set("notcp", defaultTCPStrategy)
 		}
 		if query.Get("noudp") == "" {
 			query.Set("noudp", defaultUDPStrategy)
