@@ -26,52 +26,64 @@ import (
 	"github.com/NodePassProject/pool"
 )
 
+// TargetAddress 目标地址
+type TargetAddress struct {
+	Address string
+	TCPAddr *net.TCPAddr // TCP地址组
+	UDPAddr *net.UDPAddr // UDP地址组
+	Host    string       // 域名或IP
+	Port    int          // 端口
+	isIP    bool         // 是否IP
+}
+
 // Common 包含所有模式共享的核心功能
 type Common struct {
-	mu               sync.Mutex         // 互斥锁
-	logger           *logs.Logger       // 日志记录器
-	tlsCode          string             // TLS模式代码
-	tlsConfig        *tls.Config        // TLS配置
-	runMode          string             // 运行模式
-	dataFlow         string             // 数据流向
-	tunnelKey        string             // 隧道密钥
-	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
-	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
-	targetTCPAddrs   []*net.TCPAddr     // 目标TCP地址组
-	targetUDPAddrs   []*net.UDPAddr     // 目标UDP地址组
-	targetIdx        uint64             // 目标地址索引
-	targetListener   *net.TCPListener   // 目标监听器
-	tunnelListener   net.Listener       // 隧道监听器
-	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
-	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
-	targetUDPConn    *conn.StatConn     // 目标UDP连接
-	targetUDPSession sync.Map           // 目标UDP会话
-	tunnelPool       *pool.Pool         // 隧道连接池
-	minPoolCapacity  int                // 最小池容量
-	maxPoolCapacity  int                // 最大池容量
-	proxyProtocol    string             // 代理协议
-	disableTCP       string             // 禁用TCP
-	disableUDP       string             // 禁用UDP
-	rateLimit        int                // 速率限制
-	rateLimiter      *conn.RateLimiter  // 全局限速器
-	readTimeout      time.Duration      // 读取超时
-	bufReader        *bufio.Reader      // 缓冲读取器
-	tcpBufferPool    *sync.Pool         // TCP缓冲区池
-	udpBufferPool    *sync.Pool         // UDP缓冲区池
-	signalChan       chan string        // 信号通道
-	checkPoint       time.Time          // 检查点时间
-	flushURL         *url.URL           // 重置信号
-	pingURL          *url.URL           // PING信号
-	pongURL          *url.URL           // PONG信号
-	slotLimit        int32              // 槽位限制
-	tcpSlot          int32              // TCP连接数
-	udpSlot          int32              // UDP连接数
-	tcpRX            uint64             // TCP接收字节数
-	tcpTX            uint64             // TCP发送字节数
-	udpRX            uint64             // UDP接收字节数
-	udpTX            uint64             // UDP发送字节数
-	ctx              context.Context    // 上下文
-	cancel           context.CancelFunc // 取消函数
+	mu               sync.Mutex          // 互斥锁
+	logger           *logs.Logger        // 日志记录器
+	tlsCode          string              // TLS模式代码
+	tlsConfig        *tls.Config         // TLS配置
+	runMode          string              // 运行模式
+	dataFlow         string              // 数据流向
+	tunnelKey        string              // 隧道密钥
+	tunnelTCPAddr    *net.TCPAddr        // 隧道TCP地址
+	tunnelUDPAddr    *net.UDPAddr        // 隧道UDP地址
+	targetAddresses  []TargetAddress     // 目标地址组
+	targetIdx        uint64              // 目标地址索引
+	dnsCache         map[string][]string // DNS缓存
+	dnsCacheMutex    sync.RWMutex        // DNS缓存读写锁
+	dnsCacheTTL      time.Duration       // DNS缓存默认TTL
+	targetListener   *net.TCPListener    // 目标监听器
+	tunnelListener   net.Listener        // 隧道监听器
+	tunnelTCPConn    *net.TCPConn        // 隧道TCP连接
+	tunnelUDPConn    *conn.StatConn      // 隧道UDP连接
+	targetUDPConn    *conn.StatConn      // 目标UDP连接
+	targetUDPSession sync.Map            // 目标UDP会话
+	tunnelPool       *pool.Pool          // 隧道连接池
+	minPoolCapacity  int                 // 最小池容量
+	maxPoolCapacity  int                 // 最大池容量
+	proxyProtocol    string              // 代理协议
+	disableTCP       string              // 禁用TCP
+	disableUDP       string              // 禁用UDP
+	rateLimit        int                 // 速率限制
+	rateLimiter      *conn.RateLimiter   // 全局限速器
+	readTimeout      time.Duration       // 读取超时
+	bufReader        *bufio.Reader       // 缓冲读取器
+	tcpBufferPool    *sync.Pool          // TCP缓冲区池
+	udpBufferPool    *sync.Pool          // UDP缓冲区池
+	signalChan       chan string         // 信号通道
+	checkPoint       time.Time           // 检查点时间
+	flushURL         *url.URL            // 重置信号
+	pingURL          *url.URL            // PING信号
+	pongURL          *url.URL            // PONG信号
+	slotLimit        int32               // 槽位限制
+	tcpSlot          int32               // TCP连接数
+	udpSlot          int32               // UDP连接数
+	tcpRX            uint64              // TCP接收字节数
+	tcpTX            uint64              // TCP发送字节数
+	udpRX            uint64              // UDP接收字节数
+	udpTX            uint64              // UDP发送字节数
+	ctx              context.Context     // 上下文
+	cancel           context.CancelFunc  // 取消函数
 }
 
 // 配置变量，可通过环境变量调整
@@ -103,6 +115,9 @@ const (
 	defaultProxyProtocol = "0"             // 默认代理协议
 	defaultTCPStrategy   = "0"             // 默认TCP策略
 	defaultUDPStrategy   = "0"             // 默认UDP策略
+	defaultDnsCacheTTL   = 60              // 默认DNS缓存时长
+
+	resolveMaxRetries = 3
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -254,76 +269,89 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	}
 
 	addrList := strings.Split(targetAddr, ",")
-	tempTCPAddrs := make([]*net.TCPAddr, 0, len(addrList))
-	tempUDPAddrs := make([]*net.UDPAddr, 0, len(addrList))
+	tempAddresses := make([]TargetAddress, 0, len(addrList))
 
+	domainCount := 0
 	for _, addr := range addrList {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
 			continue
 		}
 
-		// 解析目标TCP地址
+		// 尝试解析目标地址
 		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveTCPAddr failed for %s: %w", addr, err)
 		}
-
-		// 解析目标UDP地址
 		udpAddr, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveUDPAddr failed for %s: %w", addr, err)
 		}
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return fmt.Errorf("getAddress: resolveHostPort failed for %s: %w", addr, err)
+		}
 
-		tempTCPAddrs = append(tempTCPAddrs, tcpAddr)
-		tempUDPAddrs = append(tempUDPAddrs, udpAddr)
+		portInt, _ := strconv.Atoi(port)
+		isIP := net.ParseIP(host) != nil
+		tempAddresses = append(tempAddresses, TargetAddress{
+			Address: addr,
+			Host:    host,
+			Port:    portInt,
+			TCPAddr: tcpAddr,
+			UDPAddr: udpAddr,
+			// 是否为域名（用于动态解析）
+			isIP: isIP,
+		})
+		if !isIP {
+			domainCount++
+		}
 	}
 
-	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
+	if len(tempAddresses) == 0 {
 		return fmt.Errorf("getAddress: no valid target address found")
 	}
 
 	// 设置目标地址组
-	c.targetTCPAddrs = tempTCPAddrs
-	c.targetUDPAddrs = tempUDPAddrs
+	c.targetAddresses = tempAddresses
 	c.targetIdx = 0
+
+	// 目标中有域名
+	if domainCount > 0 {
+		// 缓存时长为正值，启动定期刷新
+		if c.dnsCacheTTL > 0 {
+			go c.startDNSRefreshLoop()
+		}
+		c.logger.Info("Dynamic DNS resolution enabled for %d addresses", domainCount)
+	}
 
 	return nil
 }
 
 // getTargetAddrsString 获取目标地址组的字符串表示
 func (c *Common) getTargetAddrsString() string {
-	addrs := make([]string, len(c.targetTCPAddrs))
-	for i, addr := range c.targetTCPAddrs {
-		addrs[i] = addr.String()
+	addresses := make([]string, len(c.targetAddresses))
+	for i, addr := range c.targetAddresses {
+		addresses[i] = addr.Address
 	}
-	return strings.Join(addrs, ",")
+	return strings.Join(addresses, ",")
 }
 
 // nextTargetIdx 获取下一个目标地址索引
 func (c *Common) nextTargetIdx() int {
-	if len(c.targetTCPAddrs) <= 1 {
+	if len(c.targetAddresses) <= 1 {
 		return 0
 	}
-	return int((atomic.AddUint64(&c.targetIdx, 1) - 1) % uint64(len(c.targetTCPAddrs)))
+	return int((atomic.AddUint64(&c.targetIdx, 1) - 1) % uint64(len(c.targetAddresses)))
 }
 
 // dialWithRotation 轮询拨号到目标地址组
 func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Conn, error) {
-	var addrCount int
-	var getAddr func(int) string
-
-	if network == "tcp" {
-		addrCount = len(c.targetTCPAddrs)
-		getAddr = func(i int) string { return c.targetTCPAddrs[i].String() }
-	} else {
-		addrCount = len(c.targetUDPAddrs)
-		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
-	}
+	addrCount := len(c.targetAddresses)
 
 	// 单目标地址：快速路径
 	if addrCount == 1 {
-		return net.DialTimeout(network, getAddr(0), timeout)
+		return net.DialTimeout(network, c.getTargetAddress(c.targetAddresses[0], resolveMaxRetries), timeout)
 	}
 
 	// 多目标地址：负载均衡 + 故障转移
@@ -332,7 +360,7 @@ func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Co
 
 	for i := range addrCount {
 		currentIdx := (startIdx + i) % addrCount
-		conn, err := net.DialTimeout(network, getAddr(currentIdx), timeout)
+		conn, err := net.DialTimeout(network, c.getTargetAddress(c.targetAddresses[currentIdx], resolveMaxRetries), timeout)
 		if err == nil {
 			return conn, nil
 		}
@@ -441,12 +469,19 @@ func (c *Common) getUDPStrategy(parsedURL *url.URL) {
 	}
 }
 
+// getDnsCacheTTL 获取DNS缓存时长，单位为秒 (-1永久缓存 0不缓存)
+func (c *Common) getDnsCacheTTL(parsedURL *url.URL) {
+	if ttl := parsedURL.Query().Get("ttl"); ttl != "" {
+		if value, err := strconv.Atoi(ttl); err == nil && value < -1 {
+			c.dnsCacheTTL = time.Duration(value) * time.Second
+		}
+	} else {
+		c.dnsCacheTTL = defaultDnsCacheTTL
+	}
+}
+
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) error {
-	if err := c.getAddress(parsedURL); err != nil {
-		return err
-	}
-
 	c.getTunnelKey(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getRunMode(parsedURL)
@@ -456,7 +491,10 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getProxyProtocol(parsedURL)
 	c.getTCPStrategy(parsedURL)
 	c.getUDPStrategy(parsedURL)
-
+	c.getDnsCacheTTL(parsedURL)
+	if err := c.getAddress(parsedURL); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -541,13 +579,13 @@ func (c *Common) initTunnelListener() error {
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
-	if len(c.targetTCPAddrs) == 0 && len(c.targetUDPAddrs) == 0 {
+	if len(c.targetAddresses) == 0 {
 		return fmt.Errorf("initTargetListener: no target address")
 	}
 
 	// 初始化目标TCP监听器
-	if len(c.targetTCPAddrs) > 0 && c.disableTCP != "1" {
-		targetListener, err := net.ListenTCP("tcp", c.targetTCPAddrs[0])
+	if c.disableTCP != "1" {
+		targetListener, err := net.ListenTCP("tcp", c.targetAddresses[0].TCPAddr)
 		if err != nil {
 			return fmt.Errorf("initTargetListener: listenTCP failed: %w", err)
 		}
@@ -555,8 +593,8 @@ func (c *Common) initTargetListener() error {
 	}
 
 	// 初始化目标UDP监听器
-	if len(c.targetUDPAddrs) > 0 && c.disableUDP != "1" {
-		targetUDPConn, err := net.ListenUDP("udp", c.targetUDPAddrs[0])
+	if c.disableUDP != "1" {
+		targetUDPConn, err := net.ListenUDP("udp", c.targetAddresses[0].UDPAddr)
 		if err != nil {
 			return fmt.Errorf("initTargetListener: listenUDP failed: %w", err)
 		}
@@ -1423,7 +1461,7 @@ func (c *Common) singleControl() error {
 	errChan := make(chan error, 3)
 
 	// 启动单端控制、TCP和UDP处理循环
-	if len(c.targetTCPAddrs) > 0 {
+	if len(c.targetAddresses) > 0 {
 		go func() { errChan <- c.singleEventLoop() }()
 	}
 	if c.tunnelListener != nil {
@@ -1451,9 +1489,9 @@ func (c *Common) singleEventLoop() error {
 		now := time.Now()
 
 		// 尝试连接到目标地址
-		if conn, err := net.DialTimeout("tcp", c.targetTCPAddrs[c.nextTargetIdx()].String(), reportInterval); err == nil {
+		if conn, err := net.DialTimeout("tcp", c.getTargetAddress(c.targetAddresses[c.nextTargetIdx()], 1), reportInterval); err == nil {
 			ping = int(time.Since(now).Milliseconds())
-			conn.Close()
+			_ = conn.Close()
 		}
 
 		// 发送检查点事件
@@ -1666,4 +1704,157 @@ func (c *Common) singleUDPLoop() error {
 	}
 
 	return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
+}
+
+// getTargetAddress 获取目标地址
+func (c *Common) getTargetAddress(addr TargetAddress, maxRetries int) string {
+	// IP地址，无需DNS解析
+	if !addr.isIP {
+		// 域名解析
+		ips, err := c.ResolveAddress(addr.Host, maxRetries)
+		if err == nil && len(ips) > 0 {
+			// 选择第一个可用的地址
+			return fmt.Sprintf("%s:%d", ips[0], addr.Port)
+		}
+	}
+	return addr.Address
+}
+
+// ResolveAddress 解析地址
+func (c *Common) ResolveAddress(host string, maxRetries int) ([]string, error) {
+	// 检查DNS缓存
+	if c.dnsCacheTTL != 0 {
+		c.dnsCacheMutex.RLock()
+		if cachedIPs, exists := c.dnsCache[host]; exists {
+			c.dnsCacheMutex.RUnlock()
+			c.logger.Debug("Using cached DNS resolution for %s: %v", host, cachedIPs)
+			return cachedIPs, nil
+		}
+		c.dnsCacheMutex.RUnlock()
+	}
+
+	// 缓存禁用，执行DNS解析
+	var ips []string
+	var lastErr error
+	c.logger.Debug("Resolving DNS for %s", host)
+	for retry := 0; retry < maxRetries; retry++ {
+		ips, lastErr = lookupIP(host)
+		if lastErr != nil {
+			c.logger.Warn("DNS resolution failed for %s (attempt %d/%d): %v", host, retry+1, maxRetries, lastErr)
+
+			// 等待一段时间后重试
+			if retry < maxRetries-1 {
+				time.Sleep(time.Duration(retry+1) * 100 * time.Millisecond)
+			}
+			continue
+		}
+	}
+	if ips == nil {
+		return nil, fmt.Errorf("failed to resolve target address after %d retries", maxRetries)
+	}
+
+	// 更新DNS缓存
+	c.dnsCacheMutex.Lock()
+	c.dnsCache[host] = ips
+	c.dnsCacheMutex.Unlock()
+
+	c.logger.Debug("DNS resolved %s to %v", host, ips)
+	return ips, nil
+}
+
+// startDNSRefreshLoop 启动DNS缓存定期刷新循环
+func (c *Common) startDNSRefreshLoop() {
+	ticker := time.NewTicker(c.dnsCacheTTL)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.RefreshDNSCache()
+		case <-c.ctx.Done():
+			c.logger.Debug("DNS refresh loop stopped")
+			return
+		}
+	}
+}
+
+// RefreshDNSCache 刷新DNS缓存
+func (c *Common) RefreshDNSCache() {
+	if c.dnsCacheTTL <= 0 {
+		return
+	}
+
+	c.dnsCacheMutex.RLock()
+	dnsCache := c.dnsCache
+	c.dnsCacheMutex.RUnlock()
+
+	refreshedKeys := make([]string, 0)
+
+	for host, ips := range dnsCache {
+		// 重新解析DNS
+		if newIPs, err := lookupIP(host); err == nil {
+			// 检查IP是否有变化
+			if !ipsEqual(ips, newIPs) {
+
+				// 更新DNS缓存
+				c.dnsCacheMutex.Lock()
+				c.dnsCache[host] = newIPs
+				c.dnsCacheMutex.Unlock()
+
+				refreshedKeys = append(refreshedKeys, host)
+				c.logger.Info("DNS cache refreshed for %s: %v -> %v", host, ips, newIPs)
+			}
+		} else {
+			c.logger.Warn("DNS refresh failed for %s: %v", host, err)
+		}
+	}
+
+	if len(refreshedKeys) > 0 {
+		c.logger.Debug("DNS cache refreshed for %d addresses", len(refreshedKeys))
+	}
+}
+
+// ClearDNSCache 清空DNS缓存
+func (c *Common) ClearDNSCache() {
+	c.dnsCacheMutex.Lock()
+	defer c.dnsCacheMutex.Unlock()
+
+	oldSize := len(c.dnsCache)
+	c.dnsCache = make(map[string][]string)
+	c.logger.Debug("DNS cache cleared, removed %d entries", oldSize)
+}
+
+func lookupIP(host string) ([]string, error) {
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed for %s: %w", host, err)
+	} else if len(ips) == 0 {
+		return nil, fmt.Errorf("no IP addresses found for %s", host)
+	}
+	ips2 := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		ips2 = append(ips2, ip.String())
+	}
+	return ips2, nil
+}
+
+// ipsEqual 比较两个IP切片是否相等
+func ipsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	// 转换为map进行比较
+	aMap := make(map[string]bool)
+	for _, ip := range a {
+		aMap[ip] = true
+	}
+
+	for _, ip := range b {
+		if !aMap[ip] {
+			return false
+		}
+	}
+
+	return true
 }

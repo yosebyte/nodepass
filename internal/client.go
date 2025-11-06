@@ -33,6 +33,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		Common: Common{
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
+			dnsCache:   make(map[string][]string),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
@@ -142,6 +143,11 @@ func (c *Client) commonStart() error {
 		return fmt.Errorf("commonStart: tunnelHandshake failed: %w", err)
 	}
 
+	addr := c.tunnelTCPAddr.String()
+	host := c.tunnelTCPAddr.IP.String()
+	port := c.tunnelTCPAddr.Port
+	isIP := net.ParseIP(host) != nil
+
 	// 初始化连接池
 	c.tunnelPool = pool.NewClientPool(
 		c.minPoolCapacity,
@@ -152,7 +158,13 @@ func (c *Client) commonStart() error {
 		c.tlsCode,
 		c.tunnelName,
 		func() (net.Conn, error) {
-			return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
+			if !isIP {
+				ips, err := c.ResolveAddress(host, 1)
+				if err == nil && len(ips) > 0 {
+					return net.DialTimeout("tcp", fmt.Sprintf("%s:%d", ips[0], port), tcpDialTimeout)
+				}
+			}
+			return net.DialTimeout("tcp", addr, tcpDialTimeout)
 		})
 	go c.tunnelPool.ClientManager()
 
