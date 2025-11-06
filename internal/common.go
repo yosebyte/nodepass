@@ -32,6 +32,7 @@ type Common struct {
 	logger           *logs.Logger       // 日志记录器
 	tlsCode          string             // TLS模式代码
 	tlsConfig        *tls.Config        // TLS配置
+	coreType         string             // 核心类型
 	runMode          string             // 运行模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
@@ -291,6 +292,11 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	return nil
 }
 
+// getCoreType 获取核心类型
+func (c *Common) getCoreType(parsedURL *url.URL) {
+	c.coreType = parsedURL.Scheme
+}
+
 // getTargetAddrsString 获取目标地址组的字符串表示
 func (c *Common) getTargetAddrsString() string {
 	addrs := make([]string, len(c.targetTCPAddrs))
@@ -447,6 +453,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 		return err
 	}
 
+	c.getCoreType(parsedURL)
 	c.getTunnelKey(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getRunMode(parsedURL)
@@ -519,7 +526,7 @@ func (c *Common) initTunnelListener() error {
 	}
 
 	// 初始化隧道TCP监听器
-	if c.tunnelTCPAddr != nil && c.disableTCP != "1" {
+	if c.tunnelTCPAddr != nil && (c.disableTCP != "1" || c.coreType != "client") {
 		tunnelListener, err := net.ListenTCP("tcp", c.tunnelTCPAddr)
 		if err != nil {
 			return fmt.Errorf("initTunnelListener: listenTCP failed: %w", err)
@@ -528,7 +535,7 @@ func (c *Common) initTunnelListener() error {
 	}
 
 	// 初始化隧道UDP监听器
-	if c.tunnelUDPAddr != nil && c.disableUDP != "1" {
+	if c.tunnelUDPAddr != nil && (c.disableUDP != "1" || c.coreType != "client") {
 		tunnelUDPConn, err := net.ListenUDP("udp", c.tunnelUDPAddr)
 		if err != nil {
 			return fmt.Errorf("initTunnelListener: listenUDP failed: %w", err)
