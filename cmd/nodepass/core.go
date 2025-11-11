@@ -145,19 +145,8 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 
 // exit 退出程序并显示帮助信息
 func exit(err error) {
-	errMsg1, errMsg2 := "", ""
 	if err != nil {
-		errStr := "FAILED: " + err.Error()
-		if len(errStr) > 35 {
-			errMsg1 = errStr[:35]
-			if len(errStr) > 70 {
-				errMsg2 = errStr[35:67] + "..."
-			} else {
-				errMsg2 = errStr[35:]
-			}
-		} else {
-			errMsg1 = errStr
-		}
+		fmt.Fprintf(os.Stderr, "Error: %v [%d]\n", err, os.Getpid())
 	}
 	fmt.Printf(`
 ╭─────────────────────────────────────╮
@@ -171,11 +160,8 @@ func exit(err error) {
 │ server://password@host/host?<query> │
 │ client://password@host/host?<query> │
 │ master://hostname:port/path?<query> │
-├─────────────────────────────────────┤
-│ %-35s │
-│ %-35s │
 ╰─────────────────────────────────────╯
 
-`, 36, version, 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), errMsg1, errMsg2)
+`, 36, version, 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH))
 	os.Exit(1)
 }
