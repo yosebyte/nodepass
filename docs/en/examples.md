@@ -511,6 +511,116 @@ This monitoring setup provides:
 - **Capacity planning**: Resource planning based on historical connection data
 - **Troubleshooting**: Abnormal connection count changes may indicate network issues
 
+## QUIC Transport Protocol
+
+### Example 22: QUIC-based Tunnel with Stream Multiplexing
+
+Use QUIC protocol for connection pooling with improved performance in high-latency networks:
+
+```bash
+# Server side: Enable QUIC transport
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+
+# Client side: Enable QUIC transport (must match server)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+```
+
+This configuration:
+- Uses QUIC protocol for UDP-based multiplexed streams
+- Single QUIC connection carries multiple concurrent data streams
+- Mandatory TLS 1.3 encryption (automatically enabled)
+- Better performance in packet loss scenarios (no head-of-line blocking)
+- Improved connection establishment with 0-RTT support
+
+### Example 23: QUIC with Custom TLS Certificate
+
+Deploy QUIC tunnel with verified certificates for production:
+
+```bash
+# Server side: QUIC with custom certificate
+nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+
+# Client side: QUIC with certificate verification
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&log=info"
+```
+
+This setup:
+- Uses verified TLS certificates for highest security
+- QUIC protocol provides mandatory TLS 1.3 encryption
+- Suitable for production environments
+- Full certificate validation on client side
+
+### Example 24: QUIC for Mobile/High-Latency Networks
+
+Optimize for mobile networks or satellite connections:
+
+```bash
+# Server side: QUIC with adaptive pool sizing
+nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+
+# Client side: QUIC with larger minimum pool for mobile
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?quic=1&mode=2&min=256&log=warn"
+```
+
+This configuration:
+- QUIC's UDP-based transport works better through NATs
+- Larger pool size compensates for network transitions
+- Stream multiplexing reduces connection overhead
+- Better handling of packet loss and jitter
+- 0-RTT reconnection for faster recovery after network changes
+
+### Example 25: QUIC vs TCP Pool Performance Comparison
+
+Side-by-side comparison of QUIC and TCP pools:
+
+```bash
+# Traditional TCP pool (default)
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=0&mode=2&min=128&log=event"
+
+# QUIC pool (modern approach)
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?quic=1&mode=2&min=128&log=event"
+```
+
+**TCP Pool Advantages**:
+- Wider compatibility with network infrastructure
+- Established protocol with predictable behavior
+- Better support in some enterprise environments
+
+**QUIC Pool Advantages**:
+- Reduced latency with 0-RTT connection resumption
+- No head-of-line blocking across streams
+- Better congestion control and loss recovery
+- Improved NAT traversal capabilities
+- Single UDP socket reduces resource usage
+
+### Example 26: QUIC for Real-Time Applications
+
+Configure QUIC tunnel for gaming, VoIP, or video streaming:
+
+```bash
+# Server side: QUIC with optimized settings for real-time traffic
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+
+# Client side: QUIC with real-time optimizations
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+```
+
+This setup:
+- QUIC's stream-level flow control prevents interference between flows
+- Lower latency compared to TCP pools in lossy networks
+- 30-second read timeout for quick detection of stale connections
+- Large slot limit supports many concurrent players/streams
+- Reduced connection establishment overhead
+
+**QUIC Use Case Summary**:
+- **Mobile Networks**: Better handling of network transitions and packet loss
+- **High-Latency Links**: Reduced overhead from 0-RTT and multiplexing
+- **Real-Time Apps**: Stream independence prevents head-of-line blocking
+- **NAT-Heavy Environments**: UDP-based protocol traverses NATs more reliably
+- **Concurrent Streams**: Efficient bandwidth sharing across parallel flows
+
 ## Next Steps
 
 Now that you've seen various usage examples, you might want to:

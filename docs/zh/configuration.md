@@ -107,6 +107,59 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1"
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 ```
 
+## QUIC传输协议
+
+NodePass支持QUIC作为双端握手模式下连接池的替代传输协议。QUIC提供基于UDP的多路复用流，具有内置加密和与传统TCP池相比更优的性能特征。
+
+- `quic`: QUIC传输模式（默认：0）
+  - 值0：使用基于TCP的连接池（传统连接池库）
+  - 值1：使用基于QUIC的连接池（UDP多路复用流）
+  - 仅适用于双端握手模式（mode=2）
+  - 如果尚未配置TLS则自动启用（最低tls=1）
+  - 在单个UDP连接上使用QUIC流进行多路复用连接
+
+**QUIC优势：**
+- **多路复用**：在单个UDP连接上实现多个流
+- **降低延迟**：通过0-RTT支持实现更快的连接建立
+- **更好的丢包恢复**：流级别的流量控制和拥塞管理
+- **NAT穿透**：基于UDP的协议在NAT和防火墙环境中表现更好
+- **内置加密**：所有QUIC连接强制使用TLS 1.3加密
+
+**QUIC要求：**
+- 服务端和客户端必须使用相同的`quic`设置（0或1）
+- 必须启用TLS模式（tls=1或tls=2）- 如果quic=1会自动设置
+- 仅在双端握手模式下可用（mode=2或带远程地址的mode=0）
+- 不适用于单端转发模式（mode=1）
+
+示例：
+```bash
+# 使用QUIC传输的服务器（自动启用TLS）
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2"
+
+# 使用QUIC传输的客户端（必须与服务器设置匹配）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2"
+
+# 使用自定义TLS证书的QUIC
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# 传统TCP连接池（默认行为）
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=0&mode=2"
+```
+
+**QUIC使用场景：**
+- **高延迟网络**：在卫星或长距离链路中减少连接开销
+- **移动网络**：更好地处理网络切换和丢包
+- **实时应用**：为游戏、VoIP或视频流降低延迟
+- **复杂NAT环境**：在复杂NAT场景中改善连接性
+- **并发流**：高效处理多个并行数据流
+
+**重要说明：**
+- QUIC模式要求服务端和客户端的UDP端口可访问
+- 防火墙规则必须允许隧道端口上的UDP流量
+- 某些网络中间设备可能会阻止或降低UDP流量的优先级
+- QUIC连接使用保活和自动重连机制
+- 流多路复用在所有并发连接之间共享带宽
+
 ## 连接池容量参数
 
 连接池容量参数仅适用于双端握手模式，通过不同方式进行配置：
@@ -118,11 +171,15 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 - 客户端设置的`max`参数会被服务端在握手时传递的值覆盖
 - `min`参数由客户端完全控制，服务端不会修改此值
 - 在客户端单端转发模式下，不使用连接池，这些参数被忽略
+- 适用于TCP连接池（quic=0）和QUIC连接池（quic=1）
 
 示例：
 ```bash
 # 客户端设置最小连接池为32，最大连接池将由服务端决定
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
+
+# 使用QUIC和自定义池容量的客户端
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&min=128"
 ```
 
 ## 数据读取超时
@@ -406,7 +463,8 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `min`     | 最小连接池容量       | `64`      |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       | `1024`    |   O    |   X    |   X    |
 | `mode`    | 运行模式控制         | `0`       |   O    |   O    |   X    |
-| `read`    | 数据读取超时          | `0`       |   O    |   O    |   X    |
+| `quic`    | QUIC协议支持         | `0`       |   O    |   O    |   X    |
+| `read`    | 数据读取超时         | `0`       |   O    |   O    |   X    |
 | `rate`    | 带宽速率限制         | `0`       |   O    |   O    |   X    |
 | `slot`    | 最大连接数限制       | `65536`   |   O    |   O    |   X    |
 | `proxy`   | PROXY协议支持        | `0`       |   O    |   O    |   X    |

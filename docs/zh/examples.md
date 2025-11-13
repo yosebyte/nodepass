@@ -511,6 +511,116 @@ curl -H "X-API-Key: your-api-key" \
 - **容量规划**：基于历史连接数据进行资源规划
 - **故障诊断**：异常的连接数变化可能指示网络问题
 
+## QUIC传输协议
+
+### 示例 22: 基于QUIC的流多路复用隧道
+
+使用QUIC协议进行连接池管理，在高延迟网络中提供更优性能：
+
+```bash
+# 服务器端：启用QUIC传输
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+
+# 客户端：启用QUIC传输（必须与服务器匹配）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+```
+
+此配置：
+- 使用QUIC协议进行基于UDP的多路复用流
+- 单个QUIC连接承载多个并发数据流
+- 强制使用TLS 1.3加密（自动启用）
+- 在丢包场景中性能更好（无队头阻塞）
+- 通过0-RTT支持改善连接建立
+
+### 示例 23: 使用自定义TLS证书的QUIC
+
+在生产环境部署带有验证证书的QUIC隧道：
+
+```bash
+# 服务器端：使用自定义证书的QUIC
+nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+
+# 客户端：带证书验证的QUIC
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&log=info"
+```
+
+此设置：
+- 使用验证证书实现最高安全性
+- QUIC协议提供强制TLS 1.3加密
+- 适用于生产环境
+- 客户端进行完整证书验证
+
+### 示例 24: 移动/高延迟网络的QUIC
+
+针对移动网络或卫星连接进行优化：
+
+```bash
+# 服务器端：带自适应池大小的QUIC
+nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+
+# 客户端：移动网络的大最小连接池QUIC
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?quic=1&mode=2&min=256&log=warn"
+```
+
+此配置：
+- QUIC的基于UDP传输在NAT环境中表现更好
+- 更大的连接池大小补偿网络切换
+- 流多路复用减少连接开销
+- 更好地处理丢包和抖动
+- 0-RTT重连在网络变化后实现更快恢复
+
+### 示例 25: QUIC与TCP连接池性能对比
+
+QUIC和TCP连接池的并排比较：
+
+```bash
+# 传统TCP连接池（默认）
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=0&mode=2&min=128&log=event"
+
+# QUIC连接池（现代方法）
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?quic=1&mode=2&min=128&log=event"
+```
+
+**TCP连接池优势**：
+- 与网络基础设施更广泛兼容
+- 已建立的协议，行为可预测
+- 在某些企业环境中支持更好
+
+**QUIC连接池优势**：
+- 通过0-RTT连接恢复降低延迟
+- 跨流无队头阻塞
+- 更好的拥塞控制和丢失恢复
+- 改善NAT穿透能力
+- 单个UDP套接字减少资源使用
+
+### 示例 26: 实时应用的QUIC
+
+为游戏、VoIP或视频流配置QUIC隧道：
+
+```bash
+# 服务器端：为实时流量优化的QUIC设置
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+
+# 客户端：实时优化的QUIC
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+```
+
+此设置：
+- QUIC的流级别流量控制防止流之间的干扰
+- 在有损网络中比TCP连接池延迟更低
+- 30秒读取超时快速检测陈旧连接
+- 大槽位限制支持许多并发玩家/流
+- 减少连接建立开销
+
+**QUIC使用场景总结**：
+- **移动网络**：更好地处理网络切换和丢包
+- **高延迟链路**：通过0-RTT和多路复用减少开销
+- **实时应用**：流独立性防止队头阻塞
+- **复杂NAT环境**：基于UDP的协议更可靠地穿透NAT
+- **并发流**：在并行流之间高效共享带宽
+
 ## 下一步
 
 现在您已经了解了各种使用示例，您可能想要：

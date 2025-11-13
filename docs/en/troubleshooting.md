@@ -322,6 +322,118 @@ This guide helps you diagnose and resolve common issues you might encounter when
 - In production environments, recommend regularly backing up `nodepass.gob` to different storage locations
 - Use configuration management tools to save text-form backups of instance configurations
 
+## QUIC-Specific Issues
+
+### QUIC Connection Failures
+
+**Symptoms**: QUIC tunnel fails to establish when `quic=1` is enabled.
+
+**Possible Causes and Solutions**:
+
+1. **UDP Port Blocked**
+   - Verify UDP port is accessible on both server and client
+   - Check firewall rules: `sudo ufw allow 10101/udp` (Linux example)
+   - Test UDP connectivity with `nc -u server.example.com 10101`
+   - Some ISPs or networks block or throttle UDP traffic
+
+2. **TLS Configuration Issues**
+   - QUIC requires TLS to be enabled (minimum `tls=1`)
+   - If `quic=1` is set but TLS is disabled, system auto-enables `tls=1`
+   - For production, use `tls=2` with valid certificates
+   - Check certificate validity for QUIC connections
+
+3. **Client-Server QUIC Mismatch**
+   - Both server and client must use same `quic` setting
+   - Server with `quic=1` requires client with `quic=1`
+   - Server with `quic=0` requires client with `quic=0`
+   - Check logs for "QUIC connection not available" errors
+
+4. **Mode Compatibility**
+   - QUIC only works in dual-end handshake mode (mode=2)
+   - Not available in single-end forwarding mode (mode=1)
+   - System will fall back to TCP pool if mode incompatible
+
+### QUIC Performance Issues
+
+**Symptoms**: QUIC tunnel has lower performance than expected or worse than TCP pool.
+
+**Possible Causes and Solutions**:
+
+1. **Network Path Issues**
+   - Some networks deprioritize or shape UDP traffic
+   - Check if network middleboxes are interfering with QUIC
+   - Consider testing with TCP pool (`quic=0`) for comparison
+   - Monitor packet loss rates - QUIC performs better with low loss
+
+2. **Pool Capacity Configuration**
+   - Increase `min` and `max` parameters for higher throughput
+   - QUIC streams share single UDP connection - adequate capacity needed
+   - Monitor stream utilization with `log=debug`
+   - Balance between stream count and resource usage
+
+3. **Certificate Overhead**
+   - TLS 1.3 handshake (mandatory for QUIC) can add initial latency
+   - Use 0-RTT resumption for faster reconnection
+   - Ensure proper certificate chain to avoid validation delays
+
+4. **Application Compatibility**
+   - Some applications may not work optimally over QUIC streams
+   - Test with both TCP and QUIC pools to compare performance
+   - Consider TCP pool for applications requiring strict ordering
+
+### QUIC Stream Exhaustion
+
+**Symptoms**: "Insufficient streams" errors or connection timeouts when using QUIC.
+
+**Possible Causes and Solutions**:
+
+1. **Pool Capacity Too Low**
+   - Increase `max` parameter on server side
+   - Increase `min` parameter on client side
+   - Monitor active stream count in logs
+   - Default capacity may be insufficient for high-concurrency scenarios
+
+2. **Stream Leaks**
+   - Check application properly closes connections
+   - Monitor stream count over time for gradual increase
+   - Restart instances to clear leaked streams
+   - Review application code for connection handling
+
+3. **QUIC Connection Dropped**
+   - Check keep-alive settings (configured via `NP_REPORT_INTERVAL`)
+   - Monitor for "QUIC connection not available" errors
+   - NAT timeout may drop UDP connection - adjust NAT settings
+   - Increase connection timeout if network latency is high
+
+### QUIC vs TCP Pool Decision
+
+**When to Use QUIC** (`quic=1`):
+- Mobile networks or frequently changing network conditions
+- High-latency connections (satellite, long-distance)
+- NAT-heavy environments where UDP traversal is better
+- Real-time applications benefiting from stream independence
+- Scenarios where 0-RTT reconnection provides value
+
+**When to Use TCP Pool** (`quic=0`):
+- Networks that block or severely throttle UDP traffic
+- Applications requiring strict TCP semantics
+- Corporate environments with UDP restrictions
+- Maximum compatibility requirements
+- When testing shows better performance with TCP
+
+**Comparison Testing**:
+```bash
+# Test TCP pool performance
+nodepass "server://0.0.0.0:10101/backend:8080?quic=0&mode=2&log=event"
+nodepass "client://server:10101/127.0.0.1:8080?quic=0&mode=2&log=event"
+
+# Test QUIC pool performance
+nodepass "server://0.0.0.0:10102/backend:8080?quic=1&mode=2&log=event"
+nodepass "client://server:10102/127.0.0.1:8081?quic=1&mode=2&log=event"
+```
+
+Monitor traffic statistics and choose based on observed performance.
+
 ## Next Steps
 
 If you encounter issues not covered in this guide:

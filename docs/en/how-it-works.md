@@ -210,30 +210,106 @@ NodePass uses a sophisticated URL-based signaling protocol through the TCP tunne
 
 ## Connection Pool Architecture
 
-NodePass implements an efficient connection pooling system for managing network connections, which forms the core of its performance advantages:
+NodePass implements an efficient connection pooling system for managing network connections, which forms the core of its performance advantages. NodePass supports two transport protocols for connection pools: traditional TCP-based pools and modern QUIC-based UDP pools.
+
+### Transport Protocol Selection
+
+NodePass provides two connection pool transport options via the `quic` parameter:
+
+1. **TCP-based Pool (quic=0, default)**:
+   - Traditional TCP connections managed by the `pool` library
+   - Multiple independent TCP connections between client and server
+   - Standard TLS encryption over individual TCP connections
+   - Well-tested and widely compatible approach
+
+2. **QUIC-based Pool (quic=1)**:
+   - UDP-based multiplexed streams managed by the `quic` library
+   - Single QUIC connection with multiple concurrent streams
+   - Mandatory TLS 1.3 encryption with 0-RTT support
+   - Superior performance in high-latency and mobile networks
+
+### QUIC Pool Architecture
+
+When `quic=1` is enabled, NodePass uses QUIC protocol for connection pooling with the following characteristics:
+
+**Stream Multiplexing**:
+- Single UDP connection carries multiple bidirectional streams
+- Each stream represents an individual tunnel connection
+- Streams are independent: one stream's packet loss doesn't affect others
+- Stream-level flow control prevents head-of-line blocking
+
+**Connection Establishment**:
+- Server listens on UDP port and accepts QUIC connections
+- Client establishes single QUIC connection to server
+- Server generates unique stream IDs for each incoming connection
+- Client opens new streams on-demand using provided stream IDs
+
+**Stream Lifecycle**:
+1. **Stream Creation** (Server side):
+   - Server accepts new QUIC connection from authorized client
+   - For each target connection, server opens bidirectional stream
+   - Server generates 4-byte random stream ID
+   - Stream ID sent to client for correlation
+
+2. **Stream Retrieval** (Client side):
+   - Client receives stream ID via control channel signal
+   - Client retrieves corresponding stream from QUIC connection
+   - Stream wrapped as `net.Conn` for compatibility
+   - Stream used for data exchange with target endpoint
+
+3. **Stream Termination**:
+   - Stream closed after data exchange completes
+   - Graceful closure with proper cleanup
+   - QUIC connection remains active for future streams
+
+**Dynamic Management**:
+- Pool capacity adjusted based on stream creation success rate
+- Stream creation intervals adapt to pool utilization
+- Automatic stream capacity scaling within min/max boundaries
+- Keep-alive mechanism maintains QUIC connection health
+
+**Security Features**:
+- Mandatory TLS 1.3 encryption for all QUIC connections
+- Three TLS modes supported:
+  - Mode 0/1: InsecureSkipVerify for testing/development
+  - Mode 2: Full certificate verification for production
+- Client IP restriction available on server side
+- ALPN protocol negotiation ("np-quic")
+
+**Performance Advantages**:
+- Reduced connection overhead: single UDP socket for all streams
+- 0-RTT connection resumption for faster reconnection
+- Better congestion control with stream-level prioritization
+- Improved NAT traversal compared to multiple TCP connections
+- Lower latency in packet loss scenarios (no head-of-line blocking)
 
 ### Design Philosophy
 The connection pool design follows the principle of "warm-up over cold start," eliminating network latency through pre-established connections. This design philosophy draws from modern high-performance server best practices, amortizing the cost of connection establishment to the system startup phase rather than bearing this overhead on the critical path.
 
+Both TCP and QUIC pools share this philosophy but implement it differently:
+- **TCP pools**: Pre-establish multiple TCP connections
+- **QUIC pools**: Pre-create multiple streams over a single QUIC connection
+
 ### Pool Design
 1. **Pool Types**:
-   - **Client Pool**: Pre-establishes connections to the remote endpoint with active connection management
-   - **Server Pool**: Manages incoming connections from clients with passive connection acceptance
+   - **Client Pool**: Pre-establishes connections/streams to the remote endpoint with active connection management
+   - **Server Pool**: Manages incoming connections/streams from clients with passive connection acceptance
 
 2. **Pool Components**:
-   - **Connection Storage**: Thread-safe map of connection IDs to net.Conn objects, supporting high-concurrency access
+   - **Connection/Stream Storage**: Thread-safe map of connection IDs to net.Conn objects, supporting high-concurrency access
    - **ID Channel**: Buffered channel for available connection IDs, enabling lock-free rapid allocation
    - **Capacity Management**: Dynamic adjustment based on usage patterns, implementing intelligent scaling
      - Minimum capacity set by client, ensuring basic connection guarantee for client
      - Maximum capacity delivered by server during handshake, enabling global resource coordination
-   - **Interval Control**: Time-based throttling between connection creations, preventing network resource overload
-   - **Connection Factory**: Customizable connection creation function, supporting different TLS modes and network configurations
+   - **Interval Control**: Time-based throttling between connection/stream creations, preventing network resource overload
+   - **Connection Factory**: Customizable connection creation function (TCP) or stream management (QUIC)
 
 ### Advanced Design Features
 1. **Zero-Latency Connections**:
    - Pre-established connection pools eliminate TCP three-way handshake delays
    - TLS handshakes complete during connection pool initialization, avoiding runtime encryption negotiation overhead
    - Connection warm-up strategies ensure hot connections are always available in the pool
+   - **QUIC Enhancement**: 0-RTT support further reduces reconnection latency
 
 2. **Intelligent Load Awareness**:
    - Dynamic pool management based on real-time connection utilization
@@ -242,9 +318,11 @@ The connection pool design follows the principle of "warm-up over cold start," e
 
 ### Connection Lifecycle
 1. **Connection Creation**:
-   - Connections are created up to the configured capacity, ensuring resource controllability
+   - Connections/streams are created up to the configured capacity, ensuring resource controllability
    - Each connection is assigned a unique ID, supporting precise connection tracking and management
    - IDs and connections are stored in the pool with copy-on-write and delayed deletion strategies
+   - **TCP Mode**: Creates individual TCP connections with optional TLS
+   - **QUIC Mode**: Opens bidirectional streams over shared QUIC connection
 
 2. **Connection Acquisition**:
    - Client retrieves connections using connection IDs, supporting precise matching and fast lookups

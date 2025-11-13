@@ -19,6 +19,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 通用查询参数：
 - `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
+- `quic=<mode>`：QUIC传输协议模式（`0`为TCP连接池，`1`为QUIC UDP连接池，默认：0）
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
 - `max=<max_pool>`：最大连接池容量（默认：1024，服务端设置并传递给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
@@ -40,7 +41,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### 参数
@@ -48,6 +49,9 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `quic`：QUIC传输模式 (0, 1)
+  - `0`：使用基于TCP的连接池（默认）
+  - `1`：使用基于QUIC的UDP连接池，支持流多路复用
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
   - `1`：自签名证书（自动生成）
@@ -94,6 +98,12 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 
 # 强制正向模式，自定义证书
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# QUIC传输，自动启用TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&mode=2"
+
+# QUIC传输，使用自定义证书
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 客户端模式
@@ -101,7 +111,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### 参数
@@ -109,6 +119,9 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `quic`：QUIC传输模式 (0, 1)
+  - `0`：使用基于TCP的连接池（默认）
+  - `1`：使用基于QUIC的UDP连接池，支持流多路复用
 - `min`：最小连接池容量（默认：64）
 - `mode`：客户端行为的运行模式控制
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
@@ -166,6 +179,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 
 # 资源受限配置 - 小型连接池
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
+
+# QUIC传输，适用于移动/高延迟网络
+nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+
+# QUIC传输，针对实时应用优化
+nodepass "client://server.example.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
 ```
 
 ### 主控模式 (API)
