@@ -21,14 +21,14 @@ func start(args []string) error {
 
 	parsedURL, err := url.Parse(args[1])
 	if err != nil {
-		return fmt.Errorf("start: parse URL failed: %v", err)
+		return fmt.Errorf("start: parse URL failed: %w", err)
 	}
 
 	logger := initLogger(parsedURL.Query().Get("log"))
 
 	core, err := createCore(parsedURL, logger)
 	if err != nil {
-		return fmt.Errorf("start: create core failed: %v", err)
+		return fmt.Errorf("start: create core failed: %w", err)
 	}
 
 	core.Run()
@@ -70,7 +70,7 @@ func createCore(parsedURL *url.URL, logger *logs.Logger) (interface{ Run() }, er
 		tlsCode, tlsConfig := getTLSProtocol(parsedURL, logger)
 		return internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger, version)
 	default:
-		return nil, fmt.Errorf("unknown core: %v", parsedURL)
+		return nil, fmt.Errorf("createCore: unknown core: %v", parsedURL)
 	}
 }
 
@@ -79,7 +79,7 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 	// 生成基本TLS配置
 	tlsConfig, err := cert.NewTLSConfig(version)
 	if err != nil {
-		logger.Error("Generate failed: %v", err)
+		logger.Error("Generate TLS config failed: %v", err)
 		logger.Warn("TLS code-0: nil cert")
 		return "0", nil
 	}
@@ -103,7 +103,7 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		crtFile, keyFile := parsedURL.Query().Get("crt"), parsedURL.Query().Get("key")
 		cert, err := tls.LoadX509KeyPair(crtFile, keyFile)
 		if err != nil {
-			logger.Error("Cert load failed: %v", err)
+			logger.Error("Certificate load failed: %v", err)
 			logger.Warn("TLS code-1: RAM cert with TLS 1.3")
 			return "1", tlsConfig
 		}
@@ -118,7 +118,7 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 				if time.Since(lastReload) >= internal.ReloadInterval {
 					newCert, err := tls.LoadX509KeyPair(crtFile, keyFile)
 					if err != nil {
-						logger.Error("Cert reload failed: %v", err)
+						logger.Error("Certificate reload failed: %v", err)
 					} else {
 						logger.Debug("TLS cert reloaded: %v", crtFile)
 						cachedCert = newCert
