@@ -1785,12 +1785,15 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: min, mode, read, rate, slot, proxy, notcp, noudp
+		// client参数: min, mode, quic, read, rate, slot, proxy, notcp, noudp
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("quic") == "" {
+			query.Set("quic", defaultQuicMode)
 		}
 		if query.Get("read") == "" {
 			query.Set("read", defaultReadTimeout.String())
@@ -1811,12 +1814,15 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: max, mode, read, rate, slot, proxy, notcp, noudp
+		// server参数: max, mode, quic, read, rate, slot, proxy, notcp, noudp
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
 		}
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("quic") == "" {
+			query.Set("quic", defaultQuicMode)
 		}
 		if query.Get("read") == "" {
 			query.Set("read", defaultReadTimeout.String())
