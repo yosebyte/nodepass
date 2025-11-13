@@ -23,7 +23,6 @@ import (
 
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
-	"github.com/NodePassProject/pool"
 )
 
 // Common 包含所有模式共享的核心功能
@@ -34,6 +33,7 @@ type Common struct {
 	tlsConfig        *tls.Config        // TLS配置
 	coreType         string             // 核心类型
 	runMode          string             // 运行模式
+	quicMode         string             // QUIC模式
 	dataFlow         string             // 数据流向
 	tunnelKey        string             // 隧道密钥
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
@@ -47,7 +47,7 @@ type Common struct {
 	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
 	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
-	tunnelPool       *pool.Pool         // 隧道连接池
+	tunnelPool       TransportPool      // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
@@ -75,6 +75,21 @@ type Common struct {
 	cancel           context.CancelFunc // 取消函数
 }
 
+// TransportPool 统一连接池接口
+type TransportPool interface {
+	IncomingGet(timeout time.Duration) (string, net.Conn, error)
+	OutgoingGet(id string, timeout time.Duration) (net.Conn, error)
+	Flush()
+	Close()
+	Ready() bool
+	Active() int
+	Capacity() int
+	Interval() time.Duration
+	AddError()
+	ErrorCount() int
+	ResetError()
+}
+
 // 配置变量，可通过环境变量调整
 var (
 	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
@@ -98,6 +113,7 @@ const (
 	defaultMinPool       = 64              // 默认最小池容量
 	defaultMaxPool       = 1024            // 默认最大池容量
 	defaultRunMode       = "0"             // 默认运行模式
+	defaultQuicMode      = "0"             // 默认QUIC模式
 	defaultReadTimeout   = 0 * time.Second // 默认读取超时
 	defaultRateLimit     = 0               // 默认速率限制
 	defaultSlotLimit     = 65536           // 默认槽位限制
@@ -387,6 +403,18 @@ func (c *Common) getRunMode(parsedURL *url.URL) {
 	}
 }
 
+// getQuicMode 获取QUIC模式
+func (c *Common) getQuicMode(parsedURL *url.URL) {
+	if quicMode := parsedURL.Query().Get("quic"); quicMode != "" {
+		c.quicMode = quicMode
+	} else {
+		c.quicMode = defaultQuicMode
+	}
+	if c.quicMode != "0" && c.tlsCode == "0" {
+		c.tlsCode = "1"
+	}
+}
+
 // getReadTimeout 获取读取超时设置
 func (c *Common) getReadTimeout(parsedURL *url.URL) {
 	if timeout := parsedURL.Query().Get("read"); timeout != "" {
@@ -457,6 +485,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getTunnelKey(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getRunMode(parsedURL)
+	c.getQuicMode(parsedURL)
 	c.getReadTimeout(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
@@ -722,13 +751,15 @@ func (c *Common) healthCheck() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
-	go func() {
-		select {
-		case <-c.ctx.Done():
-		case <-ticker.C:
-			c.incomingVerify()
-		}
-	}()
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		go func() {
+			select {
+			case <-c.ctx.Done():
+			case <-ticker.C:
+				c.incomingVerify()
+			}
+		}()
+	}
 
 	for c.ctx.Err() == nil {
 		// 尝试获取锁
@@ -1190,13 +1221,12 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 	defer testConn.Close()
 
 	if testConn != nil {
-		tlsConn, ok := testConn.(*tls.Conn)
+		conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState })
 		if !ok {
-			c.logger.Error("outgoingVerify: connection is not TLS")
 			return
 		}
+		state := conn.ConnectionState()
 
-		state := tlsConn.ConnectionState()
 		if len(state.PeerCertificates) == 0 {
 			c.logger.Error("outgoingVerify: no peer certificates found")
 			return
