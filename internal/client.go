@@ -19,6 +19,7 @@ import (
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
+	"github.com/NodePassProject/quic"
 )
 
 // Client 实现客户端模式功能
@@ -61,9 +62,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+		c.logger.Info("%v: client://%v@%v/%v?min=%v&mode=%v&quic=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(),
-			c.minPoolCapacity, c.runMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol, c.disableTCP, c.disableUDP)
+			c.minPoolCapacity, c.runMode, c.quicMode, c.readTimeout, c.rateLimit/125000, c.slotLimit, c.proxyProtocol, c.disableTCP, c.disableUDP)
 	}
 	logInfo("Client started")
 
@@ -143,18 +144,34 @@ func (c *Client) commonStart() error {
 	}
 
 	// 初始化连接池
-	c.tunnelPool = pool.NewClientPool(
-		c.minPoolCapacity,
-		c.maxPoolCapacity,
-		minPoolInterval,
-		maxPoolInterval,
-		reportInterval,
-		c.tlsCode,
-		c.tunnelName,
-		func() (net.Conn, error) {
-			return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
-		})
-	go c.tunnelPool.ClientManager()
+	switch c.quicMode {
+	case "0":
+		tcpPool := pool.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.tunnelName,
+			func() (net.Conn, error) {
+				return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
+			})
+		go tcpPool.ClientManager()
+		c.tunnelPool = tcpPool
+	case "1":
+		udpPool := quic.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.tunnelName,
+			c.tunnelUDPAddr.String())
+		go udpPool.ClientManager()
+		c.tunnelPool = udpPool
+	}
 
 	// 判断数据流向
 	if c.dataFlow == "+" {

@@ -16,9 +16,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NodePassProject/cert"
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
+	"github.com/NodePassProject/quic"
 )
 
 // Server 实现服务端模式功能
@@ -62,9 +64,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&quic=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(),
-			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol, s.disableTCP, s.disableUDP)
+			s.maxPoolCapacity, s.runMode, s.quicMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}
 	logInfo("Server started")
 
@@ -142,13 +144,34 @@ func (s *Server) start() error {
 	}
 
 	// 初始化隧道连接池
-	s.tunnelPool = pool.NewServerPool(
-		s.maxPoolCapacity,
-		s.clientIP,
-		s.tlsConfig,
-		s.tunnelListener,
-		reportInterval)
-	go s.tunnelPool.ServerManager()
+	switch s.quicMode {
+	case "0":
+		tcpPool := pool.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go tcpPool.ServerManager()
+		s.tunnelPool = tcpPool
+	case "1":
+		if s.tlsConfig == nil {
+			tlsConfig, err := cert.NewTLSConfig("")
+			if err != nil {
+				return fmt.Errorf("start: generate TLS config failed: %w", err)
+			}
+			tlsConfig.MinVersion = tls.VersionTLS13
+			s.tlsConfig = tlsConfig
+		}
+		udpPool := quic.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelUDPAddr.String(),
+			reportInterval)
+		go udpPool.ServerManager()
+		s.tunnelPool = udpPool
+	}
 
 	// 判断数据流向
 	if s.dataFlow == "-" {
