@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/cert"
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
@@ -155,14 +154,6 @@ func (s *Server) start() error {
 		go tcpPool.ServerManager()
 		s.tunnelPool = tcpPool
 	case "1":
-		if s.tlsConfig == nil {
-			tlsConfig, err := cert.NewTLSConfig("")
-			if err != nil {
-				return fmt.Errorf("start: generate TLS config failed: %w", err)
-			}
-			tlsConfig.MinVersion = tls.VersionTLS13
-			s.tlsConfig = tlsConfig
-		}
 		udpPool := quic.NewServerPool(
 			s.maxPoolCapacity,
 			s.clientIP,
@@ -171,6 +162,8 @@ func (s *Server) start() error {
 			reportInterval)
 		go udpPool.ServerManager()
 		s.tunnelPool = udpPool
+	default:
+		return fmt.Errorf("start: unknown quic mode: %s", s.quicMode)
 	}
 
 	// 判断数据流向
@@ -259,6 +252,7 @@ func (s *Server) tunnelHandshake() error {
 	// 发送客户端配置
 	tunnelURL := &url.URL{
 		Scheme:   "np",
+		User:     url.User(s.quicMode),
 		Host:     strconv.Itoa(s.maxPoolCapacity),
 		Path:     s.dataFlow,
 		Fragment: s.tlsCode,

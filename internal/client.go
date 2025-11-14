@@ -171,6 +171,8 @@ func (c *Client) commonStart() error {
 			c.tunnelUDPAddr.String())
 		go udpPool.ClientManager()
 		c.tunnelPool = udpPool
+	default:
+		return fmt.Errorf("commonStart: unknown quic mode: %s", c.quicMode)
 	}
 
 	// 判断数据流向
@@ -226,9 +228,10 @@ func (c *Client) tunnelHandshake() error {
 	}
 
 	// 更新客户端配置
-	if tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
+	if tunnelURL.User.Username() == "" || tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
 		return net.UnknownNetworkError(tunnelURL.String())
 	}
+	c.quicMode = tunnelURL.User.Username()
 	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
 		return fmt.Errorf("tunnelHandshake: parse max pool capacity failed: %w", err)
 	} else {
