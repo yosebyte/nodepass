@@ -6,8 +6,8 @@ github.com/NodePassProject/logs v1.0.3 h1:CDUZVQ477vmmFQHazrQCWM0gJPNINm0C2N3FzC
 github.com/NodePassProject/logs v1.0.3/go.mod h1:TwtPXOzLtb8iH+fdduQjEEywICXivsM39cy9AinMSks=
 github.com/NodePassProject/pool v1.0.49 h1:gktVmE+GsQ0/C0MF8qgRraR7eS3na4k0QrQfR6o4fkM=
 github.com/NodePassProject/pool v1.0.49/go.mod h1:joQFk1oocg56QpJ1QK/2g5Jv/AyqYUQgPXMG1gWe8iA=
-github.com/NodePassProject/quic v1.0.1 h1:cTsPvronw24PTRuQKKXsjUgycQU0OYP+jdyFy42GXqE=
-github.com/NodePassProject/quic v1.0.1/go.mod h1:EJgX8fdugc7w3ISbJ0abIuy1mFMr3uO4XSxci6QB8jg=
+github.com/NodePassProject/quic v1.0.3 h1:YG5wf3DXKY0YfsNx5tF7iK0PplAsABkm4jj7210xTnY=
+github.com/NodePassProject/quic v1.0.3/go.mod h1:EJgX8fdugc7w3ISbJ0abIuy1mFMr3uO4XSxci6QB8jg=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
