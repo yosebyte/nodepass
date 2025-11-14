@@ -85,19 +85,12 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 	}
 
 	tlsConfig.MinVersion = tls.VersionTLS13
-	tlsCode := parsedURL.Query().Get("tls")
 
-	switch tlsCode {
-	case "0":
-		// 不使用加密
-		logger.Info("TLS code-0: unencrypted")
-		return tlsCode, nil
-
+	switch parsedURL.Query().Get("tls") {
 	case "1":
-		// 使用内存中的证书
+		// 使用内存自签证书
 		logger.Info("TLS code-1: RAM cert with TLS 1.3")
-		return tlsCode, tlsConfig
-
+		return "1", tlsConfig
 	case "2":
 		// 使用自定义证书
 		crtFile, keyFile := parsedURL.Query().Get("crt"), parsedURL.Query().Get("key")
@@ -134,10 +127,14 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		} else {
 			logger.Warn("TLS code-2: unknown cert name with TLS 1.3")
 		}
-		return tlsCode, tlsConfig
-
+		return "2", tlsConfig
 	default:
-		// 默认不使用加密
+		if parsedURL.Query().Get("quic") == "1" {
+			// QUIC模式下不支持明文传输
+			logger.Info("TLS code-1: RAM cert with TLS 1.3 for QUIC")
+			return "1", tlsConfig
+		}
+		// 不使用加密
 		logger.Warn("TLS code-0: unencrypted")
 		return "0", nil
 	}
