@@ -117,6 +117,7 @@ NodePass supports QUIC as an alternative transport protocol for connection pooli
   - Only applies to dual-end handshake mode (mode=2)
   - Automatically enables TLS if not already configured (minimum tls=1)
   - Uses QUIC streams for multiplexed connections over a single UDP connection
+  - Server configuration is automatically delivered to client during handshake
 
 **QUIC Advantages:**
 - **Multiplexing**: Multiple streams over a single UDP connection
@@ -126,7 +127,7 @@ NodePass supports QUIC as an alternative transport protocol for connection pooli
 - **Built-in Encryption**: Mandatory TLS 1.3 encryption for all QUIC connections
 
 **QUIC Requirements:**
-- Both server and client must use the same `quic` setting (0 or 1)
+- Only server needs to configure the `quic` parameter - client receives configuration automatically
 - TLS mode must be enabled (tls=1 or tls=2) - automatically set if quic=1
 - Only available in dual-end handshake mode (mode=2 or mode=0 with remote addresses)
 - Not applicable to single-end forwarding mode (mode=1)
@@ -136,10 +137,10 @@ Example:
 # Server with QUIC transport (automatically enables TLS)
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2"
 
-# Client with QUIC transport (must match server setting)
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2"
+# Client automatically adopts QUIC transport from server
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
-# QUIC with custom TLS certificate
+# QUIC with custom TLS certificate (server-side only)
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 
 # Traditional TCP pool (default behavior)
@@ -463,7 +464,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `min`     | Minimum pool capacity    | `64`    |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity    | `1024`  |   O    |   X    |   X    |
 | `mode`    | Run mode control         | `0`     |   O    |   O    |   X    |
-| `quic`    | QUIC protocol support    | `0`     |   O    |   O    |   X    |
+| `quic`    | QUIC protocol support    | `0`     |   O    |   X    |   X    |
 | `read`    | Data read timeout        | `0`     |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit     | `0`     |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |
@@ -479,6 +480,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
+- Configure QUIC transport (`quic`) on the server only - clients automatically receive the configuration during handshake.
 - Set `notcp=1` when only UDP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.

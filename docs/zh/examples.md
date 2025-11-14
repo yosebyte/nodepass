@@ -521,8 +521,8 @@ curl -H "X-API-Key: your-api-key" \
 # 服务器端：启用QUIC传输
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
 
-# 客户端：启用QUIC传输（必须与服务器匹配）
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+# 客户端：自动从服务器接收QUIC配置
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 ```
 
 此配置：
@@ -531,6 +531,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128
 - 强制使用TLS 1.3加密（自动启用）
 - 在丢包场景中性能更好（无队头阻塞）
 - 通过0-RTT支持改善连接建立
+- 客户端在握手时自动接收服务器的QUIC配置
 
 ### 示例 23: 使用自定义TLS证书的QUIC
 
@@ -540,8 +541,8 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128
 # 服务器端：使用自定义证书的QUIC
 nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
 
-# 客户端：带证书验证的QUIC
-nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&log=info"
+# 客户端：自动接收QUIC配置并进行证书验证
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
 ```
 
 此设置：
@@ -549,6 +550,7 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&
 - QUIC协议提供强制TLS 1.3加密
 - 适用于生产环境
 - 客户端进行完整证书验证
+- QUIC配置自动从服务器下发
 
 ### 示例 24: 移动/高延迟网络的QUIC
 
@@ -558,8 +560,8 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&
 # 服务器端：带自适应池大小的QUIC
 nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
 
-# 客户端：移动网络的大最小连接池QUIC
-nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?quic=1&mode=2&min=256&log=warn"
+# 客户端：自动接收QUIC，配置较大最小连接池用于移动网络
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
 ```
 
 此配置：
@@ -568,6 +570,7 @@ nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?quic=1&mode=2&min=256&
 - 流多路复用减少连接开销
 - 更好地处理丢包和抖动
 - 0-RTT重连在网络变化后实现更快恢复
+- 客户端自动采用服务器的QUIC配置
 
 ### 示例 25: QUIC与TCP连接池性能对比
 
@@ -576,11 +579,11 @@ QUIC和TCP连接池的并排比较：
 ```bash
 # 传统TCP连接池（默认）
 nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=0&mode=2&min=128&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
 
 # QUIC连接池（现代方法）
 nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
-nodepass "client://server.example.com:10102/127.0.0.1:8081?quic=1&mode=2&min=128&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
 ```
 
 **TCP连接池优势**：
@@ -603,8 +606,8 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?quic=1&mode=2&min=128
 # 服务器端：为实时流量优化的QUIC设置
 nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
 
-# 客户端：实时优化的QUIC
-nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+# 客户端：自动从服务器接收QUIC配置
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 此设置：
@@ -613,6 +616,7 @@ nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&rea
 - 30秒读取超时快速检测陈旧连接
 - 大槽位限制支持许多并发玩家/流
 - 减少连接建立开销
+- 客户端自动采用服务器的QUIC配置
 
 **QUIC使用场景总结**：
 - **移动网络**：更好地处理网络切换和丢包

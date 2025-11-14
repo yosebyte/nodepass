@@ -19,7 +19,6 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 通用查询参数：
 - `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
-- `quic=<mode>`：QUIC传输协议模式（`0`为TCP连接池，`1`为QUIC UDP连接池，默认：0）
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
 - `max=<max_pool>`：最大连接池容量（默认：1024，服务端设置并传递给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
@@ -31,6 +30,11 @@ TLS相关参数（仅适用于server/master模式）：
 - `tls=<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）
 - `crt=<cert_file>`：证书文件路径（当`tls=2`时）
 - `key=<key_file>`：私钥文件路径（当`tls=2`时）
+
+QUIC传输协议（仅服务端模式）：
+- `quic=<mode>`：QUIC传输模式（`0`为TCP连接池，`1`为QUIC UDP连接池，默认：0）
+  - 服务端配置在握手时自动下发给客户端
+  - 客户端无需指定quic参数
 
 ## 运行模式
 
@@ -52,6 +56,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `quic`：QUIC传输模式 (0, 1)
   - `0`：使用基于TCP的连接池（默认）
   - `1`：使用基于QUIC的UDP连接池，支持流多路复用
+  - 配置在握手时自动下发给客户端
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
   - `1`：自签名证书（自动生成）
@@ -119,9 +124,6 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
-- `quic`：QUIC传输模式 (0, 1)
-  - `0`：使用基于TCP的连接池（默认）
-  - `1`：使用基于QUIC的UDP连接池，支持流多路复用
 - `min`：最小连接池容量（默认：64）
 - `mode`：客户端行为的运行模式控制
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
@@ -130,6 +132,8 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=
 - `read`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
 - `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
+
+**注意**：QUIC传输配置在握手时自动从服务器接收。客户端无需指定`quic`参数。
 
 #### 客户端模式工作原理
 
@@ -180,11 +184,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 # 资源受限配置 - 小型连接池
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 
-# QUIC传输，适用于移动/高延迟网络
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+# 客户端自动从服务器接收QUIC配置（无需quic参数）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 
-# QUIC传输，针对实时应用优化
-nodepass "client://server.example.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+# 实时应用客户端（从Lu670d务器获取QUIC配置）
+nodepass "client://server.example.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 ### 主控模式 (API)

@@ -521,8 +521,8 @@ Use QUIC protocol for connection pooling with improved performance in high-laten
 # Server side: Enable QUIC transport
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
 
-# Client side: Enable QUIC transport (must match server)
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+# Client side: Automatically receives QUIC configuration from server
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 ```
 
 This configuration:
@@ -531,6 +531,7 @@ This configuration:
 - Mandatory TLS 1.3 encryption (automatically enabled)
 - Better performance in packet loss scenarios (no head-of-line blocking)
 - Improved connection establishment with 0-RTT support
+- Client automatically receives QUIC configuration from server during handshake
 
 ### Example 23: QUIC with Custom TLS Certificate
 
@@ -540,8 +541,8 @@ Deploy QUIC tunnel with verified certificates for production:
 # Server side: QUIC with custom certificate
 nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
 
-# Client side: QUIC with certificate verification
-nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=64&log=info"
+# Client side: Automatically receives QUIC configuration with certificate verification
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
 ```
 
 This setup:
@@ -549,6 +550,7 @@ This setup:
 - QUIC protocol provides mandatory TLS 1.3 encryption
 - Suitable for production environments
 - Full certificate validation on client side
+- QUIC configuration automatically delivered from server
 
 ### Example 24: QUIC for Mobile/High-Latency Networks
 
@@ -558,8 +560,8 @@ Optimize for mobile networks or satellite connections:
 # Server side: QUIC with adaptive pool sizing
 nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
 
-# Client side: QUIC with larger minimum pool for mobile
-nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?quic=1&mode=2&min=256&log=warn"
+# Client side: Automatically receives QUIC, configure larger minimum pool for mobile
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
 ```
 
 This configuration:
@@ -568,6 +570,7 @@ This configuration:
 - Stream multiplexing reduces connection overhead
 - Better handling of packet loss and jitter
 - 0-RTT reconnection for faster recovery after network changes
+- Client automatically adopts QUIC from server
 
 ### Example 25: QUIC vs TCP Pool Performance Comparison
 
@@ -576,11 +579,11 @@ Side-by-side comparison of QUIC and TCP pools:
 ```bash
 # Traditional TCP pool (default)
 nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=0&mode=2&min=128&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
 
 # QUIC pool (modern approach)
 nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
-nodepass "client://server.example.com:10102/127.0.0.1:8081?quic=1&mode=2&min=128&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
 ```
 
 **TCP Pool Advantages**:
@@ -603,8 +606,8 @@ Configure QUIC tunnel for gaming, VoIP, or video streaming:
 # Server side: QUIC with optimized settings for real-time traffic
 nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
 
-# Client side: QUIC with real-time optimizations
-nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+# Client side: Automatically receives QUIC configuration from server
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 This setup:
@@ -613,6 +616,7 @@ This setup:
 - 30-second read timeout for quick detection of stale connections
 - Large slot limit supports many concurrent players/streams
 - Reduced connection establishment overhead
+- Client automatically adopts server's QUIC configuration
 
 **QUIC Use Case Summary**:
 - **Mobile Networks**: Better handling of network transitions and packet loss

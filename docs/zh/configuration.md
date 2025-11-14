@@ -117,6 +117,7 @@ NodePass支持QUIC作为双端握手模式下连接池的替代传输协议。QU
   - 仅适用于双端握手模式（mode=2）
   - 如果尚未配置TLS则自动启用（最低tls=1）
   - 在单个UDP连接上使用QUIC流进行多路复用连接
+  - 服务端配置在握手时自动下发给客户端
 
 **QUIC优势：**
 - **多路复用**：在单个UDP连接上实现多个流
@@ -126,7 +127,7 @@ NodePass支持QUIC作为双端握手模式下连接池的替代传输协议。QU
 - **内置加密**：所有QUIC连接强制使用TLS 1.3加密
 
 **QUIC要求：**
-- 服务端和客户端必须使用相同的`quic`设置（0或1）
+- 仅需服务端配置`quic`参数 - 客户端自动接收配置
 - 必须启用TLS模式（tls=1或tls=2）- 如果quic=1会自动设置
 - 仅在双端握手模式下可用（mode=2或带远程地址的mode=0）
 - 不适用于单端转发模式（mode=1）
@@ -136,10 +137,10 @@ NodePass支持QUIC作为双端握手模式下连接池的替代传输协议。QU
 # 使用QUIC传输的服务器（自动启用TLS）
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2"
 
-# 使用QUIC传输的客户端（必须与服务器设置匹配）
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2"
+# 客户端自动采用服务器的QUIC传输配置
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
-# 使用自定义TLS证书的QUIC
+# 使用自定义TLS证书的QUIC（仅服务端配置）
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 
 # 传统TCP连接池（默认行为）
@@ -463,7 +464,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 | `min`     | 最小连接池容量       | `64`      |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       | `1024`    |   O    |   X    |   X    |
 | `mode`    | 运行模式控制         | `0`       |   O    |   O    |   X    |
-| `quic`    | QUIC协议支持         | `0`       |   O    |   O    |   X    |
+| `quic`    | QUIC协议支持         | `0`       |   O    |   X    |   X    |
 | `read`    | 数据读取超时         | `0`       |   O    |   O    |   X    |
 | `rate`    | 带宽速率限制         | `0`       |   O    |   O    |   X    |
 | `slot`    | 最大连接数限制       | `65536`   |   O    |   O    |   X    |
@@ -479,6 +480,7 @@ NodePass支持通过URL查询参数进行灵活配置，不同参数在 server�
 - client/server 双端握手模式建议根据流量和资源情况调整连接池容量（min/max），优化性能。
 - 当自动检测不符合部署需求时或需要跨环境一致行为时，使用运行模式控制（mode）。
 - 配置速率限制（rate）以控制带宽使用，防止共享环境中的网络拥塞。
+- 配置QUIC传输（quic）时仅需在服务端设置 - 客户端在握手时自动接收配置。
 - 仅需要隧道传输UDP流量时设置`notcp=1`，以减少资源使用并简化配置。
 - 仅需要隧道传输TCP流量时设置`noudp=1`，以减少资源使用并简化配置。
 - 日志级别（log）可在所有模式下灵活调整，便于运维和排查。

@@ -19,7 +19,6 @@ Where:
 
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
-- `quic=<mode>`: QUIC transport protocol mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0)
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
@@ -31,6 +30,11 @@ TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
 - `crt=<cert_file>`: Path to certificate file (when `tls=2`)
 - `key=<key_file>`: Path to private key file (when `tls=2`)
+
+QUIC transport protocol (server mode only):
+- `quic=<mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0)
+  - Server configuration is automatically delivered to client during handshake
+  - Client does not need to specify quic parameter
 
 ## Operating Modes
 
@@ -52,6 +56,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `quic`: QUIC transport mode (0, 1)
   - `0`: Use TCP-based connection pool (default)
   - `1`: Use QUIC-based UDP connection pool with stream multiplexing
+  - Configuration is automatically delivered to client during handshake
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
   - `1`: Self-signed certificate (automatically generated)
@@ -119,9 +124,6 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
-- `quic`: QUIC transport mode (0, 1)
-  - `0`: Use TCP-based connection pool (default)
-  - `1`: Use QUIC-based UDP connection pool with stream multiplexing
 - `min`: Minimum connection pool capacity (default: 64)
 - `mode`: Run mode control for client behavior
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
@@ -130,6 +132,8 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=
 - `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
+
+**Note**: QUIC transport configuration is automatically received from the server during handshake. Clients do not need to specify the `quic` parameter.
 
 #### How Client Mode Works
 
@@ -180,11 +184,11 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 # Resource-constrained configuration - Small connection pool
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 
-# QUIC transport for mobile/high-latency networks
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&mode=2&min=128&log=debug"
+# Client automatically receives QUIC configuration from server (no quic parameter needed)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 
-# QUIC with optimized settings for real-time applications
-nodepass "client://server.example.com:10101/127.0.0.1:7777?quic=1&mode=2&min=64&read=30s"
+# Client for real-time applications (QUIC config from server)
+nodepass "client://server.example.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 ### Master Mode (API)
