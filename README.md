@@ -25,7 +25,6 @@ English | [简体中文](README_zh.md)
   - Cross-platform, multi-architecture, single binary or container.
 
 - **🚀 Connection Pool**
-  - Pre-established connections for zero-latency switching and forwarding.
   - Dual transport options: TCP-based pools or QUIC-based UDP multiplexing.
   - Eliminates handshake delays, boosts performance with 0-RTT support.
   - Auto-scaling with real-time capacity adjustment.
