@@ -8,6 +8,8 @@ github.com/NodePassProject/pool v1.0.49 h1:gktVmE+GsQ0/C0MF8qgRraR7eS3na4k0QrQfR
 github.com/NodePassProject/pool v1.0.49/go.mod h1:joQFk1oocg56QpJ1QK/2g5Jv/AyqYUQgPXMG1gWe8iA=
 github.com/NodePassProject/quic v1.0.4 h1:cjefYXiQ/qRESSKXLF0lEe1ql/mqiQNdBEwKwo6yYPI=
 github.com/NodePassProject/quic v1.0.4/go.mod h1:EJgX8fdugc7w3ISbJ0abIuy1mFMr3uO4XSxci6QB8jg=
+github.com/NodePassProject/quic v1.0.5 h1:Muz1o4ParseYTr5rMp8lsznD+CgGppRqpuKAS7OED9Y=
+github.com/NodePassProject/quic v1.0.5/go.mod h1:EJgX8fdugc7w3ISbJ0abIuy1mFMr3uO4XSxci6QB8jg=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

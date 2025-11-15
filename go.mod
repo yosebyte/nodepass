@@ -7,7 +7,7 @@ require (
 	github.com/NodePassProject/conn v1.0.16
 	github.com/NodePassProject/logs v1.0.3
 	github.com/NodePassProject/pool v1.0.49
-	github.com/NodePassProject/quic v1.0.4
+	github.com/NodePassProject/quic v1.0.5
 )
 
 require (
