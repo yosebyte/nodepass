@@ -35,6 +35,8 @@ type Common struct {
 	runMode          string             // 运行模式
 	quicMode         string             // QUIC模式
 	dataFlow         string             // 数据流向
+	dialerIP         string             // 拨号本地IP
+	dialerFallback   uint32             // 拨号回落标志
 	tunnelKey        string             // 隧道密钥
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
@@ -114,6 +116,7 @@ const (
 	defaultMaxPool       = 1024            // 默认最大池容量
 	defaultRunMode       = "0"             // 默认运行模式
 	defaultQuicMode      = "0"             // 默认QUIC模式
+	defaultDialerIP      = "auto"          // 默认拨号本地IP
 	defaultReadTimeout   = 0 * time.Second // 默认读取超时
 	defaultRateLimit     = 0               // 默认速率限制
 	defaultSlotLimit     = 65536           // 默认槽位限制
@@ -343,18 +346,37 @@ func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Co
 		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
 	}
 
+	// 配置拨号器
+	dialer := &net.Dialer{Timeout: timeout}
+	if c.dialerIP != defaultDialerIP && atomic.LoadUint32(&c.dialerFallback) == 0 {
+		if network == "tcp" {
+			dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.dialerIP)}
+		} else {
+			dialer.LocalAddr = &net.UDPAddr{IP: net.ParseIP(c.dialerIP)}
+		}
+	}
+
+	// 尝试拨号并自动回落
+	tryDial := func(addr string) (net.Conn, error) {
+		conn, err := dialer.Dial(network, addr)
+		if err != nil && dialer.LocalAddr != nil && atomic.CompareAndSwapUint32(&c.dialerFallback, 0, 1) {
+			c.logger.Error("dialWithRotation: fallback to system auto due to dialer failure: %v", err)
+			dialer.LocalAddr = nil
+			return dialer.Dial(network, addr)
+		}
+		return conn, err
+	}
+
 	// 单目标地址：快速路径
 	if addrCount == 1 {
-		return net.DialTimeout(network, getAddr(0), timeout)
+		return tryDial(getAddr(0))
 	}
 
 	// 多目标地址：负载均衡 + 故障转移
 	startIdx := c.nextTargetIdx()
 	var lastErr error
-
 	for i := range addrCount {
-		currentIdx := (startIdx + i) % addrCount
-		conn, err := net.DialTimeout(network, getAddr(currentIdx), timeout)
+		conn, err := tryDial(getAddr((startIdx + i) % addrCount))
 		if err == nil {
 			return conn, nil
 		}
@@ -413,6 +435,19 @@ func (c *Common) getQuicMode(parsedURL *url.URL) {
 	if c.quicMode != "0" && c.tlsCode == "0" {
 		c.tlsCode = "1"
 	}
+}
+
+// getDialerIP 获取拨号本地IP设置
+func (c *Common) getDialerIP(parsedURL *url.URL) {
+	if dialerIP := parsedURL.Query().Get("dial"); dialerIP != "" && dialerIP != "auto" {
+		if ip := net.ParseIP(dialerIP); ip != nil {
+			c.dialerIP = dialerIP
+			return
+		} else {
+			c.logger.Error("getDialerIP: fallback to system auto due to invalid IP address %v", dialerIP)
+		}
+	}
+	c.dialerIP = defaultDialerIP
 }
 
 // getReadTimeout 获取读取超时设置
@@ -486,6 +521,7 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getPoolCapacity(parsedURL)
 	c.getRunMode(parsedURL)
 	c.getQuicMode(parsedURL)
+	c.getDialerIP(parsedURL)
 	c.getReadTimeout(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
