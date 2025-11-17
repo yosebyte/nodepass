@@ -107,6 +107,52 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?mode=1"
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 ```
 
+## Outbound Connection Source IP Control
+
+NodePass supports specifying the local IP address used for outbound connections to target addresses. This feature is useful for systems with multiple network interfaces where traffic routing needs to be controlled explicitly.
+
+- `dial`: Source IP address for outbound connections (default: auto)
+  - Value `auto` or omitted: System automatically selects the source IP based on routing table
+  - Valid IP address: Forces all outbound connections to use the specified local IP address
+  - Applies to both TCP and UDP connections to target addresses
+  - Applies to both client and server modes
+  - Automatic fallback to system-selected IP if the specified address fails
+  - Invalid IP addresses trigger an error log and fallback to auto mode
+
+The `dial` parameter provides precise control over which network interface NodePass uses for outbound connections, enabling advanced network configurations such as:
+
+Example:
+```bash
+# Server with specific source IP for outbound connections
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?dial=10.1.0.100"
+
+# Client with specific source IP for target connections
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=192.168.1.50"
+
+# Combined with other parameters
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?log=info&tls=1&dial=10.1.0.100&mode=2"
+```
+
+**Source IP Control Use Cases:**
+- **Multi-Homed Systems**: Control which network interface is used for outbound traffic
+- **Policy Routing**: Ensure traffic uses specific routes based on source IP
+- **Network Segmentation**: Direct traffic through specific VLANs or network zones
+- **Firewall Rules**: Match specific firewall rules that filter by source IP
+- **Load Distribution**: Distribute outbound traffic across multiple network links
+- **Testing**: Simulate traffic from specific network locations or interfaces
+
+**Automatic Fallback Behavior:**
+- If the specified IP address cannot be bound (e.g., doesn't exist on the system), NodePass logs an error and automatically falls back to system-selected IP
+- The fallback only occurs once per instance - after fallback, all subsequent connections use auto mode
+- Fallback is logged at ERROR level for visibility: "dialWithRotation: fallback to system auto due to dialer failure"
+
+**Important Notes:**
+- The specified IP must exist on the local system and be properly configured
+- Source IP applies only to outbound connections to target addresses, not tunnel connections
+- IPv4 and IPv6 addresses are both supported (address family must match target address)
+- Binding failures trigger automatic fallback to prevent connection failures
+- This parameter does not affect incoming tunnel connections or server listen addresses
+
 ## QUIC Transport Protocol
 
 NodePass supports QUIC as an alternative transport protocol for connection pooling in dual-end handshake mode. QUIC provides UDP-based multiplexed streams with built-in encryption and improved performance characteristics compared to traditional TCP pools.
@@ -465,6 +511,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `max`     | Maximum pool capacity    | `1024`  |   O    |   X    |   X    |
 | `mode`    | Run mode control         | `0`     |   O    |   O    |   X    |
 | `quic`    | QUIC protocol support    | `0`     |   O    |   X    |   X    |
+| `dial`    | Source IP for outbound   | `auto`  |   O    |   O    |   X    |
 | `read`    | Data read timeout        | `0`     |   O    |   O    |   X    |
 | `rate`    | Bandwidth rate limit     | `0`     |   O    |   O    |   X    |
 | `slot`    | Maximum connection limit | `65536` |   O    |   O    |   X    |

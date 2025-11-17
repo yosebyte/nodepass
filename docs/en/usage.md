@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 Where:
@@ -22,6 +22,8 @@ Common query parameters:
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
+- `quic=<quic_mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0, server-side only)
+- `dial=<source_ip>`: Source IP address for outbound connections (default: `auto`, supports both IPv4 and IPv6)
 - `read=<timeout>`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
 - `proxy=<mode>`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header transmission)
@@ -45,7 +47,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### Parameters
@@ -68,6 +70,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
   - `1`: Force reverse mode - server binds to target address locally and receives traffic
   - `2`: Force forward mode - server connects to remote target address
+- `dial`: Source IP address for outbound connections to target (default: `auto` for system-selected IP)
 - `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
@@ -116,7 +119,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&proxy=<mode>"
 ```
 
 #### Parameters
@@ -129,6 +132,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&quic=<quic_mode>&min=
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
   - `2`: Force dual-end handshake mode - requires server coordination
+- `dial`: Source IP address for outbound connections to target (default: `auto` for system-selected IP)
 - `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)

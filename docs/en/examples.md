@@ -212,28 +212,56 @@ This configuration:
 - Allows embedded devices to expose their local web interfaces securely
 - Centralizes device management through a single endpoint
 
-## Multi-environment Development
 
-### Example 13: Development Environment Access
+## Multi-Homed Systems and Source IP Control
 
-Access different development environments through tunnels:
+### Example 13: Specific Network Interface Selection
+
+Control which network interface is used for outbound connections on multi-homed systems:
 
 ```bash
-# Production API access tunnel
-nodepass client://tunnel.example.com:10101/127.0.0.1:3443
+# Server using specific source IP for outbound connections (useful for policy routing)
+nodepass "server://0.0.0.0:10101/remote.backend.com:8080?dial=10.1.0.100&mode=2&tls=1"
 
-# Development environment
-nodepass server://tunnel.example.com:10101/127.0.0.1:3000
+# Client using specific source IP for target connections (useful for firewall rules)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=192.168.1.50&mode=2"
+```
 
-# Testing environment
-nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
+This configuration:
+- Forces outbound connections to use specific local IP address
+- Useful for systems with multiple network interfaces (e.g., separate public/private networks)
+- Enables policy-based routing by source IP
+- Automatically falls back to system-selected IP if specified address fails
+- Supports both IPv4 and IPv6 addresses
+
+### Example 14: Network Segmentation and VLAN Routing
+
+Direct traffic through specific network segments or VLANs:
+
+```bash
+# Server routing traffic through management network (10.0.0.0/8)
+nodepass "server://0.0.0.0:10101/mgmt.backend.local:8080?dial=10.200.1.10&mode=2&log=info"
+
+# Server routing traffic through production network (172.16.0.0/12)
+nodepass "server://0.0.0.0:10102/prod.backend.local:8080?dial=172.16.50.20&mode=2&log=info"
+
+# Client with automatic source IP selection (default behavior)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=auto"
 ```
 
 This setup:
-- Creates secure access to multiple environments (production, development, testing)
-- Uses different levels of logging based on environment sensitivity
-- Enables developers to access environments without direct network exposure
-- Maps remote services to different local ports for easy identification
+- Separates management and production traffic at the network layer
+- Ensures traffic follows designated network paths based on source IP
+- Complies with network security policies requiring source-based routing
+- Automatic fallback prevents connection failures from misconfiguration
+- `dial=auto` (default) lets the system choose the appropriate source IP
+
+**Source IP Control Use Cases**:
+- **Multi-Homed Servers**: Systems with multiple NICs for different networks
+- **Policy Routing**: Network policies requiring specific source IPs
+- **Firewall Compliance**: Matching firewall rules that filter by source address
+- **Load Distribution**: Distributing outbound traffic across multiple network links
+- **Network Testing**: Simulating traffic from specific network locations
 
 ## High Availability and Load Balancing
 
