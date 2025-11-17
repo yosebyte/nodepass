@@ -1578,7 +1578,7 @@ Examples:
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
 | `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
-| `quic` | QUIC protocol support | `0`(disabled), `1`(enabled) | `0` | Both |
+| `quic` | QUIC protocol support | `0`(disabled), `1`(enabled) | `0` | Server only |
 | `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `0` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
 | `slot` | Connection slot count | Integer (1-65536) | `65536` | Both |
