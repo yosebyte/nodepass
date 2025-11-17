@@ -493,7 +493,7 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 |----------|-------------|---------|---------|
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
-| `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 2048 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 16384 | `export NP_UDP_DATA_BUF_SIZE=16384` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -545,7 +545,7 @@ For applications relying heavily on UDP traffic:
 
 - `NP_UDP_DATA_BUF_SIZE`: Buffer size for UDP packets
   - Increase for applications sending large UDP packets
-  - Default (8192) works well for most cases
+  - Default (16384) works well for most cases
   - Consider increasing to 16384 or higher for media streaming or game servers
 
 - `NP_UDP_READ_TIMEOUT`: Timeout for UDP read operations
