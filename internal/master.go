@@ -1353,7 +1353,7 @@ func (m *Master) regenerateAPIKey(instance *Instance) {
 func (m *Master) processInstanceAction(instance *Instance, action string) {
 	switch action {
 	case "start":
-		if instance.Status != "running" {
+		if instance.Status == "stopped" {
 			go m.startInstance(instance)
 		}
 	case "stop":
@@ -1556,7 +1556,7 @@ func (m *Master) startInstance(instance *Instance) {
 	// 获取最新实例状态
 	if value, exists := m.instances.Load(instance.ID); exists {
 		instance = value.(*Instance)
-		if instance.Status == "running" {
+		if instance.Status != "stopped" {
 			return
 		}
 	}
