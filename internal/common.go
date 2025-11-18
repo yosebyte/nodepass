@@ -910,10 +910,10 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
-			if c.targetListener != nil {
+			if c.targetListener != nil || c.disableTCP != "1" {
 				go c.commonTCPLoop()
 			}
-			if c.targetUDPConn != nil {
+			if c.targetUDPConn != nil || c.disableUDP != "1" {
 				go c.commonUDPLoop()
 			}
 			return
@@ -1508,10 +1508,10 @@ func (c *Common) singleControl() error {
 	if len(c.targetTCPAddrs) > 0 {
 		go func() { errChan <- c.singleEventLoop() }()
 	}
-	if c.tunnelListener != nil {
+	if c.tunnelListener != nil || c.disableTCP != "1" {
 		go func() { errChan <- c.singleTCPLoop() }()
 	}
-	if c.tunnelUDPConn != nil {
+	if c.tunnelUDPConn != nil || c.disableUDP != "1" {
 		go func() { errChan <- c.singleUDPLoop() }()
 	}
 
