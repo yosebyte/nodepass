@@ -23,12 +23,15 @@ import (
 
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/name"
 )
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
 	mu               sync.Mutex         // 互斥锁
 	logger           *logs.Logger       // 日志记录器
+	resolver         *name.Resolver     // 域名解析器
+	dnsIPs           []string           // DNS服务器组
 	tlsCode          string             // TLS模式代码
 	tlsConfig        *tls.Config        // TLS配置
 	coreType         string             // 核心类型
@@ -97,6 +100,7 @@ var (
 	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
 	tcpDataBufSize   = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
 	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
+	dnsCachingTTL    = getEnvAsDuration("NP_DNS_CACHING_TTL", 5*time.Minute)          // DNS缓存TTL
 	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 5*time.Second)        // 握手超时
 	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
 	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
@@ -112,6 +116,7 @@ var (
 
 // 默认配置
 const (
+	defaultDNSIPs        = "auto"          // 默认DNS服务器
 	defaultMinPool       = 64              // 默认最小池容量
 	defaultMaxPool       = 1024            // 默认最大池容量
 	defaultRunMode       = "0"             // 默认运行模式
@@ -245,6 +250,26 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 	return c.xor(decoded), nil
 }
 
+// resolveAddr 解析单个地址
+func (c *Common) resolveAddr(network, address string) (any, error) {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address %s: %w", address, err)
+	}
+
+	if host == "" {
+		if network == "tcp" {
+			return net.ResolveTCPAddr("tcp", address)
+		}
+		return net.ResolveUDPAddr("udp", address)
+	}
+
+	if network == "tcp" {
+		return c.resolver.ResolveTCPAddr("tcp", address)
+	}
+	return c.resolver.ResolveUDPAddr("udp", address)
+}
+
 // getAddress 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 解析隧道地址
@@ -254,18 +279,18 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	}
 
 	// 解析隧道TCP地址
-	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
-		c.tunnelTCPAddr = tunnelTCPAddr
-	} else {
+	tcpAddr, err := c.resolveAddr("tcp", tunnelAddr)
+	if err != nil {
 		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
 	}
+	c.tunnelTCPAddr = tcpAddr.(*net.TCPAddr)
 
 	// 解析隧道UDP地址
-	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", tunnelAddr); err == nil {
-		c.tunnelUDPAddr = tunnelUDPAddr
-	} else {
+	udpAddr, err := c.resolveAddr("udp", tunnelAddr)
+	if err != nil {
 		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
 	}
+	c.tunnelUDPAddr = udpAddr.(*net.UDPAddr)
 
 	// 处理目标地址组
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
@@ -284,19 +309,19 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 		}
 
 		// 解析目标TCP地址
-		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+		tcpAddr, err := c.resolveAddr("tcp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveTCPAddr failed for %s: %w", addr, err)
 		}
 
 		// 解析目标UDP地址
-		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		udpAddr, err := c.resolveAddr("udp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveUDPAddr failed for %s: %w", addr, err)
 		}
 
-		tempTCPAddrs = append(tempTCPAddrs, tcpAddr)
-		tempUDPAddrs = append(tempUDPAddrs, udpAddr)
+		tempTCPAddrs = append(tempTCPAddrs, tcpAddr.(*net.TCPAddr))
+		tempUDPAddrs = append(tempUDPAddrs, udpAddr.(*net.UDPAddr))
 	}
 
 	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
@@ -331,6 +356,14 @@ func (c *Common) getTargetAddrsString() string {
 		addrs[i] = addr.String()
 	}
 	return strings.Join(addrs, ",")
+}
+
+// getDNSIPString 获取DNS服务器组的字符串表示
+func (c *Common) getDNSIPString() string {
+	if c.dnsIPs[0] == defaultDNSIPs {
+		return "auto"
+	}
+	return strings.Join(c.dnsIPs, ",")
 }
 
 // nextTargetIdx 获取下一个目标地址索引
@@ -402,6 +435,26 @@ func (c *Common) getTunnelKey(parsedURL *url.URL) {
 		hash := fnv.New32a()
 		hash.Write([]byte(parsedURL.Port()))
 		c.tunnelKey = hex.EncodeToString(hash.Sum(nil))
+	}
+}
+
+// getDNSIPs 获取DNS服务器组
+func (c *Common) getDNSIPs(parsedURL *url.URL) {
+	if dns := parsedURL.Query().Get("dns"); dns != "" && dns != "auto" {
+		ips := strings.SplitSeq(dns, ",")
+		for ipStr := range ips {
+			ipStr = strings.TrimSpace(ipStr)
+			if ipStr == "" {
+				continue
+			}
+			if ip := net.ParseIP(ipStr); ip != nil {
+				c.dnsIPs = append(c.dnsIPs, ip.String())
+			} else {
+				c.logger.Warn("getDNSIPs: invalid IP address: %v", ipStr)
+			}
+		}
+	} else {
+		c.dnsIPs = []string{defaultDNSIPs}
 	}
 }
 
@@ -520,6 +573,9 @@ func (c *Common) getUDPStrategy(parsedURL *url.URL) {
 
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) error {
+	c.getDNSIPs(parsedURL)
+	c.resolver = name.NewResolver(dnsCachingTTL, c.dnsIPs)
+
 	if err := c.getAddress(parsedURL); err != nil {
 		return err
 	}
@@ -716,6 +772,11 @@ func (c *Common) stop() {
 	// 重置全局限速器
 	if c.rateLimiter != nil {
 		c.rateLimiter.Reset()
+	}
+
+	// 清空DNS缓存
+	if c.resolver != nil {
+		c.resolver.ClearCache()
 	}
 }
 
