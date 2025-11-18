@@ -1785,7 +1785,10 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: min, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, min, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		if query.Get("dns") == "" {
+			query.Set("dns", defaultDNSIPs)
+		}
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
@@ -1817,7 +1820,10 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		// server参数: dns, max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		if query.Get("dns") == "" {
+			query.Set("dns", defaultDNSIPs)
+		}
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
 		}
