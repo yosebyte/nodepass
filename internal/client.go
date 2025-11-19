@@ -63,7 +63,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
 		c.logger.Info("%v: client://%v@%v/%v?dns=%v&min=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), c.getDNSIPString(), c.minPoolCapacity,
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), strings.Join(c.dnsIPs, ","), c.minPoolCapacity,
 			c.runMode, c.quicMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
 			c.proxyProtocol, c.disableTCP, c.disableUDP)
 	}

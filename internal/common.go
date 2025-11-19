@@ -116,18 +116,18 @@ var (
 
 // 默认配置
 const (
-	defaultDNSIPs        = "auto"          // 默认DNS服务器
-	defaultMinPool       = 64              // 默认最小池容量
-	defaultMaxPool       = 1024            // 默认最大池容量
-	defaultRunMode       = "0"             // 默认运行模式
-	defaultQuicMode      = "0"             // 默认QUIC模式
-	defaultDialerIP      = "auto"          // 默认拨号本地IP
-	defaultReadTimeout   = 0 * time.Second // 默认读取超时
-	defaultRateLimit     = 0               // 默认速率限制
-	defaultSlotLimit     = 65536           // 默认槽位限制
-	defaultProxyProtocol = "0"             // 默认代理协议
-	defaultTCPStrategy   = "0"             // 默认TCP策略
-	defaultUDPStrategy   = "0"             // 默认UDP策略
+	defaultDNSIPs        = "1.1.1.1,8.8.8.8" // 默认DNS服务器
+	defaultMinPool       = 64                // 默认最小池容量
+	defaultMaxPool       = 1024              // 默认最大池容量
+	defaultRunMode       = "0"               // 默认运行模式
+	defaultQuicMode      = "0"               // 默认QUIC模式
+	defaultDialerIP      = "auto"            // 默认拨号本地IP
+	defaultReadTimeout   = 0 * time.Second   // 默认读取超时
+	defaultRateLimit     = 0                 // 默认速率限制
+	defaultSlotLimit     = 65536             // 默认槽位限制
+	defaultProxyProtocol = "0"               // 默认代理协议
+	defaultTCPStrategy   = "0"               // 默认TCP策略
+	defaultUDPStrategy   = "0"               // 默认UDP策略
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -358,14 +358,6 @@ func (c *Common) getTargetAddrsString() string {
 	return strings.Join(addrs, ",")
 }
 
-// getDNSIPString 获取DNS服务器组的字符串表示
-func (c *Common) getDNSIPString() string {
-	if c.dnsIPs[0] == defaultDNSIPs {
-		return "auto"
-	}
-	return strings.Join(c.dnsIPs, ",")
-}
-
 // nextTargetIdx 获取下一个目标地址索引
 func (c *Common) nextTargetIdx() int {
 	if len(c.targetTCPAddrs) <= 1 {
@@ -440,7 +432,7 @@ func (c *Common) getTunnelKey(parsedURL *url.URL) {
 
 // getDNSIPs 获取DNS服务器组
 func (c *Common) getDNSIPs(parsedURL *url.URL) {
-	if dns := parsedURL.Query().Get("dns"); dns != "" && dns != "auto" {
+	if dns := parsedURL.Query().Get("dns"); dns != "" {
 		ips := strings.SplitSeq(dns, ",")
 		for ipStr := range ips {
 			ipStr = strings.TrimSpace(ipStr)
@@ -454,7 +446,9 @@ func (c *Common) getDNSIPs(parsedURL *url.URL) {
 			}
 		}
 	} else {
-		c.dnsIPs = []string{defaultDNSIPs}
+		for ipStr := range strings.SplitSeq(defaultDNSIPs, ",") {
+			c.dnsIPs = append(c.dnsIPs, strings.TrimSpace(ipStr))
+		}
 	}
 }
 
