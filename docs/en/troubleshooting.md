@@ -237,6 +237,54 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Some applications have built-in UDP session timeouts
    - May need to adjust application-specific keepalive settings
 
+## DNS Issues
+
+### DNS Resolution Failures
+
+**Symptoms**: Connections fail with "no such host" or DNS lookup errors.
+
+**Solutions**:
+
+1. **Verify DNS Configuration**
+   - Test DNS server reachability: `ping 1.1.1.1`
+   - Verify resolution works: `nslookup example.com 8.8.8.8`
+   - Ensure `dns` parameter contains valid IP addresses
+
+2. **Network Connectivity**
+   - Check if firewall blocks UDP port 53
+   - Try alternative DNS: `dns=8.8.8.8,1.1.1.1` or `dns=223.5.5.5,119.29.29.29`
+   - Use internal DNS for corporate networks: `dns=10.0.0.1,8.8.8.8`
+
+### DNS Caching Problems
+
+**Symptoms**: Resolution returns stale IPs, connections go to wrong endpoints.
+
+**Solutions**:
+
+1. **Adjust Cache TTL** (default 5 minutes)
+   - Dynamic environments: `export NP_DNS_CACHING_TTL=1m`
+   - Stable environments: `export NP_DNS_CACHING_TTL=30m`
+   - Restart NodePass after critical changes
+
+2. **Load Balancing Scenarios**
+   - Use shorter TTL: `export NP_DNS_CACHING_TTL=30s`
+   - Or use IP addresses directly to bypass DNS caching
+
+### DNS Performance Optimization
+
+**Symptoms**: High connection latency, slow startup.
+
+**Solutions**:
+
+1. **Choose Appropriate DNS Servers**
+   - China: `dns=223.5.5.5,119.29.29.29`
+   - International: `dns=1.1.1.1,8.8.8.8`
+   - Use at least 2 DNS servers for redundancy
+
+2. **Reduce DNS Queries**
+   - Use IP addresses directly for performance-critical scenarios
+   - Increase TTL for stable environments: `export NP_DNS_CACHING_TTL=1h`
+
 ## Master API Issues
 
 ### API Accessibility Problems

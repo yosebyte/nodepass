@@ -47,6 +47,11 @@ NodePass creates a network architecture with separate channels for control and d
    - **TCP**: Full bidirectional streaming with persistent connections, optimized for direct connection establishment in client single-end forwarding mode
    - **UDP**: Datagram forwarding with configurable buffer sizes and timeouts
 
+6. **Smart DNS Resolution**:
+   - Intelligent caching with background refresh for optimal performance
+   - Custom DNS servers with automatic failover
+   - Native IPv4/IPv6 support for modern networks
+
 ## Data Transmission Flow
 
 NodePass establishes a bidirectional data flow through its tunnel architecture, supporting both TCP and UDP protocols. The system supports three data flow modes:
