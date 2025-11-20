@@ -23,7 +23,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md). We are committ
 
 ### Prerequisites
 
-- **Go** (as specified in `go.mod`)
+- **Go** 1.25+ (as specified in `go.mod`)
 - **Git** for version control
 - **Docker** (optional, for container-based development and testing)
 - Basic knowledge of TCP/UDP networking concepts
@@ -38,6 +38,7 @@ NodePass is built on a three-tier architecture:
 - **Master Mode**: Provides RESTful API for dynamic instance management
 
 Key components:
+
 - `/cmd/nodepass/`: Main application entry point and core dispatch logic
 - `/internal/`: Core implementation packages (server, client, master, common utilities)
 - `/docs/`: Comprehensive documentation in English and Chinese
@@ -90,12 +91,12 @@ docker run --rm -p 10101:10101 nodepass:dev "server://:10101/127.0.0.1:8080?log=
 
 ### Types of Contributions
 
-- **🐛 Bug Reports**: Help us identify and fix issues
-- **✨ Feature Requests**: Suggest new features or improvements
-- **📝 Documentation**: Improve existing docs or add new ones
-- **🔧 Code Contributions**: Bug fixes, feature implementations, refactoring
-- **🌐 Translations**: Help translate documentation to other languages
-- **🧪 Testing**: Add test cases and improve test coverage
+- **Bug Reports**: Help us identify and fix issues
+- **Feature Requests**: Suggest new features or improvements
+- **Documentation**: Improve existing docs or add new ones
+- **Code Contributions**: Bug fixes, feature implementations, refactoring
+- **Translations**: Help translate documentation to other languages
+- **Testing**: Add test cases and improve test coverage
 
 ### Reporting Issues
 
@@ -255,6 +256,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 ### Pull Request Guidelines
 
 **Before submitting:**
+
 - [ ] Code follows the project style guidelines
 - [ ] All tests pass (or explain why they should be skipped)
 - [ ] Documentation is updated if needed
@@ -262,6 +264,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 - [ ] No merge conflicts with the main branch
 
 **In your pull request:**
+
 - [ ] Provide a clear description of changes
 - [ ] Reference any related issues
 - [ ] Include testing instructions
@@ -269,6 +272,8 @@ Use [Conventional Commits](https://www.conventionalcommits.org/) format:
 - [ ] List any breaking changes
 
 ### Review Process
+
+Pull requests go through the following stages:
 
 1. **Automated checks** run on all pull requests
 2. **Code review** by project maintainers
