@@ -14,9 +14,9 @@ NodePass implements multiple security layers:
 
 ### TLS Encryption Modes
 
-- **TLS Mode 0**: Unencrypted mode for trusted networks (highest performance)
-- **TLS Mode 1**: Self-signed certificates with TLS 1.3 (balanced security)
-- **TLS Mode 2**: Custom certificate validation for enterprise security
+- **TLS Mode 0**: Unencrypted mode for trusted networks (highest performance, no encryption)
+- **TLS Mode 1**: Self-signed certificates with TLS 1.3 (balanced security, no verification)
+- **TLS Mode 2**: Custom certificate validation with TLS 1.3 (enterprise security, full verification)
 
 ### Network Security
 
@@ -36,15 +36,17 @@ We take security seriously. If you discover a security vulnerability in NodePass
 
 ### What to Include
 
-Please provide the following information:
+Please provide the following information in your report:
 
 1. **Description** of the vulnerability
 2. **Steps to reproduce** the issue
 3. **Potential impact** and affected versions
 4. **Your contact information** for follow-up
-5. **Any proof-of-concept code** (if applicable)
+5. **Proof-of-concept code** (if applicable)
 
 ### Response Process
+
+Our security response timeline:
 
 1. **Acknowledgment**: We will acknowledge receipt within 48 hours
 2. **Assessment**: Initial assessment within 5 business days
@@ -52,6 +54,8 @@ Please provide the following information:
 4. **Resolution**: Security patch and public disclosure coordination
 
 ### Responsible Disclosure
+
+We follow coordinated vulnerability disclosure:
 
 - Please **do not** create public GitHub issues for security vulnerabilities
 - Give us reasonable time to investigate and patch the issue
@@ -120,6 +124,7 @@ Security updates are released as:
 - **Documentation updates** for security best practices
 
 Subscribe to our release notifications:
+
 - [GitHub Releases](https://github.com/yosebyte/nodepass/releases)
 - [Telegram Channel](https://t.me/NodePassChannel)
 

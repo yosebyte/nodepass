@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-NodePass is an enterprise-grade TCP/UDP network tunneling solution with a three-tier architecture supporting server, client, and master modes. The core is written in Go with a focus on performance, security, and minimal configuration.
+NodePass is an enterprise-grade TCP/UDP network tunneling solution with a three-tier S/C/M architecture supporting server, client, and master modes. Written in Go 1.25+, focused on performance, security, and zero-configuration deployment.
 
 ## Architecture Essentials
 
@@ -21,19 +21,28 @@ NodePass is an enterprise-grade TCP/UDP network tunneling solution with a three-
 - **Connection Pooling**: Pre-established connections via `github.com/NodePassProject/pool` library
   - Server controls `max` pool capacity, passes to client during handshake
   - Client manages `min` capacity for persistent connections
+  - QUIC multiplexing available as alternative transport (`quic=1`)
   
 - **Bidirectional Data Flow**: Automatic mode detection in `Common.runMode`
   - Mode 0: Auto-detect based on target address bindability
   - Mode 1: Reverse/single-end (server receives OR client listens locally)
   - Mode 2: Forward/dual-end (server sends OR client connects remotely)
 
+### Key Components
+- `/cmd/nodepass/main.go`: Entry point, version variable injection
+- `/cmd/nodepass/core.go`: Mode dispatch, TLS setup, certificate hot-reload
+- `/internal/common.go`: Shared primitives (buffer pools, slot management, DNS resolution, encoding)
+- `/internal/{server,client,master}.go`: Mode-specific implementations inheriting `Common`
+
 ### External Dependencies (NodePassProject Ecosystem)
 
 All critical networking primitives are in separate libraries:
 - `github.com/NodePassProject/cert`: TLS certificate generation and management
-- `github.com/NodePassProject/conn`: Custom connection types (`StatConn`, `TimeoutReader`, `DataExchange`)
-- `github.com/NodePassProject/logs`: Structured logging with levels (None/Debug/Info/Warn/Error/Event)
-- `github.com/NodePassProject/pool`: Connection pool management for both server and client
+- `github.com/NodePassProject/conn`: Enhanced connections (`StatConn` with traffic tracking)
+- `github.com/NodePassProject/logs`: Multi-level logger (None/Debug/Info/Warn/Error/Event)
+- `github.com/NodePassProject/name`: DNS resolver with caching and background refresh
+- `github.com/NodePassProject/pool`: TCP connection pooling with auto-scaling
+- `github.com/NodePassProject/quic`: QUIC multiplexing for 0-RTT connections
 
 **Never modify these libraries directly** - they're external dependencies. Use their exported APIs only.
 
@@ -43,30 +52,45 @@ All critical networking primitives are in separate libraries:
 
 All modes use URL-style configuration: `scheme://[password@]host:port/target?param=value`
 
-**Server**: `server://bind_addr:port/target_addr:port?max=1024&tls=1&log=debug`
-**Client**: `client://server_addr:port/local_addr:port?min=128&mode=0&rate=100`
-**Master**: `master://api_addr:port/prefix?log=info&tls=2&crt=path&key=path`
+```bash
+# Server: bind_addr/target_addr with pool capacity and TLS
+server://password@0.0.0.0:10101/127.0.0.1:8080?max=1024&tls=1&log=debug
+
+# Client: server_addr/local_addr with min capacity and mode
+client://password@server:10101/127.0.0.1:9090?min=128&mode=0&rate=100
+
+# Master: api_addr/prefix with TLS and custom certs
+master://0.0.0.0:9090/api?log=info&tls=2&crt=/path/cert.pem&key=/path/key.pem
+```
 
 ### Query Parameters
 
 - `log`: none|debug|info|warn|error|event (default: info)
-- `tls`: 0=plain, 1=self-signed, 2=custom cert (server/master only)
+- `tls`: 0=plain, 1=self-signed, 2=custom cert (server/master only, client inherits from server)
 - `min`/`max`: Connection pool capacity (client sets min, server sets max)
 - `mode`: 0=auto, 1=reverse/single-end, 2=forward/dual-end
-- `read`: Timeout duration (e.g., 1h, 30m, 15s)
+- `quic`: 0=TCP pool, 1=QUIC multiplexing (requires tls≥1)
+- `dns`: Custom DNS servers (comma-separated, default: 1.1.1.1,8.8.8.8)
+- `read`: Timeout duration (e.g., 1h, 30m, 15s, default: 0=no timeout)
 - `rate`: Mbps bandwidth limit (0=unlimited)
 - `slot`: Max concurrent connections (default: 65536)
 - `proxy`: PROXY protocol v1 support (0=off, 1=on)
+- `dial`: Local bind IP for outbound connections (default: auto)
+- `notcp`/`noudp`: Disable TCP/UDP (0=enabled, 1=disabled)
 
 ### Environment Variables for Tuning
 
-See `internal/common.go` for all `NP_*` environment variables:
-- `NP_TCP_DATA_BUF_SIZE`: TCP buffer size (default: 16384)
-- `NP_UDP_DATA_BUF_SIZE`: UDP buffer size (default: 2048)
-- `NP_HANDSHAKE_TIMEOUT`: Handshake timeout (default: 5s)
-- `NP_POOL_GET_TIMEOUT`: Pool connection timeout (default: 5s)
-- `NP_REPORT_INTERVAL`: Health check interval (default: 5s)
-- `NP_RELOAD_INTERVAL`: TLS cert reload interval (default: 1h)
+Runtime behavior tunable without recompilation (see `internal/common.go`):
+```go
+NP_TCP_DATA_BUF_SIZE=16384      // TCP buffer size
+NP_UDP_DATA_BUF_SIZE=16384      // UDP buffer size  
+NP_HANDSHAKE_TIMEOUT=5s         // Handshake timeout
+NP_POOL_GET_TIMEOUT=5s          // Pool connection acquisition timeout
+NP_REPORT_INTERVAL=5s           // Health check reporting interval
+NP_RELOAD_INTERVAL=1h           // TLS cert hot-reload interval (mode 2)
+NP_SEMAPHORE_LIMIT=65536        // Signal channel buffer size
+NP_DNS_CACHING_TTL=5m           // DNS cache TTL
+```
 
 ## Development Workflow
 
@@ -76,8 +100,8 @@ See `internal/common.go` for all `NP_*` environment variables:
 # Development build
 go build -o nodepass ./cmd/nodepass
 
-# Release build (mimics .goreleaser.yml)
-go build -trimpath -ldflags="-s -w -X main.version=dev" -o nodepass ./cmd/nodepass
+# Release build with version injection (mimics .goreleaser.yml)
+go build -trimpath -ldflags="-s -w -X main.version=1.0.0" -o nodepass ./cmd/nodepass
 ```
 
 ### Testing Manually
@@ -85,27 +109,39 @@ go build -trimpath -ldflags="-s -w -X main.version=dev" -o nodepass ./cmd/nodepa
 No automated test suite exists currently. Test via real-world scenarios:
 
 ```bash
-# Terminal 1: Server with debug logging
+# Terminal 1: Server with debug logging and self-signed TLS
 ./nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=debug&tls=1&max=256"
 
-# Terminal 2: Client
+# Terminal 2: Client connecting to server
 ./nodepass "client://localhost:10101/127.0.0.1:9090?log=debug&min=64"
 
-# Terminal 3: Master mode for API testing
+# Terminal 3: Master API mode
 ./nodepass "master://0.0.0.0:9090/api?log=debug&tls=0"
 ```
 
-Test all TLS modes (0, 1, 2) and protocol types (TCP, UDP). Verify graceful shutdown with SIGTERM/SIGINT.
+**Test checklist** (from CONTRIBUTING.md):
+1. Test each mode (server, client, master) with `log=debug`
+2. Verify TCP and UDP forwarding separately
+3. Test all TLS modes (0, 1, 2) with certificate validation
+4. Test QUIC mode (`quic=1`) with TLS≥1
+5. Verify graceful shutdown with SIGTERM/SIGINT
+6. Stress test with high concurrency and connection pool scaling
+
+### Docker Build
+
+```bash
+docker build --build-arg VERSION=dev -t nodepass:dev .
+```
 
 ### Release Process
 
 Uses GoReleaser on tag push (`v*.*.*`). See `.goreleaser.yml` for build matrix (Linux, Windows, macOS, FreeBSD across multiple architectures).
 
-## Code Patterns & Conventions
+## Code Patterns and Conventions
 
 ### Error Handling
 
-Always wrap errors with context using `fmt.Errorf("function: operation failed: %w", err)`
+Always wrap errors with context using `fmt.Errorf("function: action failed: %w", err)`. See pattern in `start()`, `createCore()`, `NewServer()`, etc.
 
 ### Logging
 
@@ -126,24 +162,35 @@ All long-running goroutines must:
 3. Handle panics in critical sections
 4. Release resources (slots, buffers, connections) on exit
 
-### Buffer Pooling
+### Buffer Management
 
-Always use `Common.getTCPBuffer()` / `Common.putTCPBuffer()` or UDP equivalents to minimize allocations:
+Use sync.Pool for TCP/UDP buffers to reduce GC pressure:
 ```go
-buf := c.getTCPBuffer()
+buf := c.getTCPBuffer()  // Gets []byte from tcpBufferPool
 defer c.putTCPBuffer(buf)
-// ... use buf
 ```
 
-### Connection Slot Management
+### Slot Management
 
-Before creating connections:
+Connection slots prevent resource exhaustion:
 ```go
 if !c.tryAcquireSlot(isUDP) {
     return fmt.Errorf("slot limit reached")
 }
 defer c.releaseSlot(isUDP)
 ```
+
+### Configuration via Environment Variables
+
+Runtime behavior tunable without recompilation:
+```go
+var tcpDataBufSize = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)
+```
+See `common.go` for full list: `NP_SEMAPHORE_LIMIT`, `NP_HANDSHAKE_TIMEOUT`, `NP_POOL_GET_TIMEOUT`, etc.
+
+### TLS Certificate Hot-Reload
+
+Mode 2 (custom certs) reloads certificates hourly without restart using `GetCertificate` callback in `core.go`.
 
 ### Comments Style
 
@@ -154,14 +201,34 @@ Maintain bilingual (Chinese/English) comments for public APIs and exported funct
 func NewServer(parsedURL *url.URL, ...) (*Server, error) { ... }
 ```
 
+## External Dependencies
+
+All from `github.com/NodePassProject/*` ecosystem:
+- **cert**: TLS certificate generation and management
+- **conn**: Enhanced network connections with statistics tracking (`StatConn`)
+- **logs**: Multi-level logger (None/Debug/Info/Warn/Error/Event)
+- **name**: DNS resolver with caching and background refresh
+- **pool**: TCP connection pooling with auto-scaling
+- **quic**: QUIC multiplexing for 0-RTT connections
+
 ## Master Mode Specifics
 
-### API Structure
+### API Patterns
+
+- Authentication via `X-API-Key` header (auto-generated, stored in `nodepass.gob`)
+- SSE events at `/events` endpoint for real-time updates
+- State persistence with `encoding/gob` for instance recovery
+- OpenAPI spec at `/openapi.json`, Swagger UI at `/docs`
 
 RESTful endpoints at `/{prefix}/*` (default `/api/*`):
 - Instance CRUD: POST/GET/PATCH/PUT/DELETE on `/instances` and `/instances/{id}`
 - Real-time events: SSE stream at `/events` (types: initial, create, update, delete, shutdown, log)
-- OpenAPI docs: `/openapi.json` and `/docs` (Swagger UI)
+- Service info: GET/POST on `/info` for master details and alias updates
+- TCPing utility: GET on `/tcping` for connection testing
+
+### Instance Management
+
+Each instance runs as a separate `exec.Cmd` process. Master tracks via `instances sync.Map` with status fields: `running`, `stopped`, `error`. Auto-restart enabled via `Restart` boolean field.
 
 ### State Persistence
 
@@ -174,15 +241,26 @@ All instances stored in `nodepass.gob` using Go's `encoding/gob`:
 
 API Key in `X-API-Key` header. Special instance ID `********` for key regeneration via PATCH action `restart`.
 
+## Testing and Validation
+
+No automated test suite currently. Manual testing workflow (from CONTRIBUTING.md):
+1. Test each mode (server, client, master) with `log=debug`
+2. Verify TCP and UDP forwarding separately
+3. Test TLS modes 0, 1, 2 with certificate validation
+4. Stress test with high concurrency and connection pool scaling
+
 ## Common Pitfalls
 
-1. **Don't modify NodePassProject libraries**: These are external dependencies, not internal packages
-2. **Always decode before using tunnel URLs**: Use `Common.decode()` for base64+XOR encoded data
-3. **TLS mode is server-controlled**: Clients receive TLS mode during handshake, don't override
-4. **Pool capacity coordination**: Server sets `max`, client sets `min` - they must align correctly
-5. **UDP session cleanup**: Sessions in `targetUDPSession` require explicit cleanup with timeouts
-6. **Certificate hot-reload**: Only applies to `tls=2` mode with periodic checks every `ReloadInterval`
-7. **Graceful shutdown**: Use context cancellation propagation, don't abruptly close connections
+- **URL parsing**: Always include scheme (`server://`, `client://`, `master://`) or startup fails
+- **TLS mismatch**: Client inherits TLS mode from server during handshake—don't configure client TLS manually
+- **Pool capacity**: Server sets `max`, client sets `min`—mismatch causes connection issues
+- **Local address detection**: Single-end mode triggers automatically for localhost/127.0.0.1 tunnel addresses
+- **QUIC requirement**: QUIC mode (`quic=1`) forces TLS mode 1 minimum—cannot use mode 0
+- **Don't modify NodePassProject libraries**: These are external dependencies, not internal packages
+- **Always decode before using tunnel URLs**: Use `Common.decode()` for base64+XOR encoded data
+- **UDP session cleanup**: Sessions in `targetUDPSession` require explicit cleanup with timeouts
+- **Certificate hot-reload**: Only applies to `tls=2` mode with periodic checks every `ReloadInterval`
+- **Graceful shutdown**: Use context cancellation propagation, don't abruptly close connections
 
 ## Key Files Reference
 
@@ -192,9 +270,6 @@ API Key in `X-API-Key` header. Special instance ID `********` for key regenerati
 - `internal/server.go`: Server lifecycle, tunnel handshake, forward/reverse modes
 - `internal/client.go`: Client lifecycle, single-end/dual-end modes, tunnel connection
 - `internal/master.go`: HTTP API, SSE events, instance subprocess management, state persistence
-- `docs/en/how-it-works.md`: Detailed architecture documentation
-- `docs/en/configuration.md`: Complete parameter reference
-- `docs/en/api.md`: Master mode API specification
 
 ## Documentation Requirements
 
@@ -212,3 +287,10 @@ When adding features:
 - Focus on zero-configuration deployment - defaults should work for most use cases
 - Performance-critical paths: buffer allocation, connection pooling, data transfer loops
 - Security considerations: TLS mode selection, API key protection, input validation on master API
+
+## Documentation References
+
+- `/docs/en/how-it-works.md`: Deep dive into control/data channel separation and data flow modes
+- `/docs/en/configuration.md`: Complete parameter reference with examples
+- `/docs/en/api.md`: Master mode API specification with authentication and SSE events
+- `CONTRIBUTING.md`: Development setup, architecture overview, contribution guidelines

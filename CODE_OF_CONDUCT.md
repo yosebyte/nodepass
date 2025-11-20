@@ -7,25 +7,27 @@ We are committed to providing a friendly, safe and welcoming environment for all
 ## Our Standards
 
 **Positive behaviors include:**
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
+
+- Using welcoming and inclusive language
+- Being respectful of differing viewpoints and experiences
+- Gracefully accepting constructive criticism
+- Focusing on what is best for the community
+- Showing empathy towards other community members
 
 **Unacceptable behaviors include:**
-* Harassment, trolling, or discriminatory comments
-* Personal attacks or insulting/derogatory language
-* Publishing others' private information without permission
-* Any conduct that could reasonably be considered inappropriate in a professional setting
+
+- Harassment, trolling, or discriminatory comments
+- Personal attacks or insulting/derogatory language
+- Publishing others' private information without permission
+- Any conduct that could reasonably be considered inappropriate in a professional setting
 
 ## Enforcement
 
 Project maintainers are responsible for clarifying standards and may take appropriate corrective action in response to unacceptable behavior, including:
 
-* Warning the individual
-* Temporary restriction from project spaces
-* Permanent ban from the project community
+- Warning the individual
+- Temporary restriction from project spaces
+- Permanent ban from the project community
 
 ## Scope
 
