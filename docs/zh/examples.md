@@ -212,32 +212,164 @@ nodepass client://mgmt.example.com:10101/127.0.0.1:80
 - 允许嵌入式设备安全地暴露其本地Web界面
 - 通过单一端点集中设备管理
 
-## 多环境开发
 
-### 示例13：开发环境访问
+## 多网卡系统与源IP控制
 
-通过隧道访问不同的开发环境：
+### 示例13：指定网络接口选择
+
+在多网卡系统上控制出站连接使用的网络接口：
 
 ```bash
-# 生产API访问隧道
-nodepass client://tunnel.example.com:10101/127.0.0.1:3443
+# 服务器为出站连接使用特定源IP（适用于策略路由）
+nodepass "server://0.0.0.0:10101/remote.backend.com:8080?dial=10.1.0.100&mode=2&tls=1"
 
-# 开发环境
-nodepass server://tunnel.example.com:10101/127.0.0.1:3000
+# 客户端为目标连接使用特定源IP（适用于防火墙规则）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=192.168.1.50&mode=2"
+```
 
-# 测试环境
-nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
+此配置：
+- 强制出站连接使用特定的本地IP地址
+- 适用于具有多个网络接口的系统（例如，独立的公网/内网）
+- 通过源IP启用基于策略的路由
+- 如果指定地址失败，自动回退到系统选择的IP
+- 支持IPv4和IPv6地址
+
+### 示例14：网络分段和VLAN路由
+
+通过特定网络段或VLAN引导流量：
+
+```bash
+# 服务器通过管理网络路由流量（10.0.0.0/8）
+nodepass "server://0.0.0.0:10101/mgmt.backend.local:8080?dial=10.200.1.10&mode=2&log=info"
+
+# 服务器通过生产网络路由流量（172.16.0.0/12）
+nodepass "server://0.0.0.0:10102/prod.backend.local:8080?dial=172.16.50.20&mode=2&log=info"
+
+# 客户端使用自动源IP选择（默认行为）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=auto"
 ```
 
 此设置：
-- 创建对多个环境（生产、开发、测试）的安全访问
-- 根据环境敏感性使用不同级别的日志记录
-- 使开发人员能够访问环境而无需直接网络暴露
-- 将远程服务映射到不同的本地端口，便于识别
+- 在网络层分离管理和生产流量
+- 确保流量基于源IP遵循指定的网络路径
+- 符合要求基于源的路由的网络安全策略
+- 自动回退防止配置错误导致的连接失败
+- `dial=auto`（默认）让系统选择合适的源IP
+
+**源IP控制使用场景**：
+- **多网卡服务器**：具有不同网络的多个网卡的系统
+- **策略路由**：需要特定源IP的网络策略
+- **防火墙合规**：匹配按源地址过滤的防火墙规则
+- **负载分配**：在多个网络链路之间分配出站流量
+- **网络测试**：模拟来自特定网络位置的流量
+
+## DNS配置用于自定义解析
+
+### 示例15：企业DNS用于内部服务
+
+使用企业DNS服务器解析内部主机名：
+
+```bash
+# 服务端：使用企业DNS服务器解析内部服务
+nodepass "server://0.0.0.0:10101/internal-api.corp.local:8080?dns=10.0.0.53,10.0.1.53&mode=2&tls=1"
+
+# 客户端：使用相同的DNS服务器以保持一致的解析
+nodepass "client://tunnel.corp.local:10101/127.0.0.1:8080?dns=10.0.0.53,10.0.1.53"
+```
+
+此配置：
+- 使用企业DNS服务器（10.0.0.53和10.0.1.53）而不是公共DNS
+- 解析无法通过公共DNS访问的内部.corp.local域
+- 如果第一个DNS服务器失败，自动故障转移到第二个
+- DNS结果缓存5分钟（默认）以提高性能
+- 服务端和客户端使用一致的DNS配置
+
+### 示例16：注重隐私的DNS提供商
+
+使用增强隐私的DNS提供商以提高安全性：
+
+```bash
+# 服务端：使用Cloudflare DNS（注重隐私）
+nodepass "server://0.0.0.0:10101/api.example.com:443?dns=1.1.1.1,1.0.0.1&tls=1&log=info"
+
+# 客户端：使用Quad9 DNS（恶意软件拦截）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=9.9.9.9,149.112.112.112"
+```
+
+此设置：
+- 服务端使用Cloudflare DNS（1.1.1.1），以隐私保护著称
+- 客户端使用Quad9 DNS（9.9.9.9），内置恶意域名拦截
+- 多个DNS服务器提供冗余
+- 当解析器支持时，所有DNS查询通过DNS-over-TLS加密
+
+### 示例17：地理DNS优化
+
+选择地理位置接近部署的DNS服务器以降低延迟：
+
+```bash
+# 亚太地区：使用Google DNS亚洲服务器
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=8.8.8.8,8.8.4.4&mode=2"
+
+# 欧洲：使用Cloudflare DNS
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=1.1.1.1,1.0.0.1&mode=2"
+
+# 自定义区域：使用本地ISP DNS以获得最佳性能
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=203.0.113.1,203.0.113.2&mode=2"
+```
+
+此配置：
+- 通过使用地理位置接近的服务器减少DNS查找延迟
+- 改善初始连接建立时间
+- 适用于通过UDP端口53可访问的任何DNS服务器
+
+### 示例18：IPv6 DNS配置
+
+为启用IPv6的网络配置IPv6 DNS服务器：
+
+```bash
+# 服务端：使用IPv6 DNS服务器（Cloudflare和Google）
+nodepass "server://[::]:10101/ipv6.example.com:8080?dns=2606:4700:4700::1111,2001:4860:4860::8888&mode=2&tls=1"
+
+# 客户端：混合IPv4和IPv6 DNS服务器
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=1.1.1.1,2606:4700:4700::1111"
+```
+
+此设置：
+- 服务端使用[::]监听所有IPv6接口
+- 使用IPv6 DNS服务器进行原生IPv6解析
+- 混合IPv4/IPv6 DNS配置提供最大兼容性
+- 根据连接类型自动选择IPv4或IPv6地址
+
+### 示例19：不同环境的DNS缓存调优
+
+调整DNS缓存TTL以获得最佳性能：
+
+```bash
+# 生产环境：稳定DNS，较长缓存TTL（30分钟）
+export NP_DNS_CACHING_TTL=30m
+nodepass "server://0.0.0.0:10101/stable.backend.com:8080?dns=1.1.1.1,8.8.8.8&tls=1"
+
+# 开发环境：动态DNS，较短缓存TTL（1分钟）
+export NP_DNS_CACHING_TTL=1m
+nodepass "server://0.0.0.0:10101/dev.backend.local:8080?dns=10.0.0.53&tls=0&log=debug"
+```
+
+此配置：
+- **生产环境（30m TTL）**：为稳定环境最大化缓存效率
+- **开发环境（1m TTL）**：为快速变化的配置提供快速DNS更新
+- 在TTL的80%时进行后台刷新确保平滑过渡
+
+**DNS配置使用场景**：
+- **企业网络**：通过企业DNS基础设施解析内部主机名
+- **隐私增强**：使用注重隐私的DNS提供商（1.1.1.1、9.9.9.9）
+- **地理优化**：使用区域接近的DNS服务器减少延迟
+- **开发/测试**：在动态环境中使用短TTL快速更新DNS
+- **高可用性**：多个DNS服务器提供冗余和故障转移
+- **合规性**：满足DNS提供商选择的监管要求
 
 ## 高可用性与负载均衡
 
-### 示例14：多后端服务器负载均衡
+### 示例20：多后端服务器负载均衡
 
 使用目标地址组实现流量均衡分配和自动故障转移：
 
@@ -255,7 +387,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?log=info"
 - 故障服务器恢复后自动重新接入流量
 - 使用TLS加密确保隧道安全
 
-### 示例15：数据库主从切换
+### 示例21：数据库主从切换
 
 为数据库配置主从实例，实现高可用访问：
 
@@ -270,7 +402,7 @@ nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?
 - 应用程序无需修改，透明地实现故障转移
 - 仅记录警告和错误，减少日志输出
 
-### 示例16：API网关后端池
+### 示例22：API网关后端池
 
 为API网关配置多个后端服务实例：
 
@@ -288,7 +420,7 @@ nodepass "client://apigateway.example.com:10101/127.0.0.1:8080?rate=100&slot=200
 - 客户端限制带宽100 Mbps，最大2000并发连接
 - 单个实例故障不影响整体服务可用性
 
-### 示例17：地域分布式服务
+### 示例23：地域分布式服务
 
 配置多地域服务节点，优化网络延迟：
 
@@ -312,7 +444,7 @@ nodepass "server://0.0.0.0:10101/us-west.service:8080,us-east.service:8080,eu-ce
 
 ## PROXY协议集成
 
-### 示例18：负载均衡器与PROXY协议集成
+### 示例24：负载均衡器与PROXY协议集成
 
 启用PROXY协议支持，与负载均衡器和反向代理集成：
 
@@ -331,7 +463,7 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:3000?log=info&proxy=1"
 - 兼容HAProxy、Nginx和其他支持PROXY协议的服务
 - 有助于维护准确的访问日志和基于IP的访问控制
 
-### 示例19：Web应用的反向代理支持
+### 示例25：Web应用的反向代理支持
 
 使NodePass后的Web应用能够接收原始客户端信息：
 
@@ -355,7 +487,7 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=warn&tls=2&crt=/path/to/cert
 - 支持连接审计的合规性要求
 - 适用于支持PROXY协议的Web服务器（Nginx、HAProxy等）
 
-### 示例20：数据库访问与客户端IP保留
+### 示例26：数据库访问与客户端IP保留
 
 为数据库访问日志记录和安全维护客户端IP信息：
 
@@ -382,7 +514,7 @@ nodepass "client://dbproxy.example.com:10101/127.0.0.1:5432?proxy=1"
 
 ## 容器部署
 
-### 示例21：容器化NodePass
+### 示例27：容器化NodePass
 
 在Docker环境中部署NodePass：
 
@@ -417,7 +549,7 @@ docker run -d --name nodepass-client \
 
 ## 主控API管理
 
-### 示例22：集中化管理
+### 示例28：集中化管理
 
 为多个NodePass实例设置中央控制器：
 
@@ -454,7 +586,7 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 - 提供用于自动化和集成的RESTful API
 - 包含内置的Swagger UI，位于http://localhost:9090/api/v1/docs
 
-### 示例23：自定义API前缀
+### 示例29：自定义API前缀
 
 为主控模式使用自定义API前缀：
 
@@ -473,7 +605,7 @@ curl -X POST http://localhost:9090/admin/v1/instances \
 - 用于安全或组织目的的自定义URL路径
 - 在http://localhost:9090/admin/v1/docs访问Swagger UI
 
-### 示例24：实时连接和流量监控
+### 示例30：实时连接和流量监控
 
 通过主控API监控实例的连接数和流量统计：
 
@@ -510,6 +642,120 @@ curl -H "X-API-Key: your-api-key" \
 - **性能分析**：通过连接数和流量数据评估系统负载
 - **容量规划**：基于历史连接数据进行资源规划
 - **故障诊断**：异常的连接数变化可能指示网络问题
+
+## QUIC传输协议
+
+### 示例31: 基于QUIC的流多路复用隧道
+
+使用QUIC协议进行连接池管理，在高延迟网络中提供更优性能：
+
+```bash
+# 服务器端：启用QUIC传输
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+
+# 客户端：自动从服务器接收QUIC配置
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
+```
+
+此配置：
+- 使用QUIC协议进行基于UDP的多路复用流
+- 单个QUIC连接承载多个并发数据流
+- 强制使用TLS 1.3加密（自动启用）
+- 在丢包场景中性能更好（无队头阻塞）
+- 通过0-RTT支持改善连接建立
+- 客户端在握手时自动接收服务器的QUIC配置
+
+### 示例32: 使用自定义TLS证书的QUIC
+
+在生产环境部署带有验证证书的QUIC隧道：
+
+```bash
+# 服务器端：使用自定义证书的QUIC
+nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+
+# 客户端：自动接收QUIC配置并进行证书验证
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
+```
+
+此设置：
+- 使用验证证书实现最高安全性
+- QUIC协议提供强制TLS 1.3加密
+- 适用于生产环境
+- 客户端进行完整证书验证
+- QUIC配置自动从服务器下发
+
+### 示例33: 移动/高延迟网络的QUIC
+
+针对移动网络或卫星连接进行优化：
+
+```bash
+# 服务器端：带自适应池大小的QUIC
+nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+
+# 客户端：自动接收QUIC，配置较大最小连接池用于移动网络
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
+```
+
+此配置：
+- QUIC的基于UDP传输在NAT环境中表现更好
+- 更大的连接池大小补偿网络切换
+- 流多路复用减少连接开销
+- 更好地处理丢包和抖动
+- 0-RTT重连在网络变化后实现更快恢复
+- 客户端自动采用服务器的QUIC配置
+
+### 示例34: QUIC与TCP连接池性能对比
+
+QUIC和TCP连接池的并排比较：
+
+```bash
+# 传统TCP连接池（默认）
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
+
+# QUIC连接池（现代方法）
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
+```
+
+**TCP连接池优势**：
+- 与网络基础设施更广泛兼容
+- 已建立的协议，行为可预测
+- 在某些企业环境中支持更好
+
+**QUIC连接池优势**：
+- 通过0-RTT连接恢复降低延迟
+- 跨流无队头阻塞
+- 更好的拥塞控制和丢失恢复
+- 改善NAT穿透能力
+- 单个UDP套接字减少资源使用
+
+### 示例35: 实时应用的QUIC
+
+为游戏、VoIP或视频流配置QUIC隧道：
+
+```bash
+# 服务器端：为实时流量优化的QUIC设置
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+
+# 客户端：自动从服务器接收QUIC配置
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
+```
+
+此设置：
+- QUIC的流级别流量控制防止流之间的干扰
+- 在有损网络中比TCP连接池延迟更低
+- 30秒读取超时快速检测陈旧连接
+- 大槽位限制支持许多并发玩家/流
+- 减少连接建立开销
+- 客户端自动采用服务器的QUIC配置
+
+**QUIC使用场景总结**：
+- **移动网络**：更好地处理网络切换和丢包
+- **高延迟链路**：通过0-RTT和多路复用减少开销
+- **实时应用**：流独立性防止队头阻塞
+- **复杂NAT环境**：基于UDP的协议更可靠地穿透NAT
+- **并发流**：在并行流之间高效共享带宽
 
 ## 下一步
 

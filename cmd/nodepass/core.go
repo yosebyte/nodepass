@@ -21,14 +21,14 @@ func start(args []string) error {
 
 	parsedURL, err := url.Parse(args[1])
 	if err != nil {
-		return fmt.Errorf("start: parse URL failed: %v", err)
+		return fmt.Errorf("start: parse URL failed: %w", err)
 	}
 
 	logger := initLogger(parsedURL.Query().Get("log"))
 
 	core, err := createCore(parsedURL, logger)
 	if err != nil {
-		return fmt.Errorf("start: create core failed: %v", err)
+		return fmt.Errorf("start: create core failed: %w", err)
 	}
 
 	core.Run()
@@ -70,7 +70,7 @@ func createCore(parsedURL *url.URL, logger *logs.Logger) (interface{ Run() }, er
 		tlsCode, tlsConfig := getTLSProtocol(parsedURL, logger)
 		return internal.NewMaster(parsedURL, tlsCode, tlsConfig, logger, version)
 	default:
-		return nil, fmt.Errorf("unknown core: %v", parsedURL)
+		return nil, fmt.Errorf("createCore: unknown core: %v", parsedURL)
 	}
 }
 
@@ -79,31 +79,24 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 	// 生成基本TLS配置
 	tlsConfig, err := cert.NewTLSConfig(version)
 	if err != nil {
-		logger.Error("Generate failed: %v", err)
+		logger.Error("Generate TLS config failed: %v", err)
 		logger.Warn("TLS code-0: nil cert")
 		return "0", nil
 	}
 
 	tlsConfig.MinVersion = tls.VersionTLS13
-	tlsCode := parsedURL.Query().Get("tls")
 
-	switch tlsCode {
-	case "0":
-		// 不使用加密
-		logger.Info("TLS code-0: unencrypted")
-		return tlsCode, nil
-
+	switch parsedURL.Query().Get("tls") {
 	case "1":
-		// 使用内存中的证书
+		// 使用内存自签证书
 		logger.Info("TLS code-1: RAM cert with TLS 1.3")
-		return tlsCode, tlsConfig
-
+		return "1", tlsConfig
 	case "2":
 		// 使用自定义证书
 		crtFile, keyFile := parsedURL.Query().Get("crt"), parsedURL.Query().Get("key")
 		cert, err := tls.LoadX509KeyPair(crtFile, keyFile)
 		if err != nil {
-			logger.Error("Cert load failed: %v", err)
+			logger.Error("Certificate load failed: %v", err)
 			logger.Warn("TLS code-1: RAM cert with TLS 1.3")
 			return "1", tlsConfig
 		}
@@ -118,7 +111,7 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 				if time.Since(lastReload) >= internal.ReloadInterval {
 					newCert, err := tls.LoadX509KeyPair(crtFile, keyFile)
 					if err != nil {
-						logger.Error("Cert reload failed: %v", err)
+						logger.Error("Certificate reload failed: %v", err)
 					} else {
 						logger.Debug("TLS cert reloaded: %v", crtFile)
 						cachedCert = newCert
@@ -134,10 +127,14 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		} else {
 			logger.Warn("TLS code-2: unknown cert name with TLS 1.3")
 		}
-		return tlsCode, tlsConfig
-
+		return "2", tlsConfig
 	default:
-		// 默认不使用加密
+		if parsedURL.Query().Get("quic") == "1" {
+			// QUIC模式下不支持明文传输
+			logger.Info("TLS code-1: RAM cert with TLS 1.3 for QUIC")
+			return "1", tlsConfig
+		}
+		// 不使用加密
 		logger.Warn("TLS code-0: unencrypted")
 		return "0", nil
 	}

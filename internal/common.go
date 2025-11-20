@@ -23,18 +23,23 @@ import (
 
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
-	"github.com/NodePassProject/pool"
+	"github.com/NodePassProject/name"
 )
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
 	mu               sync.Mutex         // 互斥锁
 	logger           *logs.Logger       // 日志记录器
+	resolver         *name.Resolver     // 域名解析器
+	dnsIPs           []string           // DNS服务器组
 	tlsCode          string             // TLS模式代码
 	tlsConfig        *tls.Config        // TLS配置
 	coreType         string             // 核心类型
 	runMode          string             // 运行模式
+	quicMode         string             // QUIC模式
 	dataFlow         string             // 数据流向
+	dialerIP         string             // 拨号本地IP
+	dialerFallback   uint32             // 拨号回落标志
 	tunnelKey        string             // 隧道密钥
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
@@ -47,7 +52,7 @@ type Common struct {
 	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
 	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
-	tunnelPool       *pool.Pool         // 隧道连接池
+	tunnelPool       TransportPool      // 隧道连接池
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
@@ -75,11 +80,27 @@ type Common struct {
 	cancel           context.CancelFunc // 取消函数
 }
 
+// TransportPool 统一连接池接口
+type TransportPool interface {
+	IncomingGet(timeout time.Duration) (string, net.Conn, error)
+	OutgoingGet(id string, timeout time.Duration) (net.Conn, error)
+	Flush()
+	Close()
+	Ready() bool
+	Active() int
+	Capacity() int
+	Interval() time.Duration
+	AddError()
+	ErrorCount() int
+	ResetError()
+}
+
 // 配置变量，可通过环境变量调整
 var (
 	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
 	tcpDataBufSize   = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
-	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 2048)                      // UDP缓冲区大小
+	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
+	dnsCachingTTL    = getEnvAsDuration("NP_DNS_CACHING_TTL", 5*time.Minute)          // DNS缓存TTL
 	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 5*time.Second)        // 握手超时
 	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
 	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
@@ -95,15 +116,18 @@ var (
 
 // 默认配置
 const (
-	defaultMinPool       = 64              // 默认最小池容量
-	defaultMaxPool       = 1024            // 默认最大池容量
-	defaultRunMode       = "0"             // 默认运行模式
-	defaultReadTimeout   = 0 * time.Second // 默认读取超时
-	defaultRateLimit     = 0               // 默认速率限制
-	defaultSlotLimit     = 65536           // 默认槽位限制
-	defaultProxyProtocol = "0"             // 默认代理协议
-	defaultTCPStrategy   = "0"             // 默认TCP策略
-	defaultUDPStrategy   = "0"             // 默认UDP策略
+	defaultDNSIPs        = "1.1.1.1,8.8.8.8" // 默认DNS服务器
+	defaultMinPool       = 64                // 默认最小池容量
+	defaultMaxPool       = 1024              // 默认最大池容量
+	defaultRunMode       = "0"               // 默认运行模式
+	defaultQuicMode      = "0"               // 默认QUIC模式
+	defaultDialerIP      = "auto"            // 默认拨号本地IP
+	defaultReadTimeout   = 0 * time.Second   // 默认读取超时
+	defaultRateLimit     = 0                 // 默认速率限制
+	defaultSlotLimit     = 65536             // 默认槽位限制
+	defaultProxyProtocol = "0"               // 默认代理协议
+	defaultTCPStrategy   = "0"               // 默认TCP策略
+	defaultUDPStrategy   = "0"               // 默认UDP策略
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -226,6 +250,26 @@ func (c *Common) decode(data []byte) ([]byte, error) {
 	return c.xor(decoded), nil
 }
 
+// resolveAddr 解析单个地址
+func (c *Common) resolveAddr(network, address string) (any, error) {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address %s: %w", address, err)
+	}
+
+	if host == "" {
+		if network == "tcp" {
+			return net.ResolveTCPAddr("tcp", address)
+		}
+		return net.ResolveUDPAddr("udp", address)
+	}
+
+	if network == "tcp" {
+		return c.resolver.ResolveTCPAddr("tcp", address)
+	}
+	return c.resolver.ResolveUDPAddr("udp", address)
+}
+
 // getAddress 解析和设置地址信息
 func (c *Common) getAddress(parsedURL *url.URL) error {
 	// 解析隧道地址
@@ -235,18 +279,18 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	}
 
 	// 解析隧道TCP地址
-	if tunnelTCPAddr, err := net.ResolveTCPAddr("tcp", tunnelAddr); err == nil {
-		c.tunnelTCPAddr = tunnelTCPAddr
-	} else {
+	tcpAddr, err := c.resolveAddr("tcp", tunnelAddr)
+	if err != nil {
 		return fmt.Errorf("getAddress: resolveTCPAddr failed: %w", err)
 	}
+	c.tunnelTCPAddr = tcpAddr.(*net.TCPAddr)
 
 	// 解析隧道UDP地址
-	if tunnelUDPAddr, err := net.ResolveUDPAddr("udp", tunnelAddr); err == nil {
-		c.tunnelUDPAddr = tunnelUDPAddr
-	} else {
+	udpAddr, err := c.resolveAddr("udp", tunnelAddr)
+	if err != nil {
 		return fmt.Errorf("getAddress: resolveUDPAddr failed: %w", err)
 	}
+	c.tunnelUDPAddr = udpAddr.(*net.UDPAddr)
 
 	// 处理目标地址组
 	targetAddr := strings.TrimPrefix(parsedURL.Path, "/")
@@ -265,19 +309,19 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 		}
 
 		// 解析目标TCP地址
-		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
+		tcpAddr, err := c.resolveAddr("tcp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveTCPAddr failed for %s: %w", addr, err)
 		}
 
 		// 解析目标UDP地址
-		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		udpAddr, err := c.resolveAddr("udp", addr)
 		if err != nil {
 			return fmt.Errorf("getAddress: resolveUDPAddr failed for %s: %w", addr, err)
 		}
 
-		tempTCPAddrs = append(tempTCPAddrs, tcpAddr)
-		tempUDPAddrs = append(tempUDPAddrs, udpAddr)
+		tempTCPAddrs = append(tempTCPAddrs, tcpAddr.(*net.TCPAddr))
+		tempUDPAddrs = append(tempUDPAddrs, udpAddr.(*net.UDPAddr))
 	}
 
 	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
@@ -288,6 +332,14 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	c.targetTCPAddrs = tempTCPAddrs
 	c.targetUDPAddrs = tempUDPAddrs
 	c.targetIdx = 0
+
+	// 无限循环检查
+	tunnelPort := c.tunnelTCPAddr.Port
+	for _, targetAddr := range c.targetTCPAddrs {
+		if targetAddr.Port == tunnelPort && (targetAddr.IP.IsLoopback() || c.tunnelTCPAddr.IP.IsUnspecified()) {
+			return fmt.Errorf("getAddress: tunnel port %d conflicts with target address %s", tunnelPort, targetAddr.String())
+		}
+	}
 
 	return nil
 }
@@ -327,18 +379,37 @@ func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Co
 		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
 	}
 
+	// 配置拨号器
+	dialer := &net.Dialer{Timeout: timeout}
+	if c.dialerIP != defaultDialerIP && atomic.LoadUint32(&c.dialerFallback) == 0 {
+		if network == "tcp" {
+			dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.dialerIP)}
+		} else {
+			dialer.LocalAddr = &net.UDPAddr{IP: net.ParseIP(c.dialerIP)}
+		}
+	}
+
+	// 尝试拨号并自动回落
+	tryDial := func(addr string) (net.Conn, error) {
+		conn, err := dialer.Dial(network, addr)
+		if err != nil && dialer.LocalAddr != nil && atomic.CompareAndSwapUint32(&c.dialerFallback, 0, 1) {
+			c.logger.Error("dialWithRotation: fallback to system auto due to dialer failure: %v", err)
+			dialer.LocalAddr = nil
+			return dialer.Dial(network, addr)
+		}
+		return conn, err
+	}
+
 	// 单目标地址：快速路径
 	if addrCount == 1 {
-		return net.DialTimeout(network, getAddr(0), timeout)
+		return tryDial(getAddr(0))
 	}
 
 	// 多目标地址：负载均衡 + 故障转移
 	startIdx := c.nextTargetIdx()
 	var lastErr error
-
 	for i := range addrCount {
-		currentIdx := (startIdx + i) % addrCount
-		conn, err := net.DialTimeout(network, getAddr(currentIdx), timeout)
+		conn, err := tryDial(getAddr((startIdx + i) % addrCount))
 		if err == nil {
 			return conn, nil
 		}
@@ -356,6 +427,28 @@ func (c *Common) getTunnelKey(parsedURL *url.URL) {
 		hash := fnv.New32a()
 		hash.Write([]byte(parsedURL.Port()))
 		c.tunnelKey = hex.EncodeToString(hash.Sum(nil))
+	}
+}
+
+// getDNSIPs 获取DNS服务器组
+func (c *Common) getDNSIPs(parsedURL *url.URL) {
+	if dns := parsedURL.Query().Get("dns"); dns != "" {
+		ips := strings.SplitSeq(dns, ",")
+		for ipStr := range ips {
+			ipStr = strings.TrimSpace(ipStr)
+			if ipStr == "" {
+				continue
+			}
+			if ip := net.ParseIP(ipStr); ip != nil {
+				c.dnsIPs = append(c.dnsIPs, ip.String())
+			} else {
+				c.logger.Warn("getDNSIPs: invalid IP address: %v", ipStr)
+			}
+		}
+	} else {
+		for ipStr := range strings.SplitSeq(defaultDNSIPs, ",") {
+			c.dnsIPs = append(c.dnsIPs, strings.TrimSpace(ipStr))
+		}
 	}
 }
 
@@ -385,6 +478,31 @@ func (c *Common) getRunMode(parsedURL *url.URL) {
 	} else {
 		c.runMode = defaultRunMode
 	}
+}
+
+// getQuicMode 获取QUIC模式
+func (c *Common) getQuicMode(parsedURL *url.URL) {
+	if quicMode := parsedURL.Query().Get("quic"); quicMode != "" {
+		c.quicMode = quicMode
+	} else {
+		c.quicMode = defaultQuicMode
+	}
+	if c.quicMode != "0" && c.tlsCode == "0" {
+		c.tlsCode = "1"
+	}
+}
+
+// getDialerIP 获取拨号本地IP设置
+func (c *Common) getDialerIP(parsedURL *url.URL) {
+	if dialerIP := parsedURL.Query().Get("dial"); dialerIP != "" && dialerIP != "auto" {
+		if ip := net.ParseIP(dialerIP); ip != nil {
+			c.dialerIP = dialerIP
+			return
+		} else {
+			c.logger.Error("getDialerIP: fallback to system auto due to invalid IP address: %v", dialerIP)
+		}
+	}
+	c.dialerIP = defaultDialerIP
 }
 
 // getReadTimeout 获取读取超时设置
@@ -449,6 +567,9 @@ func (c *Common) getUDPStrategy(parsedURL *url.URL) {
 
 // initConfig 初始化配置
 func (c *Common) initConfig(parsedURL *url.URL) error {
+	c.getDNSIPs(parsedURL)
+	c.resolver = name.NewResolver(dnsCachingTTL, c.dnsIPs)
+
 	if err := c.getAddress(parsedURL); err != nil {
 		return err
 	}
@@ -457,6 +578,8 @@ func (c *Common) initConfig(parsedURL *url.URL) error {
 	c.getTunnelKey(parsedURL)
 	c.getPoolCapacity(parsedURL)
 	c.getRunMode(parsedURL)
+	c.getQuicMode(parsedURL)
+	c.getDialerIP(parsedURL)
 	c.getReadTimeout(parsedURL)
 	c.getRateLimit(parsedURL)
 	c.getSlotLimit(parsedURL)
@@ -644,6 +767,11 @@ func (c *Common) stop() {
 	if c.rateLimiter != nil {
 		c.rateLimiter.Reset()
 	}
+
+	// 清空DNS缓存
+	if c.resolver != nil {
+		c.resolver.ClearCache()
+	}
 }
 
 // shutdown 共用优雅关闭
@@ -722,13 +850,15 @@ func (c *Common) healthCheck() error {
 	ticker := time.NewTicker(reportInterval)
 	defer ticker.Stop()
 
-	go func() {
-		select {
-		case <-c.ctx.Done():
-		case <-ticker.C:
-			c.incomingVerify()
-		}
-	}()
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		go func() {
+			select {
+			case <-c.ctx.Done():
+			case <-ticker.C:
+				c.incomingVerify()
+			}
+		}()
+	}
 
 	for c.ctx.Err() == nil {
 		// 尝试获取锁
@@ -835,10 +965,10 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
-			if c.targetListener != nil {
+			if c.targetListener != nil || c.disableTCP != "1" {
 				go c.commonTCPLoop()
 			}
-			if c.targetUDPConn != nil {
+			if c.targetUDPConn != nil || c.disableUDP != "1" {
 				go c.commonUDPLoop()
 			}
 			return
@@ -990,6 +1120,7 @@ func (c *Common) commonUDPLoop() {
 			if err != nil {
 				c.logger.Warn("commonUDPLoop: request timeout: %v", err)
 				c.releaseSlot(true)
+				c.putUDPBuffer(buffer)
 				continue
 			}
 			c.targetUDPSession.Store(sessionKey, remoteConn)
@@ -1190,13 +1321,12 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 	defer testConn.Close()
 
 	if testConn != nil {
-		tlsConn, ok := testConn.(*tls.Conn)
+		conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState })
 		if !ok {
-			c.logger.Error("outgoingVerify: connection is not TLS")
 			return
 		}
+		state := conn.ConnectionState()
 
-		state := tlsConn.ConnectionState()
 		if len(state.PeerCertificates) == 0 {
 			c.logger.Error("outgoingVerify: no peer certificates found")
 			return
@@ -1433,10 +1563,10 @@ func (c *Common) singleControl() error {
 	if len(c.targetTCPAddrs) > 0 {
 		go func() { errChan <- c.singleEventLoop() }()
 	}
-	if c.tunnelListener != nil {
+	if c.tunnelListener != nil || c.disableTCP != "1" {
 		go func() { errChan <- c.singleTCPLoop() }()
 	}
-	if c.tunnelUDPConn != nil {
+	if c.tunnelUDPConn != nil || c.disableUDP != "1" {
 		go func() { errChan <- c.singleUDPLoop() }()
 	}
 

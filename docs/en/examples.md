@@ -212,32 +212,164 @@ This configuration:
 - Allows embedded devices to expose their local web interfaces securely
 - Centralizes device management through a single endpoint
 
-## Multi-environment Development
 
-### Example 13: Development Environment Access
+## Multi-Homed Systems and Source IP Control
 
-Access different development environments through tunnels:
+### Example 13: Specific Network Interface Selection
+
+Control which network interface is used for outbound connections on multi-homed systems:
 
 ```bash
-# Production API access tunnel
-nodepass client://tunnel.example.com:10101/127.0.0.1:3443
+# Server using specific source IP for outbound connections (useful for policy routing)
+nodepass "server://0.0.0.0:10101/remote.backend.com:8080?dial=10.1.0.100&mode=2&tls=1"
 
-# Development environment
-nodepass server://tunnel.example.com:10101/127.0.0.1:3000
+# Client using specific source IP for target connections (useful for firewall rules)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=192.168.1.50&mode=2"
+```
 
-# Testing environment
-nodepass "server://tunnel.example.com:10101/127.0.0.1:3001?log=warn&tls=1"
+This configuration:
+- Forces outbound connections to use specific local IP address
+- Useful for systems with multiple network interfaces (e.g., separate public/private networks)
+- Enables policy-based routing by source IP
+- Automatically falls back to system-selected IP if specified address fails
+- Supports both IPv4 and IPv6 addresses
+
+### Example 14: Network Segmentation and VLAN Routing
+
+Direct traffic through specific network segments or VLANs:
+
+```bash
+# Server routing traffic through management network (10.0.0.0/8)
+nodepass "server://0.0.0.0:10101/mgmt.backend.local:8080?dial=10.200.1.10&mode=2&log=info"
+
+# Server routing traffic through production network (172.16.0.0/12)
+nodepass "server://0.0.0.0:10102/prod.backend.local:8080?dial=172.16.50.20&mode=2&log=info"
+
+# Client with automatic source IP selection (default behavior)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=auto"
 ```
 
 This setup:
-- Creates secure access to multiple environments (production, development, testing)
-- Uses different levels of logging based on environment sensitivity
-- Enables developers to access environments without direct network exposure
-- Maps remote services to different local ports for easy identification
+- Separates management and production traffic at the network layer
+- Ensures traffic follows designated network paths based on source IP
+- Complies with network security policies requiring source-based routing
+- Automatic fallback prevents connection failures from misconfiguration
+- `dial=auto` (default) lets the system choose the appropriate source IP
+
+**Source IP Control Use Cases**:
+- **Multi-Homed Servers**: Systems with multiple NICs for different networks
+- **Policy Routing**: Network policies requiring specific source IPs
+- **Firewall Compliance**: Matching firewall rules that filter by source address
+- **Load Distribution**: Distributing outbound traffic across multiple network links
+- **Network Testing**: Simulating traffic from specific network locations
+
+## DNS Configuration for Custom Resolution
+
+### Example 15: Corporate DNS for Internal Services
+
+Use corporate DNS servers to resolve internal hostnames:
+
+```bash
+# Server side: Use corporate DNS servers for internal service resolution
+nodepass "server://0.0.0.0:10101/internal-api.corp.local:8080?dns=10.0.0.53,10.0.1.53&mode=2&tls=1"
+
+# Client side: Use same DNS servers for consistent resolution
+nodepass "client://tunnel.corp.local:10101/127.0.0.1:8080?dns=10.0.0.53,10.0.1.53"
+```
+
+This configuration:
+- Uses corporate DNS servers (10.0.0.53 and 10.0.1.53) instead of public DNS
+- Resolves internal .corp.local domains that are not accessible via public DNS
+- Automatic failover to second DNS server if first fails
+- DNS results are cached for 5 minutes (default) to improve performance
+- Both server and client use consistent DNS configuration
+
+### Example 16: Privacy-Focused DNS Providers
+
+Use privacy-enhanced DNS providers for improved security:
+
+```bash
+# Server side: Use Cloudflare DNS (privacy-focused)
+nodepass "server://0.0.0.0:10101/api.example.com:443?dns=1.1.1.1,1.0.0.1&tls=1&log=info"
+
+# Client side: Use Quad9 DNS (malware blocking)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=9.9.9.9,149.112.112.112"
+```
+
+This setup:
+- Server uses Cloudflare DNS (1.1.1.1) known for privacy protection
+- Client uses Quad9 DNS (9.9.9.9) with built-in malware domain blocking
+- Multiple DNS servers provide redundancy
+- All DNS queries are encrypted via DNS-over-TLS when supported by resolvers
+
+### Example 17: Geographic DNS Optimization
+
+Select DNS servers geographically close to deployment for lower latency:
+
+```bash
+# Asia-Pacific region: Use Google DNS Asia servers
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=8.8.8.8,8.8.4.4&mode=2"
+
+# Europe: Use Cloudflare DNS
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=1.1.1.1,1.0.0.1&mode=2"
+
+# Custom region: Use local ISP DNS for best performance
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=203.0.113.1,203.0.113.2&mode=2"
+```
+
+This configuration:
+- Reduces DNS lookup latency by using geographically proximate servers
+- Improves initial connection establishment time
+- Works with any DNS server accessible via UDP port 53
+
+### Example 18: IPv6 DNS Configuration
+
+Configure IPv6 DNS servers for IPv6-enabled networks:
+
+```bash
+# Server side: Use IPv6 DNS servers (Cloudflare and Google)
+nodepass "server://[::]:10101/ipv6.example.com:8080?dns=2606:4700:4700::1111,2001:4860:4860::8888&mode=2&tls=1"
+
+# Client side: Mixed IPv4 and IPv6 DNS servers
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=1.1.1.1,2606:4700:4700::1111"
+```
+
+This setup:
+- Server listens on all IPv6 interfaces using [::]
+- Uses IPv6 DNS servers for native IPv6 resolution
+- Mixed IPv4/IPv6 DNS configuration provides maximum compatibility
+- Automatically selects IPv4 or IPv6 addresses based on connection type
+
+### Example 19: DNS Caching Tuning for Different Environments
+
+Adjust DNS cache TTL for optimal performance:
+
+```bash
+# Production: Stable DNS, longer cache TTL (30 minutes)
+export NP_DNS_CACHING_TTL=30m
+nodepass "server://0.0.0.0:10101/stable.backend.com:8080?dns=1.1.1.1,8.8.8.8&tls=1"
+
+# Development: Dynamic DNS, shorter cache TTL (1 minute)
+export NP_DNS_CACHING_TTL=1m
+nodepass "server://0.0.0.0:10101/dev.backend.local:8080?dns=10.0.0.53&tls=0&log=debug"
+```
+
+This configuration:
+- **Production (30m TTL)**: Maximizes cache efficiency for stable environments
+- **Development (1m TTL)**: Quick DNS updates for rapidly changing configurations
+- Background refresh at 80% of TTL ensures smooth transitions
+
+**DNS Configuration Use Cases**:
+- **Corporate Networks**: Resolve internal hostnames via corporate DNS infrastructure
+- **Privacy Enhancement**: Use privacy-focused DNS providers (1.1.1.1, 9.9.9.9)
+- **Geographic Optimization**: Reduce latency with regionally proximate DNS servers
+- **Development/Testing**: Quick DNS updates with short TTL in dynamic environments
+- **High Availability**: Multiple DNS servers provide redundancy and failover
+- **Compliance**: Meet regulatory requirements for DNS provider selection
 
 ## High Availability and Load Balancing
 
-### Example 14: Multi-Backend Server Load Balancing
+### Example 20: Multi-Backend Server Load Balancing
 
 Use target address groups for even traffic distribution and automatic failover:
 
@@ -255,7 +387,7 @@ This configuration:
 - Automatically resumes sending traffic to recovered servers
 - Uses TLS encryption to secure the tunnel
 
-### Example 15: Database Primary-Replica Failover
+### Example 21: Database Primary-Replica Failover
 
 Configure primary and replica database instances for high availability access:
 
@@ -270,7 +402,7 @@ This setup:
 - Application requires no modification for transparent failover
 - Logs only warnings and errors to reduce output
 
-### Example 16: API Gateway Backend Pool
+### Example 22: API Gateway Backend Pool
 
 Configure multiple backend service instances for an API gateway:
 
@@ -288,7 +420,7 @@ This configuration:
 - Client limits bandwidth to 100 Mbps with maximum 2000 concurrent connections
 - Single instance failure doesn't affect overall service availability
 
-### Example 17: Geo-Distributed Services
+### Example 23: Geo-Distributed Services
 
 Configure multi-region service nodes to optimize network latency:
 
@@ -312,7 +444,7 @@ This setup:
 
 ## PROXY Protocol Integration
 
-### Example 18: Load Balancer Integration with PROXY Protocol
+### Example 24: Load Balancer Integration with PROXY Protocol
 
 Enable PROXY protocol support for integration with load balancers and reverse proxies:
 
@@ -331,7 +463,7 @@ This configuration:
 - Compatible with HAProxy, Nginx, and other PROXY protocol aware services
 - Useful for maintaining accurate access logs and IP-based access controls
 
-### Example 19: Reverse Proxy Support for Web Applications
+### Example 25: Reverse Proxy Support for Web Applications
 
 Enable web applications behind NodePass to receive original client information:
 
@@ -355,7 +487,7 @@ This setup:
 - Supports compliance requirements for connection auditing
 - Works with web servers that support PROXY protocol (Nginx, HAProxy, etc.)
 
-### Example 20: Database Access with Client IP Preservation
+### Example 26: Database Access with Client IP Preservation
 
 Maintain client IP information for database access logging and security:
 
@@ -382,7 +514,7 @@ Benefits:
 
 ## Container Deployment
 
-### Example 21: Containerized NodePass
+### Example 27: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -417,7 +549,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 22: Centralized Management
+### Example 28: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -454,7 +586,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 23: Custom API Prefix
+### Example 29: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
@@ -473,7 +605,7 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
-### Example 24: Real-time Connection and Traffic Monitoring
+### Example 30: Real-time Connection and Traffic Monitoring
 
 Monitor instance connection counts and traffic statistics through the master API:
 
@@ -510,6 +642,120 @@ This monitoring setup provides:
 - **Performance analysis**: Evaluate system load through connection and traffic data
 - **Capacity planning**: Resource planning based on historical connection data
 - **Troubleshooting**: Abnormal connection count changes may indicate network issues
+
+## QUIC Transport Protocol
+
+### Example 31: QUIC-based Tunnel with Stream Multiplexing
+
+Use QUIC protocol for connection pooling with improved performance in high-latency networks:
+
+```bash
+# Server side: Enable QUIC transport
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+
+# Client side: Automatically receives QUIC configuration from server
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
+```
+
+This configuration:
+- Uses QUIC protocol for UDP-based multiplexed streams
+- Single QUIC connection carries multiple concurrent data streams
+- Mandatory TLS 1.3 encryption (automatically enabled)
+- Better performance in packet loss scenarios (no head-of-line blocking)
+- Improved connection establishment with 0-RTT support
+- Client automatically receives QUIC configuration from server during handshake
+
+### Example 32: QUIC with Custom TLS Certificate
+
+Deploy QUIC tunnel with verified certificates for production:
+
+```bash
+# Server side: QUIC with custom certificate
+nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+
+# Client side: Automatically receives QUIC configuration with certificate verification
+nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
+```
+
+This setup:
+- Uses verified TLS certificates for highest security
+- QUIC protocol provides mandatory TLS 1.3 encryption
+- Suitable for production environments
+- Full certificate validation on client side
+- QUIC configuration automatically delivered from server
+
+### Example 33: QUIC for Mobile/High-Latency Networks
+
+Optimize for mobile networks or satellite connections:
+
+```bash
+# Server side: QUIC with adaptive pool sizing
+nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+
+# Client side: Automatically receives QUIC, configure larger minimum pool for mobile
+nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
+```
+
+This configuration:
+- QUIC's UDP-based transport works better through NATs
+- Larger pool size compensates for network transitions
+- Stream multiplexing reduces connection overhead
+- Better handling of packet loss and jitter
+- 0-RTT reconnection for faster recovery after network changes
+- Client automatically adopts QUIC from server
+
+### Example 34: QUIC vs TCP Pool Performance Comparison
+
+Side-by-side comparison of QUIC and TCP pools:
+
+```bash
+# Traditional TCP pool (default)
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
+
+# QUIC pool (modern approach)
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
+```
+
+**TCP Pool Advantages**:
+- Wider compatibility with network infrastructure
+- Established protocol with predictable behavior
+- Better support in some enterprise environments
+
+**QUIC Pool Advantages**:
+- Reduced latency with 0-RTT connection resumption
+- No head-of-line blocking across streams
+- Better congestion control and loss recovery
+- Improved NAT traversal capabilities
+- Single UDP socket reduces resource usage
+
+### Example 35: QUIC for Real-Time Applications
+
+Configure QUIC tunnel for gaming, VoIP, or video streaming:
+
+```bash
+# Server side: QUIC with optimized settings for real-time traffic
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+
+# Client side: Automatically receives QUIC configuration from server
+nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
+```
+
+This setup:
+- QUIC's stream-level flow control prevents interference between flows
+- Lower latency compared to TCP pools in lossy networks
+- 30-second read timeout for quick detection of stale connections
+- Large slot limit supports many concurrent players/streams
+- Reduced connection establishment overhead
+- Client automatically adopts server's QUIC configuration
+
+**QUIC Use Case Summary**:
+- **Mobile Networks**: Better handling of network transitions and packet loss
+- **High-Latency Links**: Reduced overhead from 0-RTT and multiplexing
+- **Real-Time Apps**: Stream independence prevents head-of-line blocking
+- **NAT-Heavy Environments**: UDP-based protocol traverses NATs more reliably
+- **Concurrent Streams**: Efficient bandwidth sharing across parallel flows
 
 ## Next Steps
 

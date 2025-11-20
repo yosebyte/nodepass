@@ -1353,7 +1353,7 @@ func (m *Master) regenerateAPIKey(instance *Instance) {
 func (m *Master) processInstanceAction(instance *Instance, action string) {
 	switch action {
 	case "start":
-		if instance.Status != "running" {
+		if instance.Status == "stopped" {
 			go m.startInstance(instance)
 		}
 	case "stop":
@@ -1556,7 +1556,7 @@ func (m *Master) startInstance(instance *Instance) {
 	// 获取最新实例状态
 	if value, exists := m.instances.Load(instance.ID); exists {
 		instance = value.(*Instance)
-		if instance.Status == "running" {
+		if instance.Status != "stopped" {
 			return
 		}
 	}
@@ -1785,12 +1785,21 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: min, mode, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, min, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		if query.Get("dns") == "" {
+			query.Set("dns", defaultDNSIPs)
+		}
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("quic") == "" {
+			query.Set("quic", defaultQuicMode)
+		}
+		if query.Get("dial") == "" {
+			query.Set("dial", defaultDialerIP)
 		}
 		if query.Get("read") == "" {
 			query.Set("read", defaultReadTimeout.String())
@@ -1811,12 +1820,21 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: max, mode, read, rate, slot, proxy, notcp, noudp
+		// server参数: dns, max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		if query.Get("dns") == "" {
+			query.Set("dns", defaultDNSIPs)
+		}
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
 		}
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
+		}
+		if query.Get("quic") == "" {
+			query.Set("quic", defaultQuicMode)
+		}
+		if query.Get("dial") == "" {
+			query.Set("dial", defaultDialerIP)
 		}
 		if query.Get("read") == "" {
 			query.Set("read", defaultReadTimeout.String())

@@ -7,29 +7,40 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 其中：
-- `<core>`：指定操作模式（`server`、`client`或`master`）
-- `<tunnel_addr>`：控制通道通信的隧道端点地址
-- `<target_addr>`：业务数据的目标地址，支持双向模式（或在master模式下的API前缀）
+- `<core>`：指定运行模式（`server`、`client` 或 `master`）
+- `<tunnel_addr>`：用于控制通道通信的隧道端点地址
+- `<target_addr>`：支持双向流的业务数据目标地址（或主控模式下的API前缀）
 
-### 查询参数说明
+### 查询参数
 
 通用查询参数：
-- `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error`或`event`）
+- `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error` 或 `event`）
+- `dns=<dns_servers>`：自定义DNS服务器（逗号分隔的IP地址，默认：`1.1.1.1,8.8.8.8`）
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
-- `max=<max_pool>`：最大连接池容量（默认：1024，服务端设置并传递给客户端）
-- `mode=<run_mode>`：运行模式控制（`0`、`1`或`2`）- 控制操作行为
-- `read=<timeout>`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
+- `max=<max_pool>`：最大连接池容量（默认：1024，由服务端设置并下发给客户端）
+- `mode=<run_mode>`：运行模式控制（`0`、`1` 或 `2`）- 控制操作行为
+- `quic=<quic_mode>`：QUIC传输模式（`0`为TCP连接池，`1`为QUIC UDP连接池，默认：0，仅服务端配置）
+- `dial=<source_ip>`：出站连接的源IP地址（默认：`auto`，支持IPv4和IPv6）
+- `read=<timeout>`：数据读取超时时长（默认：0，支持时间单位如30s、5m、1h等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `slot=<limit>`：最大并发连接数限制（默认：65536，0表示无限制）
 - `proxy=<mode>`：PROXY协议支持（默认：`0`，`1`启用PROXY协议v1头部传输）
+- `notcp=<0|1>`：TCP支持控制（默认：`0`启用，`1`禁用）
+- `noudp=<0|1>`：UDP支持控制（默认：`0`启用，`1`禁用）
 
 TLS相关参数（仅适用于server/master模式）：
-- `tls=<mode>`：数据通道的TLS安全级别（`0`、`1`或`2`）
+- `tls=<mode>`：数据通道的TLS安全级别（`0`、`1` 或 `2`）
 - `crt=<cert_file>`：证书文件路径（当`tls=2`时）
 - `key=<key_file>`：私钥文件路径（当`tls=2`时）
+
+QUIC传输协议（仅服务端模式）：
+- `quic=<mode>`：QUIC传输模式（`0`为TCP连接池，`1`为QUIC UDP连接池，默认：0）
+  - 服务端配置在握手时自动下发给客户端
+  - 客户端无需指定quic参数
 
 ## 运行模式
 
@@ -40,7 +51,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### 参数
@@ -48,6 +59,11 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `dns`：自定义DNS服务器（逗号分隔的IP地址，默认：1.1.1.1,8.8.8.8）
+- `quic`：QUIC传输模式 (0, 1)
+  - `0`：使用基于TCP的连接池（默认）
+  - `1`：使用基于QUIC的UDP连接池，支持流多路复用
+  - 配置在握手时自动下发给客户端
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
   - `1`：自签名证书（自动生成）
@@ -59,9 +75,13 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果不可用则回退
   - `1`：强制反向模式 - 服务器本地绑定目标地址并接收流量
   - `2`：强制正向模式 - 服务器连接到远程目标地址
-- `read`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
-- `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `dial`：连接目标的出站源IP地址（默认：`auto`为系统选择的IP）
+- `read`：数据读取超时时间（默认：0，支持时间单位如 30s、30m、1h 等）
+- `rate`：带宽速率限制（默认：0，表示无限制）
+- `slot`：最大并发连接数限制（默认：65536，0表示无限制）
 - `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
+- `notcp`：TCP支持控制（默认：`0`启用，`1`禁用）
+- `noudp`：UDP支持控制（默认：`0`启用，`1`禁用）
 
 #### 服务端模式工作原理
 
@@ -94,6 +114,12 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 
 # 强制正向模式，自定义证书
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# QUIC传输，自动启用TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&mode=2"
+
+# QUIC传输，使用自定义证书
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### 客户端模式
@@ -101,7 +127,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<dns_servers>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### 参数
@@ -109,14 +135,21 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
+- `dns`：自定义DNS服务器（逗号分隔的IP地址，默认：1.1.1.1,8.8.8.8）
 - `min`：最小连接池容量（默认：64）
 - `mode`：客户端行为的运行模式控制
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式
   - `1`：强制单端转发模式 - 带连接池的本地代理
   - `2`：强制双端握手模式 - 需要服务器协调
+- `dial`：连接目标的出站源IP地址（默认：`auto`为系统选择的IP）
 - `read`：数据读取超时时间（默认：0，支持时间单位如30s、5m、1h等）
 - `rate`：带宽速率限制，单位Mbps（默认：0表示无限制）
+- `slot`：最大并发连接数限制（默认：65536，0表示无限制）
 - `proxy`：PROXY协议支持（默认：`0`，`1`在数据传输前启用PROXY协议v1头部）
+- `notcp`：TCP支持控制（默认：`0`启用，`1`禁用）
+- `noudp`：UDP支持控制（默认：`0`启用，`1`禁用）
+
+**注意**：QUIC传输配置在握手时自动从服务器接收。客户端无需指定`quic`参数。
 
 #### 客户端模式工作原理
 
@@ -166,6 +199,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 
 # 资源受限配置 - 小型连接池
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
+
+# 客户端自动从服务器接收QUIC配置（无需quic参数）
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
+
+# 实时应用客户端（从服务器获取QUIC配置）
+nodepass "client://server.example.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 ### 主控模式 (API)

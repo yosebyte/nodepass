@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 Where:
@@ -19,17 +19,28 @@ Where:
 
 Common query parameters:
 - `log=<level>`: Log verbosity level (`none`, `debug`, `info`, `warn`, `error`, or `event`)
+- `dns=<dns_servers>`: Custom DNS servers (comma-separated IP addresses, default: `1.1.1.1,8.8.8.8`)
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
+- `quic=<quic_mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0, server-side only)
+- `dial=<source_ip>`: Source IP address for outbound connections (default: `auto`, supports both IPv4 and IPv6)
 - `read=<timeout>`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
+- `slot=<limit>`: Maximum concurrent connection limit (default: 65536, 0 for unlimited)
 - `proxy=<mode>`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header transmission)
+- `notcp=<0|1>`: TCP support control (default: `0` enabled, `1` disabled)
+- `noudp=<0|1>`: UDP support control (default: `0` enabled, `1` disabled)
 
 TLS-related parameters (server/master modes only):
 - `tls=<mode>`: TLS security level for data channels (`0`, `1`, or `2`)
 - `crt=<cert_file>`: Path to certificate file (when `tls=2`)
 - `key=<key_file>`: Path to private key file (when `tls=2`)
+
+QUIC transport protocol (server mode only):
+- `quic=<mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0)
+  - Server configuration is automatically delivered to client during handshake
+  - Client does not need to specify quic parameter
 
 ## Operating Modes
 
@@ -40,7 +51,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&max=<max_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### Parameters
@@ -48,6 +59,11 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`: Address for the TCP tunnel endpoint (control channel) that clients will connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `dns`: Custom DNS servers (comma-separated IP addresses, default: 1.1.1.1,8.8.8.8)
+- `quic`: QUIC transport mode (0, 1)
+  - `0`: Use TCP-based connection pool (default)
+  - `1`: Use QUIC-based UDP connection pool with stream multiplexing
+  - Configuration is automatically delivered to client during handshake
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
   - `1`: Self-signed certificate (automatically generated)
@@ -59,9 +75,13 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
   - `0`: Automatic detection (default) - attempts local binding first, falls back if unavailable
   - `1`: Force reverse mode - server binds to target address locally and receives traffic
   - `2`: Force forward mode - server connects to remote target address
+- `dial`: Source IP address for outbound connections to target (default: `auto` for system-selected IP)
 - `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
+- `slot`: Maximum concurrent connection limit (default: 65536, 0 means unlimited)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
+- `notcp`: TCP support control (default: `0` enabled, `1` disabled)
+- `noudp`: UDP support control (default: `0` enabled, `1` disabled)
 
 #### How Server Mode Works
 
@@ -94,6 +114,12 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 
 # Force forward mode with custom certificate
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# QUIC transport with automatic TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&mode=2"
+
+# QUIC with custom certificate
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 ```
 
 ### Client Mode
@@ -101,7 +127,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<run_mode>&read=<timeout>&rate=<mbps>&proxy=<mode>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<dns_servers>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### Parameters
@@ -109,14 +135,21 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&min=<min_pool>&mode=<
 - `tunnel_addr`: Address of the NodePass server's tunnel endpoint to connect to (e.g., 10.1.0.1:10101)
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 127.0.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
+- `dns`: Custom DNS servers (comma-separated IP addresses, default: 1.1.1.1,8.8.8.8)
 - `min`: Minimum connection pool capacity (default: 64)
 - `mode`: Run mode control for client behavior
   - `0`: Automatic detection (default) - attempts local binding first, falls back to handshake mode
   - `1`: Force single-end forwarding mode - local proxy with connection pooling
   - `2`: Force dual-end handshake mode - requires server coordination
+- `dial`: Source IP address for outbound connections to target (default: `auto` for system-selected IP)
 - `read`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate`: Bandwidth rate limit (default: 0 means no limit)
+- `slot`: Maximum concurrent connection limit (default: 65536, 0 means unlimited)
 - `proxy`: PROXY protocol support (default: `0`, `1` enables PROXY protocol v1 header before data transfer)
+- `notcp`: TCP support control (default: `0` enabled, `1` disabled)
+- `noudp`: UDP support control (default: `0` enabled, `1` disabled)
+
+**Note**: QUIC transport configuration is automatically received from the server during handshake. Clients do not need to specify the `quic` parameter.
 
 #### How Client Mode Works
 
@@ -166,6 +199,12 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 
 # Resource-constrained configuration - Small connection pool
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
+
+# Client automatically receives QUIC configuration from server (no quic parameter needed)
+nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
+
+# Client for real-time applications (QUIC config from server)
+nodepass "client://server.example.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
 ### Master Mode (API)

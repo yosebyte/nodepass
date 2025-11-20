@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
+	"github.com/NodePassProject/quic"
 )
 
 // Server 实现服务端模式功能
@@ -62,9 +64,10 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: server://%v@%v/%v?max=%v&mode=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(),
-			s.maxPoolCapacity, s.runMode, s.readTimeout, s.rateLimit/125000, s.slotLimit, s.proxyProtocol, s.disableTCP, s.disableUDP)
+		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), strings.Join(s.dnsIPs, ","), s.maxPoolCapacity,
+			s.runMode, s.quicMode, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
+			s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}
 	logInfo("Server started")
 
@@ -142,13 +145,28 @@ func (s *Server) start() error {
 	}
 
 	// 初始化隧道连接池
-	s.tunnelPool = pool.NewServerPool(
-		s.maxPoolCapacity,
-		s.clientIP,
-		s.tlsConfig,
-		s.tunnelListener,
-		reportInterval)
-	go s.tunnelPool.ServerManager()
+	switch s.quicMode {
+	case "0":
+		tcpPool := pool.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go tcpPool.ServerManager()
+		s.tunnelPool = tcpPool
+	case "1":
+		udpPool := quic.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelUDPAddr.String(),
+			reportInterval)
+		go udpPool.ServerManager()
+		s.tunnelPool = udpPool
+	default:
+		return fmt.Errorf("start: unknown quic mode: %s", s.quicMode)
+	}
 
 	// 判断数据流向
 	if s.dataFlow == "-" {
@@ -236,6 +254,7 @@ func (s *Server) tunnelHandshake() error {
 	// 发送客户端配置
 	tunnelURL := &url.URL{
 		Scheme:   "np",
+		User:     url.User(s.quicMode),
 		Host:     strconv.Itoa(s.maxPoolCapacity),
 		Path:     s.dataFlow,
 		Fragment: s.tlsCode,
