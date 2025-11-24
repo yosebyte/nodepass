@@ -156,7 +156,11 @@ func (c *Client) commonStart() error {
 			c.tlsCode,
 			c.tunnelName,
 			func() (net.Conn, error) {
-				return net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
+				tcpAddr, err := c.getTunnelTCPAddr()
+				if err != nil {
+					return nil, err
+				}
+				return net.DialTimeout("tcp", tcpAddr.String(), tcpDialTimeout)
 			})
 		go tcpPool.ClientManager()
 		c.tunnelPool = tcpPool
@@ -169,7 +173,13 @@ func (c *Client) commonStart() error {
 			reportInterval,
 			c.tlsCode,
 			c.tunnelName,
-			c.tunnelUDPAddr.String())
+			func() (string, error) {
+				udpAddr, err := c.getTunnelUDPAddr()
+				if err != nil {
+					return "", err
+				}
+				return udpAddr.String(), nil
+			})
 		go udpPool.ClientManager()
 		c.tunnelPool = udpPool
 	default:
@@ -194,7 +204,11 @@ func (c *Client) commonStart() error {
 // tunnelHandshake 与隧道服务端进行握手
 func (c *Client) tunnelHandshake() error {
 	// 建立隧道TCP连接
-	tunnelTCPConn, err := net.DialTimeout("tcp", c.tunnelTCPAddr.String(), tcpDialTimeout)
+	tunnelTCPAddr, err := c.getTunnelTCPAddr()
+	if err != nil {
+		return fmt.Errorf("tunnelHandshake: getTunnelTCPAddr failed: %w", err)
+	}
+	tunnelTCPConn, err := net.DialTimeout("tcp", tunnelTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: dialTimeout failed: %w", err)
 	}
