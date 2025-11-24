@@ -41,8 +41,10 @@ type Common struct {
 	dialerIP         string             // 拨号本地IP
 	dialerFallback   uint32             // 拨号回落标志
 	tunnelKey        string             // 隧道密钥
+	tunnelAddr       string             // 原始隧道地址
 	tunnelTCPAddr    *net.TCPAddr       // 隧道TCP地址
 	tunnelUDPAddr    *net.UDPAddr       // 隧道UDP地址
+	targetAddrs      []string           // 原始目标地址组
 	targetTCPAddrs   []*net.TCPAddr     // 目标TCP地址组
 	targetUDPAddrs   []*net.UDPAddr     // 目标UDP地址组
 	targetIdx        uint64             // 目标地址索引
@@ -278,6 +280,9 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 		return fmt.Errorf("getAddress: no valid tunnel address found")
 	}
 
+	// 保存原始隧道地址
+	c.tunnelAddr = tunnelAddr
+
 	// 解析隧道TCP地址
 	tcpAddr, err := c.resolveAddr("tcp", tunnelAddr)
 	if err != nil {
@@ -301,6 +306,7 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	addrList := strings.Split(targetAddr, ",")
 	tempTCPAddrs := make([]*net.TCPAddr, 0, len(addrList))
 	tempUDPAddrs := make([]*net.UDPAddr, 0, len(addrList))
+	tempRawAddrs := make([]string, 0, len(addrList))
 
 	for _, addr := range addrList {
 		addr = strings.TrimSpace(addr)
@@ -322,6 +328,7 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 
 		tempTCPAddrs = append(tempTCPAddrs, tcpAddr.(*net.TCPAddr))
 		tempUDPAddrs = append(tempUDPAddrs, udpAddr.(*net.UDPAddr))
+		tempRawAddrs = append(tempRawAddrs, addr)
 	}
 
 	if len(tempTCPAddrs) == 0 || len(tempUDPAddrs) == 0 || len(tempTCPAddrs) != len(tempUDPAddrs) {
@@ -329,6 +336,7 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	}
 
 	// 设置目标地址组
+	c.targetAddrs = tempRawAddrs
 	c.targetTCPAddrs = tempTCPAddrs
 	c.targetUDPAddrs = tempUDPAddrs
 	c.targetIdx = 0
@@ -342,6 +350,48 @@ func (c *Common) getAddress(parsedURL *url.URL) error {
 	}
 
 	return nil
+}
+
+// getTunnelTCPAddr 动态解析隧道TCP地址
+func (c *Common) getTunnelTCPAddr() (*net.TCPAddr, error) {
+	addr, err := c.resolveAddr("tcp", c.tunnelAddr)
+	if err != nil {
+		return c.tunnelTCPAddr, err
+	}
+	return addr.(*net.TCPAddr), nil
+}
+
+// getTunnelUDPAddr 动态解析隧道UDP地址
+func (c *Common) getTunnelUDPAddr() (*net.UDPAddr, error) {
+	addr, err := c.resolveAddr("udp", c.tunnelAddr)
+	if err != nil {
+		return c.tunnelUDPAddr, err
+	}
+	return addr.(*net.UDPAddr), nil
+}
+
+// getTargetTCPAddr 动态解析指定索引的目标TCP地址
+func (c *Common) getTargetTCPAddr(idx int) (*net.TCPAddr, error) {
+	if idx < 0 || idx >= len(c.targetAddrs) {
+		return nil, fmt.Errorf("getTargetTCPAddr: index %d out of range", idx)
+	}
+	addr, err := c.resolveAddr("tcp", c.targetAddrs[idx])
+	if err != nil {
+		return c.targetTCPAddrs[idx], err
+	}
+	return addr.(*net.TCPAddr), nil
+}
+
+// getTargetUDPAddr 动态解析指定索引的目标UDP地址
+func (c *Common) getTargetUDPAddr(idx int) (*net.UDPAddr, error) {
+	if idx < 0 || idx >= len(c.targetAddrs) {
+		return nil, fmt.Errorf("getTargetUDPAddr: index %d out of range", idx)
+	}
+	addr, err := c.resolveAddr("udp", c.targetAddrs[idx])
+	if err != nil {
+		return c.targetUDPAddrs[idx], err
+	}
+	return addr.(*net.UDPAddr), nil
 }
 
 // getCoreType 获取核心类型
@@ -369,14 +419,26 @@ func (c *Common) nextTargetIdx() int {
 // dialWithRotation 轮询拨号到目标地址组
 func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Conn, error) {
 	var addrCount int
-	var getAddr func(int) string
+	var getAddr func(int) (string, error)
 
 	if network == "tcp" {
-		addrCount = len(c.targetTCPAddrs)
-		getAddr = func(i int) string { return c.targetTCPAddrs[i].String() }
+		addrCount = len(c.targetAddrs)
+		getAddr = func(i int) (string, error) {
+			addr, err := c.getTargetTCPAddr(i)
+			if err != nil {
+				return c.targetTCPAddrs[i].String(), nil
+			}
+			return addr.String(), nil
+		}
 	} else {
-		addrCount = len(c.targetUDPAddrs)
-		getAddr = func(i int) string { return c.targetUDPAddrs[i].String() }
+		addrCount = len(c.targetAddrs)
+		getAddr = func(i int) (string, error) {
+			addr, err := c.getTargetUDPAddr(i)
+			if err != nil {
+				return c.targetUDPAddrs[i].String(), nil
+			}
+			return addr.String(), nil
+		}
 	}
 
 	// 配置拨号器
@@ -402,14 +464,24 @@ func (c *Common) dialWithRotation(network string, timeout time.Duration) (net.Co
 
 	// 单目标地址：快速路径
 	if addrCount == 1 {
-		return tryDial(getAddr(0))
+		addr, err := getAddr(0)
+		if err != nil {
+			return nil, fmt.Errorf("dialWithRotation: getAddr failed: %w", err)
+		}
+		return tryDial(addr)
 	}
 
 	// 多目标地址：负载均衡 + 故障转移
 	startIdx := c.nextTargetIdx()
 	var lastErr error
 	for i := range addrCount {
-		conn, err := tryDial(getAddr((startIdx + i) % addrCount))
+		addr, err := getAddr((startIdx + i) % addrCount)
+		if err != nil {
+			c.logger.Warn("dialWithRotation: getAddr failed for index %d: %v", (startIdx+i)%addrCount, err)
+			lastErr = err
+			continue
+		}
+		conn, err := tryDial(addr)
 		if err == nil {
 			return conn, nil
 		}
@@ -671,7 +743,7 @@ func (c *Common) initTunnelListener() error {
 
 // initTargetListener 初始化目标监听器
 func (c *Common) initTargetListener() error {
-	if len(c.targetTCPAddrs) == 0 && len(c.targetUDPAddrs) == 0 {
+	if len(c.targetAddrs) == 0 {
 		return fmt.Errorf("initTargetListener: no target address")
 	}
 
@@ -1588,9 +1660,12 @@ func (c *Common) singleEventLoop() error {
 		now := time.Now()
 
 		// 尝试连接到目标地址
-		if conn, err := net.DialTimeout("tcp", c.targetTCPAddrs[c.nextTargetIdx()].String(), reportInterval); err == nil {
-			ping = int(time.Since(now).Milliseconds())
-			conn.Close()
+		idx := c.nextTargetIdx()
+		if targetAddr, err := c.getTargetTCPAddr(idx); err == nil {
+			if conn, err := net.DialTimeout("tcp", targetAddr.String(), reportInterval); err == nil {
+				ping = int(time.Since(now).Milliseconds())
+				conn.Close()
+			}
 		}
 
 		// 发送检查点事件
