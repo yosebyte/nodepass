@@ -7,7 +7,7 @@ NodePass创建一个带有未加密TCP控制通道的隧道，并为数据交换
 NodePass命令的一般语法是：
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 其中：
@@ -19,7 +19,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 
 通用查询参数：
 - `log=<level>`：日志详细级别（`none`、`debug`、`info`、`warn`、`error` 或 `event`）
-- `dns=<dns_servers>`：自定义DNS服务器（逗号分隔的IP地址，默认：`1.1.1.1,8.8.8.8`）
+- `dns=<duration>`：DNS缓存TTL持续时间（默认：`5m`，支持时间单位如`1h`、`30m`、`15s`等）
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
 - `max=<max_pool>`：最大连接池容量（默认：1024，由服务端设置并下发给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1` 或 `2`）- 控制操作行为
@@ -51,7 +51,7 @@ NodePass提供三种互补的运行模式，以适应各种部署场景。
 服务端模式建立隧道控制通道，并支持双向数据流转发。
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<dns_servers>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### 参数
@@ -59,7 +59,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `tunnel_addr`：TCP隧道端点地址（控制通道），客户端将连接到此处(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
-- `dns`：自定义DNS服务器（逗号分隔的IP地址，默认：1.1.1.1,8.8.8.8）
+- `dns`：DNS缓存TTL持续时间（默认：5m，支持时间单位如`1h`、`30m`、`15s`等）
 - `quic`：QUIC传输模式 (0, 1)
   - `0`：使用基于TCP的连接池（默认）
   - `1`：使用基于QUIC的UDP连接池，支持流多路复用
@@ -127,7 +127,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode
 客户端模式连接到NodePass服务端并支持双向数据流转发。
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<dns_servers>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<duration>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### 参数
@@ -135,7 +135,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<dns_servers>&qui
 - `tunnel_addr`：要连接的NodePass服务端隧道端点地址(例如, 10.1.0.1:10101)
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 127.0.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
-- `dns`：自定义DNS服务器（逗号分隔的IP地址，默认：1.1.1.1,8.8.8.8）
+- `dns`：DNS缓存TTL持续时间（默认：5m，支持时间单位如`1h`、`30m`、`15s`等）
 - `min`：最小连接池容量（默认：64）
 - `mode`：客户端行为的运行模式控制
   - `0`：自动检测（默认）- 首先尝试本地绑定，如果失败则回退到握手模式

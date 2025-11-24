@@ -65,7 +65,7 @@ API Key authentication is enabled by default, automatically generated and saved 
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=1.1.1.1,8.8.8.8&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
   "restart": true,
   "meta": {
     "peer": {
@@ -1116,7 +1116,7 @@ The instance object in API responses contains the following fields:
   "type": "server",           // Instance type: server or client
   "status": "running",        // Instance status: running, stopped, or error
   "url": "server://...",      // Instance configuration URL
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=1.1.1.1,8.8.8.8&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // Complete configuration URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
   "meta": {                   // Metadata for organization and peer tracking
     "peer": {
@@ -1581,7 +1581,7 @@ Examples:
 | `tls` | TLS encryption level | `0`(none), `1`(self-signed), `2`(certificate) | `0` | Server only |
 | `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None | Server only |
-| `dns` | Custom DNS servers | Comma-separated IP addresses | `1.1.1.1,8.8.8.8` | Both |
+| `dns` | DNS cache duration | Time duration (e.g., `5m`, `30s`, `1h`) | `5m` | Both |
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
 | `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |

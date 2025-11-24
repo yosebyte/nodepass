@@ -109,63 +109,59 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 
 ## DNS解析配置
 
-NodePass支持自定义DNS服务器配置，具有智能缓存功能，可提高性能和可靠性。内置DNS解析器提供后台刷新、自动故障转移和可配置的TTL管理。
+NodePass使用系统内置的DNS解析器，具有智能缓存功能，可提高性能和可靠性。DNS缓存减少了查询开销并防止解析延迟。
 
-- `dns`：自定义DNS服务器地址（默认：1.1.1.1,8.8.8.8）
-  - 以逗号分隔的IP地址列表（IPv4或IPv6）
-  - 多个DNS服务器提供自动故障转移和轮询负载均衡
-  - 列表中的无效IP地址会被记录并跳过
-  - 如果所有提供的DNS服务器都失败，系统会回退到操作系统默认DNS解析
-  - DNS解析使用专用端口（UDP端口53）进行所有查询
+- `dns`：DNS缓存TTL持续时间（默认：5m）
+  - 指定已解析的主机名在重新查询前缓存多长时间
+  - 接受时间持续时间格式：`1h`、`30m`、`15s`、`500ms`等
+  - 较长的TTL减少DNS查询开销，但可能缓存过时记录
+  - 较短的TTL确保更新的DNS数据，但增加查询频率
+  - 设置为`0`以禁用缓存（每次连接都查询DNS）
   - 适用于客户端和服务端模式，用于解析所有主机名
 
-**DNS解析器特性：**
-- **智能缓存**：已解析的主机名会使用可配置的TTL进行缓存，以减少DNS查询开销
-- **后台刷新**：缓存条目在过期前（TTL的80%时）会主动刷新，以防止查找延迟
-- **自动故障转移**：当DNS服务器失败时，自动尝试列表中的下一个服务器
-- **轮询分发**：DNS查询在配置的服务器之间分发以实现负载均衡
+**DNS缓存特性：**
+- **系统集成**：使用操作系统的原生DNS解析器以实现最大兼容性
+- **智能缓存**：已解析的主机名会使用可配置的TTL进行缓存，以减少查询开销
+- **自动过期**：缓存条目在TTL过期后自动删除
 - **IP地址绕过**：直接IP地址跳过DNS解析以获得最高效率
-- **协议感知**：根据连接要求自动选择IPv4或IPv6地址
+- **协议感知**：自动处理IPv4和IPv6地址
+- **线程安全**：并发DNS查找被安全地缓存并在连接之间共享
 
 示例：
 ```bash
-# 使用Cloudflare和Google DNS服务器（默认行为）
-nodepass "server://0.0.0.0:10101/example.com:8080?dns=1.1.1.1,8.8.8.8"
+# 使用默认5分钟缓存TTL
+nodepass "server://0.0.0.0:10101/example.com:8080"
 
-# 使用自定义DNS服务器（例如企业DNS）
-nodepass "server://0.0.0.0:10101/internal.example.com:8080?dns=10.0.0.53,10.0.1.53"
+# 为稳定域名设置1小时缓存TTL
+nodepass "server://0.0.0.0:10101/internal.example.com:8080?dns=1h"
 
-# 带有特定DNS配置的客户端
-nodepass "client://server.example.com:10101/database.local:3306?dns=192.168.1.1,192.168.1.2"
+# 为动态DNS设置30秒缓存TTL
+nodepass "client://server.example.com:10101/database.local:3306?dns=30s"
 
-# IPv6 DNS服务器
-nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=2606:4700:4700::1111,2001:4860:4860::8888"
+# 完全禁用DNS缓存（每次连接都查询）
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=0"
 
 # 与其他参数组合
-nodepass "server://0.0.0.0:10101/backend.example.com:8080?dns=1.1.1.1,8.8.8.8&log=info&tls=1&mode=2"
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?dns=10m&log=info&tls=1&mode=2"
 ```
 
 **DNS配置使用场景：**
-- **企业网络**：使用内部DNS服务器解析私有主机名
-- **地理优化**：选择地理位置接近部署的DNS服务器
-- **隐私增强**：使用注重隐私的DNS提供商（例如1.1.1.1、9.9.9.9）
-- **可靠性**：配置多个DNS服务器以实现高可用性
-- **合规性**：满足DNS提供商选择的监管要求
-- **测试**：为开发或暂存环境使用特定DNS服务器
-- **性能**：使用更近或更快的DNS服务器减少DNS查找延迟
+- **企业网络**：对稳定的内部主机名使用较长的TTL（例如1h）
+- **动态DNS**：对频繁变化的DNS记录使用较短的TTL（例如30s）
+- **高可用性**：较长的TTL减少DNS服务器负载并提高可靠性
+- **负载均衡**：较短的TTL使负载均衡服务能更快切换
+- **性能**：较长的TTL通过减少DNS查询来降低连接延迟
 
 **DNS缓存行为：**
-- 缓存TTL由`NP_DNS_CACHING_TTL`环境变量控制（默认：5分钟）
-- 后台刷新在TTL的80%时发生，以在不延迟的情况下保持新鲜数据
+- 缓存TTL通过`dns`查询参数配置（默认：5分钟）
 - 过期条目被删除，下次访问时执行新的查找
 - 缓存是每个实例的，不在NodePass进程之间共享
 - IP地址永远不会被缓存（直接使用，不需要DNS查找）
+- 系统DNS解析器用于所有主机名查找
 
 **重要说明：**
-- DNS服务器必须指定为IP地址，而不是主机名
-- 支持IPv4和IPv6 DNS服务器地址
-- DNS解析超时固定为每次查询5秒
-- 失败的DNS服务器在后续查询中会重试（没有永久黑名单）
+- 支持IPv4和IPv6地址
+- DNS解析超时由操作系统控制
 - 使用目标地址组时，每个地址独立解析
 - DNS解析适用于隧道地址和目标地址
 - 隧道地址DNS解析在启动时发生一次
@@ -571,7 +567,7 @@ NodePass支持通过URL查询参数进行灵活配置,不同参数在 server、c
 | `tls`     | TLS加密模式          | `0`               |   O    |   X    |   O    |
 | `crt`     | 自定义证书路径       | N/A               |   O    |   X    |   O    |
 | `key`     | 自定义密钥路径       | N/A               |   O    |   X    |   O    |
-| `dns`     | 自定义DNS服务器      | `1.1.1.1,8.8.8.8` |   O    |   O    |   X    |
+| `dns`     | DNS缓存TTL           | `5m`              |   O    |   O    |   X    |
 | `min`     | 最小连接池容量       | `64`              |   X    |   O    |   X    |
 | `max`     | 最大连接池容量       | `1024`            |   O    |   X    |   X    |
 | `mode`    | 运行模式控制         | `0`               |   O    |   O    |   X    |
@@ -606,7 +602,6 @@ NodePass支持通过URL查询参数进行灵活配置,不同参数在 server、c
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 16384 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_DNS_CACHING_TTL` | DNS缓存保质期 | 5m | `export NP_DNS_CACHING_TTL=10m` |
 | `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -651,33 +646,6 @@ NodePass支持通过URL查询参数进行灵活配置,不同参数在 server、c
   - 太小：容易导致信号丢失
   - 太大：内存使用增加
   - 推荐范围：1000-5000
-
-### DNS解析调优
-
-对于频繁进行主机名查找或动态DNS场景的应用：
-
-- `NP_DNS_CACHING_TTL`：DNS缓存保质期
-  - 控制已解析DNS条目在缓存中保留的时长
-  - 默认值(5m)在大多数场景下平衡了新鲜度和性能
-  - 对于稳定的DNS环境，增加此值以减少查询开销（例如15m、30m、1h）
-  - 对于需要新鲜查找的动态DNS环境，减小此值（例如1m、2m）
-  - 后台刷新在TTL的80%时进行，确保平滑过渡而不会出现查找延迟
-
-**DNS缓存最佳实践：**
-- **静态基础设施**：对于稳定的生产环境使用较长TTL（15m-1h）
-- **动态DNS**：对于频繁变化的主机名使用较短TTL（1m-5m）
-- **开发环境**：对于快速迭代和测试使用较短TTL（1m-2m）
-- **高流量服务**：在新鲜度和减少DNS服务器负载之间取得平衡
-- **地理分布**：设置TTL时考虑DNS传播延迟
-
-DNS调优示例：
-```bash
-# 稳定生产环境的长TTL
-export NP_DNS_CACHING_TTL=30m
-
-# 动态开发环境的短TTL
-export NP_DNS_CACHING_TTL=2m
-```
 
 ### UDP设置
 

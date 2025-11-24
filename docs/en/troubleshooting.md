@@ -245,15 +245,15 @@ This guide helps you diagnose and resolve common issues you might encounter when
 
 **Solutions**:
 
-1. **Verify DNS Configuration**
-   - Test DNS server reachability: `ping 1.1.1.1`
-   - Verify resolution works: `nslookup example.com 8.8.8.8`
-   - Ensure `dns` parameter contains valid IP addresses
+1. **Verify System DNS Configuration**
+   - Verify resolution works: `nslookup example.com`
+   - Check system's DNS settings (NodePass uses system resolver)
+   - Ensure network connectivity is working
 
 2. **Network Connectivity**
    - Check if firewall blocks UDP port 53
-   - Try alternative DNS: `dns=8.8.8.8,1.1.1.1` or `dns=223.5.5.5,119.29.29.29`
-   - Use internal DNS for corporate networks: `dns=10.0.0.1,8.8.8.8`
+   - Verify domain reachability
+   - Test with alternative domains to isolate issue
 
 ### DNS Caching Problems
 
@@ -262,12 +262,11 @@ This guide helps you diagnose and resolve common issues you might encounter when
 **Solutions**:
 
 1. **Adjust Cache TTL** (default 5 minutes)
-   - Dynamic environments: `export NP_DNS_CACHING_TTL=1m`
-   - Stable environments: `export NP_DNS_CACHING_TTL=30m`
-   - Restart NodePass after critical changes
+   - Dynamic environments: `dns=1m`
+   - Stable environments: `dns=30m`
 
 2. **Load Balancing Scenarios**
-   - Use shorter TTL: `export NP_DNS_CACHING_TTL=30s`
+   - Use shorter TTL: `dns=30s`
    - Or use IP addresses directly to bypass DNS caching
 
 ### DNS Performance Optimization
@@ -276,14 +275,15 @@ This guide helps you diagnose and resolve common issues you might encounter when
 
 **Solutions**:
 
-1. **Choose Appropriate DNS Servers**
-   - China: `dns=223.5.5.5,119.29.29.29`
-   - International: `dns=1.1.1.1,8.8.8.8`
-   - Use at least 2 DNS servers for redundancy
+1. **Optimize Cache TTL**
+   - Increase TTL for stable environments: `dns=1h`
+   - Reduce TTL for dynamic environments: `dns=1m`
+   - Balance between freshness and performance
 
 2. **Reduce DNS Queries**
    - Use IP addresses directly for performance-critical scenarios
-   - Increase TTL for stable environments: `export NP_DNS_CACHING_TTL=1h`
+   - Increase TTL for stable hostnames
+   - Pre-resolve addresses when possible
 
 ## Master API Issues
 

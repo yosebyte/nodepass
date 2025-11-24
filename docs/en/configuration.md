@@ -109,63 +109,59 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?mode=2"
 
 ## DNS Resolution Configuration
 
-NodePass supports custom DNS server configuration with intelligent caching for improved performance and reliability. The built-in DNS resolver provides background refresh, automatic failover, and configurable TTL management.
+NodePass uses the system's built-in DNS resolver with intelligent caching for improved performance and reliability. The DNS cache reduces query overhead and prevents resolution delays.
 
-- `dns`: Custom DNS server addresses (default: 1.1.1.1,8.8.8.8)
-  - Comma-separated list of IP addresses (IPv4 or IPv6)
-  - Multiple DNS servers provide automatic failover and round-robin load balancing
-  - Invalid IP addresses in the list are logged and skipped
-  - If all provided DNS servers fail, the system falls back to OS default DNS resolution
-  - DNS resolution uses a dedicated port (UDP port 53) for all queries
+- `dns`: DNS cache TTL duration (default: 5m)
+  - Specifies how long resolved hostnames are cached before re-querying
+  - Accepts time duration format: `1h`, `30m`, `15s`, `500ms`, etc.
+  - Longer TTL reduces DNS query overhead but may cache stale records
+  - Shorter TTL ensures fresher DNS data but increases query frequency
+  - Set to `0` to disable caching (always query DNS on every connection)
   - Applies to both client and server modes for resolving all hostnames
 
-**DNS Resolver Features:**
-- **Intelligent Caching**: Resolved hostnames are cached with configurable TTL to reduce DNS query overhead
-- **Background Refresh**: Cached entries are proactively refreshed before expiration (at 80% of TTL) to prevent lookup delays
-- **Automatic Failover**: When a DNS server fails, automatically tries the next server in the list
-- **Round-Robin Distribution**: DNS queries are distributed across configured servers for load balancing
+**DNS Cache Features:**
+- **System Integration**: Uses operating system's native DNS resolver for maximum compatibility
+- **Intelligent Caching**: Resolved hostnames are cached with configurable TTL to reduce query overhead
+- **Automatic Expiration**: Cached entries are automatically removed after TTL expires
 - **IP Address Bypass**: Direct IP addresses skip DNS resolution for maximum efficiency
-- **Protocol-Aware**: Automatically selects IPv4 or IPv6 addresses based on connection requirements
+- **Protocol-Aware**: Automatically handles both IPv4 and IPv6 addresses
+- **Thread-Safe**: Concurrent DNS lookups are safely cached and shared across connections
 
 Example:
 ```bash
-# Use Cloudflare and Google DNS servers (default behavior)
-nodepass "server://0.0.0.0:10101/example.com:8080?dns=1.1.1.1,8.8.8.8"
+# Use default 5-minute cache TTL
+nodepass "server://0.0.0.0:10101/example.com:8080"
 
-# Use custom DNS servers (e.g., corporate DNS)
-nodepass "server://0.0.0.0:10101/internal.example.com:8080?dns=10.0.0.53,10.0.1.53"
+# Set 1-hour cache TTL for stable domains
+nodepass "server://0.0.0.0:10101/internal.example.com:8080?dns=1h"
 
-# Client with specific DNS configuration
-nodepass "client://server.example.com:10101/database.local:3306?dns=192.168.1.1,192.168.1.2"
+# Set 30-second cache TTL for dynamic DNS
+nodepass "client://server.example.com:10101/database.local:3306?dns=30s"
 
-# IPv6 DNS servers
-nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=2606:4700:4700::1111,2001:4860:4860::8888"
+# Disable DNS caching entirely (query on every connection)
+nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=0"
 
 # Combined with other parameters
-nodepass "server://0.0.0.0:10101/backend.example.com:8080?dns=1.1.1.1,8.8.8.8&log=info&tls=1&mode=2"
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?dns=10m&log=info&tls=1&mode=2"
 ```
 
 **DNS Configuration Use Cases:**
-- **Corporate Networks**: Use internal DNS servers to resolve private hostnames
-- **Geographic Optimization**: Select DNS servers geographically close to your deployment
-- **Privacy Enhancement**: Use privacy-focused DNS providers (e.g., 1.1.1.1, 9.9.9.9)
-- **Reliability**: Configure multiple DNS servers for high availability
-- **Compliance**: Meet regulatory requirements for DNS provider selection
-- **Testing**: Use specific DNS servers for development or staging environments
-- **Performance**: Reduce DNS lookup latency with closer or faster DNS servers
+- **Corporate Networks**: Use longer TTL (e.g., 1h) for stable internal hostnames
+- **Dynamic DNS**: Use shorter TTL (e.g., 30s) for frequently changing DNS records
+- **High Availability**: Longer TTL reduces DNS server load and improves reliability
+- **Load Balancing**: Shorter TTL enables faster failover for load-balanced services
+- **Performance**: Longer TTL reduces connection latency by minimizing DNS queries
 
 **DNS Caching Behavior:**
-- Cache TTL is controlled by `NP_DNS_CACHING_TTL` environment variable (default: 5 minutes)
-- Background refresh occurs at 80% of TTL to maintain fresh data without delays
+- Cache TTL is configurable via the `dns` query parameter (default: 5 minutes)
 - Expired entries are removed and fresh lookups performed on next access
 - Cache is per-instance and not shared between NodePass processes
 - IP addresses are never cached (direct use, no DNS lookup needed)
+- System DNS resolver is used for all hostname lookups
 
 **Important Notes:**
-- DNS servers must be specified as IP addresses, not hostnames
-- Both IPv4 and IPv6 DNS server addresses are supported
-- DNS resolution timeout is fixed at 5 seconds per query
-- Failed DNS servers are retried in subsequent queries (no permanent blacklisting)
+- Both IPv4 and IPv6 addresses are supported
+- DNS resolution timeout is controlled by the operating system
 - When using target address groups, each address is resolved independently
 - DNS resolution applies to both tunnel addresses and target addresses
 - Tunnel address DNS resolution occurs once at startup
@@ -571,7 +567,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `tls`     | TLS encryption mode      | `0`               |   O    |   X    |   O    |
 | `crt`     | Custom certificate path  | N/A               |   O    |   X    |   O    |
 | `key`     | Custom key path          | N/A               |   O    |   X    |   O    |
-| `dns`     | Custom DNS servers       | `1.1.1.1,8.8.8.8` |   O    |   O    |   X    |
+| `dns`     | DNS cache TTL            | `5m`              |   O    |   O    |   X    |
 | `min`     | Minimum pool capacity    | `64`              |   X    |   O    |   X    |
 | `max`     | Maximum pool capacity    | `1024`            |   O    |   X    |   X    |
 | `mode`    | Run mode control         | `0`               |   O    |   O    |   X    |
@@ -606,7 +602,6 @@ NodePass behavior can be fine-tuned using environment variables. Below is the co
 | `NP_SEMAPHORE_LIMIT` | Signal channel buffer size | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | Buffer size for TCP data transfer | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | Buffer size for UDP packets | 16384 | `export NP_UDP_DATA_BUF_SIZE=16384` |
-| `NP_DNS_CACHING_TTL` | DNS cache time-to-live duration | 5m | `export NP_DNS_CACHING_TTL=10m` |
 | `NP_HANDSHAKE_TIMEOUT` | Timeout for handshake operations | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | Timeout for UDP read operations | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | Timeout for establishing TCP connections | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
@@ -651,33 +646,6 @@ The connection pool parameters are important settings for performance tuning in 
   - Too small: May cause signal loss
   - Too large: Increased memory usage
   - Recommended range: 1000-5000
-
-### DNS Resolution Tuning
-
-For applications with frequent hostname lookups or dynamic DNS scenarios:
-
-- `NP_DNS_CACHING_TTL`: DNS cache time-to-live duration
-  - Controls how long resolved DNS entries remain cached
-  - Default (5m) balances freshness and performance for most scenarios
-  - Increase for stable DNS environments to reduce query overhead (e.g., 15m, 30m, 1h)
-  - Decrease for dynamic DNS environments requiring fresh lookups (e.g., 1m, 2m)
-  - Background refresh at 80% of TTL ensures smooth transitions without lookup delays
-
-**DNS Caching Best Practices:**
-- **Static Infrastructure**: Use longer TTL (15m-1h) for stable production environments
-- **Dynamic DNS**: Use shorter TTL (1m-5m) for frequently changing hostnames
-- **Development**: Use shorter TTL (1m-2m) for rapid iteration and testing
-- **High-Traffic Services**: Balance between freshness and reduced DNS server load
-- **Geographic Distribution**: Consider DNS propagation delays when setting TTL
-
-Example DNS tuning:
-```bash
-# Long TTL for stable production environment
-export NP_DNS_CACHING_TTL=30m
-
-# Short TTL for dynamic development environment  
-export NP_DNS_CACHING_TTL=2m
-```
 
 ### UDP Settings
 

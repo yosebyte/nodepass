@@ -65,7 +65,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=1.1.1.1,8.8.8.8&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
   "restart": true,
   "meta": {
     "peer": {
@@ -1116,7 +1116,7 @@ API响应中的实例对象包含以下字段：
   "type": "server",           // 实例类型：server 或 client
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=1.1.1.1,8.8.8.8&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // 完整配置URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // 完整配置URL
   "restart": true,            // 自启动策略
   "meta": {                   // 用于组织和对端跟踪的元数据
     "peer": {
@@ -1581,7 +1581,7 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `tls` | TLS加密级别 | `0`(无), `1`(自签名), `2`(证书) | `0` | 仅服务端 |
 | `crt` | 证书路径 | 文件路径 | 无 | 仅服务端 |
 | `key` | 私钥路径 | 文件路径 | 无 | 仅服务端 |
-| `dns` | 自定义DNS服务器 | IP地址，逗号分隔 | `1.1.1.1,8.8.8.8` | 两者 |
+| `dns` | DNS缓存时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `5m` | 两者 |
 | `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端双端握手模式 |
 | `max` | 最大连接池容量 | 整数 > 0 | `1024` | 双端握手模式 |
 | `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
