@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -33,6 +32,7 @@ type Server struct {
 func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
 	server := &Server{
 		Common: Common{
+			parsedURL:  parsedURL,
 			tlsCode:    tlsCode,
 			tlsConfig:  tlsConfig,
 			logger:     logger,
@@ -54,7 +54,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
-	if err := server.initConfig(parsedURL); err != nil {
+	if err := server.initConfig(); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
 	}
 	server.initRateLimiter()
@@ -65,7 +65,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
 		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), strings.Join(s.dnsIPs, ","), s.maxPoolCapacity,
+			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), s.dnsCacheTTL, s.maxPoolCapacity,
 			s.runMode, s.quicMode, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
 			s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}

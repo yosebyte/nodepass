@@ -32,6 +32,7 @@ type Client struct {
 func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 	client := &Client{
 		Common: Common{
+			parsedURL:  parsedURL,
 			logger:     logger,
 			signalChan: make(chan string, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
@@ -52,7 +53,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		},
 		tunnelName: parsedURL.Hostname(),
 	}
-	if err := client.initConfig(parsedURL); err != nil {
+	if err := client.initConfig(); err != nil {
 		return nil, fmt.Errorf("newClient: initConfig failed: %w", err)
 	}
 	client.initRateLimiter()
@@ -63,7 +64,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
 		c.logger.Info("%v: client://%v@%v/%v?dns=%v&min=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), strings.Join(c.dnsIPs, ","), c.minPoolCapacity,
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), c.dnsCacheTTL, c.minPoolCapacity,
 			c.runMode, c.quicMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
 			c.proxyProtocol, c.disableTCP, c.disableUDP)
 	}
