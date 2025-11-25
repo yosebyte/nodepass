@@ -226,7 +226,7 @@ func (s *Server) tunnelHandshake() error {
 				bufReader := bufio.NewReader(rawConn)
 				peek, err := bufReader.Peek(4)
 				if err == nil && len(peek) == 4 && peek[3] == ' ' {
-					clientIP := rawConn.RemoteAddr().(*net.TCPAddr).IP.String()
+					clientIP := rawConn.RemoteAddr().(*net.TCPAddr).IP.String() + "\n"
 					if peek[0] == 'G' && peek[1] == 'E' && peek[2] == 'T' {
 						fmt.Fprintf(rawConn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(clientIP), clientIP)
 					} else {
