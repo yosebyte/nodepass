@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -33,6 +32,7 @@ type Server struct {
 func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
 	server := &Server{
 		Common: Common{
+			parsedURL:  parsedURL,
 			tlsCode:    tlsCode,
 			tlsConfig:  tlsConfig,
 			logger:     logger,
@@ -54,7 +54,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
-	if err := server.initConfig(parsedURL); err != nil {
+	if err := server.initConfig(); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
 	}
 	server.initRateLimiter()
@@ -65,7 +65,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
 		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), strings.Join(s.dnsIPs, ","), s.maxPoolCapacity,
+			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), s.dnsCacheTTL, s.maxPoolCapacity,
 			s.runMode, s.quicMode, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
 			s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}
@@ -182,76 +182,121 @@ func (s *Server) start() error {
 
 // tunnelHandshake 与客户端进行握手
 func (s *Server) tunnelHandshake() error {
-	// 接受隧道连接
-	for s.ctx.Err() == nil {
-		tunnelTCPConn, err := s.tunnelListener.Accept()
-		if err != nil {
-			s.logger.Error("tunnelHandshake: accept error: %v", err)
-			select {
-			case <-s.ctx.Done():
-				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-			case <-time.After(serviceCooldown):
-			}
-			continue
-		}
-
-		tunnelTCPConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
-
-		bufReader := bufio.NewReader(tunnelTCPConn)
-		rawTunnelKey, err := bufReader.ReadBytes('\n')
-		if err != nil {
-			s.logger.Warn("tunnelHandshake: handshake timeout: %v", tunnelTCPConn.RemoteAddr())
-			tunnelTCPConn.Close()
-			select {
-			case <-s.ctx.Done():
-				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-			case <-time.After(serviceCooldown):
-			}
-			continue
-		}
-
-		tunnelTCPConn.SetReadDeadline(time.Time{})
-
-		// 解码隧道密钥
-		tunnelKeyData, err := s.decode(rawTunnelKey)
-		if err != nil {
-			s.logger.Warn("tunnelHandshake: decode tunnel key failed: %v", tunnelTCPConn.RemoteAddr())
-			tunnelTCPConn.Close()
-			select {
-			case <-s.ctx.Done():
-				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-			case <-time.After(serviceCooldown):
-			}
-			continue
-		}
-		tunnelKey := string(tunnelKeyData)
-
-		if tunnelKey != s.tunnelKey {
-			s.logger.Warn("tunnelHandshake: access denied: %v", tunnelTCPConn.RemoteAddr())
-			tunnelTCPConn.Close()
-			select {
-			case <-s.ctx.Done():
-				return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-			case <-time.After(serviceCooldown):
-			}
-			continue
-		}
-
-		s.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-		s.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: s.tunnelTCPConn, Timeout: 3 * reportInterval})
-		s.tunnelTCPConn.SetKeepAlive(true)
-		s.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
-
-		// 记录客户端IP
-		s.clientIP = s.tunnelTCPConn.RemoteAddr().(*net.TCPAddr).IP.String()
-		break
+	type handshakeResult struct {
+		conn      *net.TCPConn
+		bufReader *bufio.Reader
+		clientIP  string
 	}
 
-	if s.ctx.Err() != nil {
+	successChan := make(chan handshakeResult, 1)
+	closeChan := make(chan struct{})
+	var wg sync.WaitGroup
+
+	go func() {
+		for {
+			select {
+			case <-closeChan:
+				return
+			default:
+			}
+
+			// 接受隧道连接
+			rawConn, err := s.tunnelListener.Accept()
+			if err != nil {
+				select {
+				case <-closeChan:
+					return
+				default:
+					continue
+				}
+			}
+
+			// 并发处理握手
+			wg.Add(1)
+			go func(rawConn net.Conn) {
+				defer wg.Done()
+
+				select {
+				case <-closeChan:
+					rawConn.Close()
+					return
+				default:
+				}
+
+				bufReader := bufio.NewReader(rawConn)
+				peek, err := bufReader.Peek(4)
+				if err == nil && len(peek) == 4 && peek[3] == ' ' {
+					clientIP := rawConn.RemoteAddr().(*net.TCPAddr).IP.String() + "\n"
+					if peek[0] == 'G' && peek[1] == 'E' && peek[2] == 'T' {
+						fmt.Fprintf(rawConn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(clientIP), clientIP)
+					} else {
+						fmt.Fprint(rawConn, "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+					}
+					rawConn.Close()
+					return
+				}
+
+				// 读取隧道密钥
+				rawConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
+				rawTunnelKey, err := bufReader.ReadBytes('\n')
+				if err != nil {
+					s.logger.Warn("tunnelHandshake: read timeout: %v", rawConn.RemoteAddr())
+					rawConn.Close()
+					return
+				}
+				rawConn.SetReadDeadline(time.Time{})
+
+				// 解码隧道密钥
+				tunnelKeyData, err := s.decode(rawTunnelKey)
+				if err != nil {
+					s.logger.Warn("tunnelHandshake: decode failed: %v", rawConn.RemoteAddr())
+					rawConn.Close()
+					return
+				}
+
+				// 验证隧道密钥
+				if string(tunnelKeyData) != s.tunnelKey {
+					s.logger.Warn("tunnelHandshake: access denied: %v", rawConn.RemoteAddr())
+					rawConn.Close()
+					return
+				}
+
+				tcpConn := rawConn.(*net.TCPConn)
+				tcpConn.SetKeepAlive(true)
+				tcpConn.SetKeepAlivePeriod(reportInterval)
+
+				// 返回握手结果
+				select {
+				case successChan <- handshakeResult{
+					conn:      tcpConn,
+					bufReader: bufio.NewReader(&conn.TimeoutReader{Conn: tcpConn, Timeout: 3 * reportInterval}),
+					clientIP:  tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(),
+				}:
+					close(closeChan)
+				case <-closeChan:
+					rawConn.Close()
+				}
+			}(rawConn)
+		}
+	}()
+
+	// 阻塞等待握手结果
+	var result handshakeResult
+	select {
+	case result = <-successChan:
+		wg.Wait()
+	case <-s.ctx.Done():
+		close(closeChan)
+		wg.Wait()
 		return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
 	}
 
-	// 发送客户端配置
+	// 保存握手结果
+	s.tunnelTCPConn = result.conn
+	s.bufReader = result.bufReader
+	s.clientIP = result.clientIP
+
+	// 构建隧道配置信息
 	tunnelURL := &url.URL{
 		Scheme:   "np",
 		User:     url.User(s.quicMode),
@@ -260,6 +305,7 @@ func (s *Server) tunnelHandshake() error {
 		Fragment: s.tlsCode,
 	}
 
+	// 发送隧道配置信息
 	_, err := s.tunnelTCPConn.Write(s.encode([]byte(tunnelURL.String())))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)

@@ -263,113 +263,93 @@ This setup:
 - **Load Distribution**: Distributing outbound traffic across multiple network links
 - **Network Testing**: Simulating traffic from specific network locations
 
-## DNS Configuration for Custom Resolution
+## DNS Cache TTL Configuration
 
-### Example 15: Corporate DNS for Internal Services
+### Example 15: Stable Corporate Network
 
-Use corporate DNS servers to resolve internal hostnames:
+Use longer TTL for stable internal services:
 
 ```bash
-# Server side: Use corporate DNS servers for internal service resolution
-nodepass "server://0.0.0.0:10101/internal-api.corp.local:8080?dns=10.0.0.53,10.0.1.53&mode=2&tls=1"
+# Server side: 1-hour cache TTL for stable internal hostnames
+nodepass "server://0.0.0.0:10101/internal-api.corp.local:8080?dns=1h&mode=2&tls=1"
 
-# Client side: Use same DNS servers for consistent resolution
-nodepass "client://tunnel.corp.local:10101/127.0.0.1:8080?dns=10.0.0.53,10.0.1.53"
+# Client side: Same TTL for consistent behavior
+nodepass "client://tunnel.corp.local:10101/127.0.0.1:8080?dns=1h"
 ```
 
 This configuration:
-- Uses corporate DNS servers (10.0.0.53 and 10.0.1.53) instead of public DNS
-- Resolves internal .corp.local domains that are not accessible via public DNS
-- Automatic failover to second DNS server if first fails
-- DNS results are cached for 5 minutes (default) to improve performance
-- Both server and client use consistent DNS configuration
+- Uses 1-hour DNS cache TTL for stable internal services
+- Reduces DNS query overhead in corporate networks
+- Improves connection performance by minimizing DNS lookups
+- Suitable for production environments with stable DNS
 
-### Example 16: Privacy-Focused DNS Providers
+### Example 16: Dynamic DNS Environments
 
-Use privacy-enhanced DNS providers for improved security:
+Use shorter TTL for frequently changing DNS records:
 
 ```bash
-# Server side: Use Cloudflare DNS (privacy-focused)
-nodepass "server://0.0.0.0:10101/api.example.com:443?dns=1.1.1.1,1.0.0.1&tls=1&log=info"
+# Server side: 30-second cache TTL for dynamic DNS
+nodepass "server://0.0.0.0:10101/dynamic.example.com:8080?dns=30s&tls=1&log=info"
 
-# Client side: Use Quad9 DNS (malware blocking)
-nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=9.9.9.9,149.112.112.112"
+# Client side: Short TTL for load balancing scenarios
+nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=30s"
 ```
 
 This setup:
-- Server uses Cloudflare DNS (1.1.1.1) known for privacy protection
-- Client uses Quad9 DNS (9.9.9.9) with built-in malware domain blocking
-- Multiple DNS servers provide redundancy
-- All DNS queries are encrypted via DNS-over-TLS when supported by resolvers
+- Uses 30-second DNS cache TTL for dynamic environments
+- Enables faster failover for load-balanced services
+- Ensures connections use current DNS records
+- Ideal for cloud environments with frequent IP changes
 
-### Example 17: Geographic DNS Optimization
+### Example 17: Development and Testing
 
-Select DNS servers geographically close to deployment for lower latency:
+Disable caching for development environments:
 
 ```bash
-# Asia-Pacific region: Use Google DNS Asia servers
-nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=8.8.8.8,8.8.4.4&mode=2"
+# Development server: No DNS caching for immediate updates
+nodepass "server://0.0.0.0:10101/dev.backend.local:8080?dns=0&tls=0&log=debug"
 
-# Europe: Use Cloudflare DNS
-nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=1.1.1.1,1.0.0.1&mode=2"
-
-# Custom region: Use local ISP DNS for best performance
-nodepass "server://0.0.0.0:10101/service.example.com:8080?dns=203.0.113.1,203.0.113.2&mode=2"
+# Testing client: No caching to see DNS changes immediately
+nodepass "client://dev-server.local:10101/127.0.0.1:8080?dns=0&log=debug"
 ```
 
 This configuration:
-- Reduces DNS lookup latency by using geographically proximate servers
-- Improves initial connection establishment time
-- Works with any DNS server accessible via UDP port 53
+- Disables DNS caching (dns=0) for immediate updates
+- Every connection performs fresh DNS lookup
+- Useful during development when DNS records change frequently
+- Helps identify DNS-related issues during testing
 
-### Example 18: IPv6 DNS Configuration
+### Example 18: Mixed Environment with Custom TTL
 
-Configure IPv6 DNS servers for IPv6-enabled networks:
+Balance performance and freshness with moderate TTL:
 
 ```bash
-# Server side: Use IPv6 DNS servers (Cloudflare and Google)
-nodepass "server://[::]:10101/ipv6.example.com:8080?dns=2606:4700:4700::1111,2001:4860:4860::8888&mode=2&tls=1"
+# Production API: 10-minute cache for balanced performance
+nodepass "server://0.0.0.0:10101/api.example.com:8080?dns=10m&tls=1&mode=2"
 
-# Client side: Mixed IPv4 and IPv6 DNS servers
-nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=1.1.1.1,2606:4700:4700::1111"
+# Staging environment: 2-minute cache for faster updates
+nodepass "server://0.0.0.0:10102/staging.example.com:8080?dns=2m&tls=1&mode=2"
+
+# Client: Default 5-minute cache
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
 ```
 
 This setup:
-- Server listens on all IPv6 interfaces using [::]
-- Uses IPv6 DNS servers for native IPv6 resolution
-- Mixed IPv4/IPv6 DNS configuration provides maximum compatibility
-- Automatically selects IPv4 or IPv6 addresses based on connection type
+- Production uses 10-minute TTL for good performance
+- Staging uses 2-minute TTL for faster DNS updates
+- Client uses default 5-minute TTL
+- Each environment optimized for its use case
 
-### Example 19: DNS Caching Tuning for Different Environments
-
-Adjust DNS cache TTL for optimal performance:
-
-```bash
-# Production: Stable DNS, longer cache TTL (30 minutes)
-export NP_DNS_CACHING_TTL=30m
-nodepass "server://0.0.0.0:10101/stable.backend.com:8080?dns=1.1.1.1,8.8.8.8&tls=1"
-
-# Development: Dynamic DNS, shorter cache TTL (1 minute)
-export NP_DNS_CACHING_TTL=1m
-nodepass "server://0.0.0.0:10101/dev.backend.local:8080?dns=10.0.0.53&tls=0&log=debug"
-```
-
-This configuration:
-- **Production (30m TTL)**: Maximizes cache efficiency for stable environments
-- **Development (1m TTL)**: Quick DNS updates for rapidly changing configurations
-- Background refresh at 80% of TTL ensures smooth transitions
-
-**DNS Configuration Use Cases**:
-- **Corporate Networks**: Resolve internal hostnames via corporate DNS infrastructure
-- **Privacy Enhancement**: Use privacy-focused DNS providers (1.1.1.1, 9.9.9.9)
-- **Geographic Optimization**: Reduce latency with regionally proximate DNS servers
-- **Development/Testing**: Quick DNS updates with short TTL in dynamic environments
-- **High Availability**: Multiple DNS servers provide redundancy and failover
-- **Compliance**: Meet regulatory requirements for DNS provider selection
+**DNS Cache TTL Use Cases**:
+- **Corporate Networks**: Long TTL (1h) for stable internal hostnames
+- **Dynamic DNS**: Short TTL (30s-1m) for frequently changing records
+- **Load Balancing**: Short TTL enables faster failover
+- **Performance**: Longer TTL reduces connection latency
+- **High Availability**: Moderate TTL balances freshness and performance
 
 ## High Availability and Load Balancing
 
-### Example 20: Multi-Backend Server Load Balancing
+### Example 19: Multi-Backend Server Load Balancing
 
 Use target address groups for even traffic distribution and automatic failover:
 
@@ -387,7 +367,7 @@ This configuration:
 - Automatically resumes sending traffic to recovered servers
 - Uses TLS encryption to secure the tunnel
 
-### Example 21: Database Primary-Replica Failover
+### Example 20: Database Primary-Replica Failover
 
 Configure primary and replica database instances for high availability access:
 
@@ -402,7 +382,7 @@ This setup:
 - Application requires no modification for transparent failover
 - Logs only warnings and errors to reduce output
 
-### Example 22: API Gateway Backend Pool
+### Example 21: API Gateway Backend Pool
 
 Configure multiple backend service instances for an API gateway:
 
@@ -420,7 +400,7 @@ This configuration:
 - Client limits bandwidth to 100 Mbps with maximum 2000 concurrent connections
 - Single instance failure doesn't affect overall service availability
 
-### Example 23: Geo-Distributed Services
+### Example 22: Geo-Distributed Services
 
 Configure multi-region service nodes to optimize network latency:
 
@@ -444,7 +424,7 @@ This setup:
 
 ## PROXY Protocol Integration
 
-### Example 24: Load Balancer Integration with PROXY Protocol
+### Example 23: Load Balancer Integration with PROXY Protocol
 
 Enable PROXY protocol support for integration with load balancers and reverse proxies:
 
@@ -463,7 +443,7 @@ This configuration:
 - Compatible with HAProxy, Nginx, and other PROXY protocol aware services
 - Useful for maintaining accurate access logs and IP-based access controls
 
-### Example 25: Reverse Proxy Support for Web Applications
+### Example 24: Reverse Proxy Support for Web Applications
 
 Enable web applications behind NodePass to receive original client information:
 
@@ -487,7 +467,7 @@ This setup:
 - Supports compliance requirements for connection auditing
 - Works with web servers that support PROXY protocol (Nginx, HAProxy, etc.)
 
-### Example 26: Database Access with Client IP Preservation
+### Example 25: Database Access with Client IP Preservation
 
 Maintain client IP information for database access logging and security:
 
@@ -514,7 +494,7 @@ Benefits:
 
 ## Container Deployment
 
-### Example 27: Containerized NodePass
+### Example 26: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -549,7 +529,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 28: Centralized Management
+### Example 27: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -586,7 +566,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 29: Custom API Prefix
+### Example 28: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
@@ -605,7 +585,7 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
-### Example 30: Real-time Connection and Traffic Monitoring
+### Example 29: Real-time Connection and Traffic Monitoring
 
 Monitor instance connection counts and traffic statistics through the master API:
 
@@ -645,7 +625,7 @@ This monitoring setup provides:
 
 ## QUIC Transport Protocol
 
-### Example 31: QUIC-based Tunnel with Stream Multiplexing
+### Example 30: QUIC-based Tunnel with Stream Multiplexing
 
 Use QUIC protocol for connection pooling with improved performance in high-latency networks:
 
@@ -665,7 +645,7 @@ This configuration:
 - Improved connection establishment with 0-RTT support
 - Client automatically receives QUIC configuration from server during handshake
 
-### Example 32: QUIC with Custom TLS Certificate
+### Example 31: QUIC with Custom TLS Certificate
 
 Deploy QUIC tunnel with verified certificates for production:
 
@@ -684,7 +664,7 @@ This setup:
 - Full certificate validation on client side
 - QUIC configuration automatically delivered from server
 
-### Example 33: QUIC for Mobile/High-Latency Networks
+### Example 32: QUIC for Mobile/High-Latency Networks
 
 Optimize for mobile networks or satellite connections:
 
@@ -704,7 +684,7 @@ This configuration:
 - 0-RTT reconnection for faster recovery after network changes
 - Client automatically adopts QUIC from server
 
-### Example 34: QUIC vs TCP Pool Performance Comparison
+### Example 33: QUIC vs TCP Pool Performance Comparison
 
 Side-by-side comparison of QUIC and TCP pools:
 
@@ -730,7 +710,7 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=ev
 - Improved NAT traversal capabilities
 - Single UDP socket reduces resource usage
 
-### Example 35: QUIC for Real-Time Applications
+### Example 34: QUIC for Real-Time Applications
 
 Configure QUIC tunnel for gaming, VoIP, or video streaming:
 

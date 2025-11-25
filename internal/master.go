@@ -1785,18 +1785,15 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: dns, min, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, min, mode, dial, read, rate, slot, proxy, notcp, noudp
 		if query.Get("dns") == "" {
-			query.Set("dns", defaultDNSIPs)
+			query.Set("dns", defaultDNSTTL.String())
 		}
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
 		}
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
-		}
-		if query.Get("quic") == "" {
-			query.Set("quic", defaultQuicMode)
 		}
 		if query.Get("dial") == "" {
 			query.Set("dial", defaultDialerIP)
@@ -1822,7 +1819,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	case "server":
 		// server参数: dns, max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
 		if query.Get("dns") == "" {
-			query.Set("dns", defaultDNSIPs)
+			query.Set("dns", defaultDNSTTL.String())
 		}
 		if query.Get("max") == "" {
 			query.Set("max", strconv.Itoa(defaultMaxPool))
