@@ -209,18 +209,16 @@ func (c *Client) tunnelHandshake() error {
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: getTunnelTCPAddr failed: %w", err)
 	}
-	tunnelTCPConn, err := net.DialTimeout("tcp", tunnelTCPAddr.String(), tcpDialTimeout)
+	handshakeConn, err := net.DialTimeout("tcp", tunnelTCPAddr.String(), tcpDialTimeout)
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: dialTimeout failed: %w", err)
 	}
 
-	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 3 * reportInterval})
-	c.tunnelTCPConn.SetKeepAlive(true)
-	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
+	c.controlConn = handshakeConn
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
 
 	// 发送隧道密钥
-	_, err = c.tunnelTCPConn.Write(c.encode([]byte(c.tunnelKey)))
+	_, err = c.controlConn.Write(c.encode([]byte(c.tunnelKey)))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
 	}
@@ -256,7 +254,7 @@ func (c *Client) tunnelHandshake() error {
 	c.dataFlow = strings.TrimPrefix(tunnelURL.Path, "/")
 	c.tlsCode = tunnelURL.Fragment
 
-	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
-	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
+	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.controlConn.RemoteAddr())
+	c.logger.Info("Tunnel handshaked: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
 	return nil
 }

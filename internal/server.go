@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
@@ -183,9 +182,8 @@ func (s *Server) start() error {
 // tunnelHandshake 与客户端进行握手
 func (s *Server) tunnelHandshake() error {
 	type handshakeResult struct {
-		conn      *net.TCPConn
-		bufReader *bufio.Reader
-		clientIP  string
+		netConn  net.Conn
+		clientIP string
 	}
 
 	successChan := make(chan handshakeResult, 1)
@@ -261,16 +259,11 @@ func (s *Server) tunnelHandshake() error {
 					return
 				}
 
-				tcpConn := rawConn.(*net.TCPConn)
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(reportInterval)
-
 				// 返回握手结果
 				select {
 				case successChan <- handshakeResult{
-					conn:      tcpConn,
-					bufReader: bufio.NewReader(&conn.TimeoutReader{Conn: tcpConn, Timeout: 3 * reportInterval}),
-					clientIP:  tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(),
+					netConn:  rawConn,
+					clientIP: rawConn.RemoteAddr().(*net.TCPAddr).IP.String(),
 				}:
 					close(closeChan)
 				case <-closeChan:
@@ -292,8 +285,7 @@ func (s *Server) tunnelHandshake() error {
 	}
 
 	// 保存握手结果
-	s.tunnelTCPConn = result.conn
-	s.bufReader = result.bufReader
+	s.controlConn = result.netConn
 	s.clientIP = result.clientIP
 
 	// 构建隧道配置信息
@@ -306,12 +298,12 @@ func (s *Server) tunnelHandshake() error {
 	}
 
 	// 发送隧道配置信息
-	_, err := s.tunnelTCPConn.Write(s.encode([]byte(tunnelURL.String())))
+	_, err := s.controlConn.Write(s.encode([]byte(tunnelURL.String())))
 	if err != nil {
 		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)
 	}
 
-	s.logger.Info("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
-	s.logger.Info("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
+	s.logger.Info("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.controlConn.RemoteAddr())
+	s.logger.Info("Tunnel handshaked: %v <-> %v", s.controlConn.LocalAddr(), s.controlConn.RemoteAddr())
 	return nil
 }
