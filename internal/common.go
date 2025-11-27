@@ -50,7 +50,7 @@ type Common struct {
 	targetIdx        uint64             // 目标地址索引
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
-	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
+	controlConn      net.Conn           // 隧道控制连接
 	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
 	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
@@ -122,20 +122,21 @@ var (
 	ReloadInterval   = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
-// 默认配置
+// 常量定义
 const (
-	defaultDNSTTL        = 5 * time.Minute // 默认DNS缓存TTL
-	defaultMinPool       = 64              // 默认最小池容量
-	defaultMaxPool       = 1024            // 默认最大池容量
-	defaultRunMode       = "0"             // 默认运行模式
-	defaultQuicMode      = "0"             // 默认QUIC模式
-	defaultDialerIP      = "auto"          // 默认拨号本地IP
-	defaultReadTimeout   = 0 * time.Second // 默认读取超时
-	defaultRateLimit     = 0               // 默认速率限制
-	defaultSlotLimit     = 65536           // 默认槽位限制
-	defaultProxyProtocol = "0"             // 默认代理协议
-	defaultTCPStrategy   = "0"             // 默认TCP策略
-	defaultUDPStrategy   = "0"             // 默认UDP策略
+	contextCheckInterval = 50 * time.Millisecond // 上下文检查间隔
+	defaultDNSTTL        = 5 * time.Minute       // 默认DNS缓存TTL
+	defaultMinPool       = 64                    // 默认最小池容量
+	defaultMaxPool       = 1024                  // 默认最大池容量
+	defaultRunMode       = "0"                   // 默认运行模式
+	defaultQuicMode      = "0"                   // 默认QUIC模式
+	defaultDialerIP      = "auto"                // 默认拨号本地IP
+	defaultReadTimeout   = 0 * time.Second       // 默认读取超时
+	defaultRateLimit     = 0                     // 默认速率限制
+	defaultSlotLimit     = 65536                 // 默认槽位限制
+	defaultProxyProtocol = "0"                   // 默认代理协议
+	defaultTCPStrategy   = "0"                   // 默认TCP策略
+	defaultUDPStrategy   = "0"                   // 默认UDP策略
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -833,10 +834,10 @@ func (c *Common) stop() {
 		c.logger.Debug("Tunnel connection closed: %v", c.tunnelUDPConn.LocalAddr())
 	}
 
-	// 关闭隧道TCP连接
-	if c.tunnelTCPConn != nil {
-		c.tunnelTCPConn.Close()
-		c.logger.Debug("Tunnel connection closed: %v", c.tunnelTCPConn.LocalAddr())
+	// 关闭隧道控制连接
+	if c.controlConn != nil {
+		c.controlConn.Close()
+		c.logger.Debug("Control connection closed: %v", c.controlConn.LocalAddr())
 	}
 
 	// 关闭目标监听器
@@ -881,6 +882,74 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
+			break
+		}
+		select {
+		case <-c.ctx.Done():
+			return fmt.Errorf("commonControl: context error: %w", c.ctx.Err())
+		case <-time.After(contextCheckInterval):
+		}
+	}
+
+	// 保留握手连接
+	handshakeConn := c.controlConn
+
+	// 升级控制连接
+	switch c.coreType {
+	case "server":
+		id, poolConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
+		if err != nil {
+			return fmt.Errorf("commonControl: upgrade incomingGet failed: %w", err)
+		}
+
+		upgradeURL := &url.URL{
+			Scheme:   "np",
+			Host:     id,
+			Fragment: "u", // 升级标志
+		}
+		if _, err := handshakeConn.Write(c.encode([]byte(upgradeURL.String()))); err != nil {
+			poolConn.Close()
+			return fmt.Errorf("commonControl: write upgrade signal failed: %w", err)
+		}
+
+		// 替换控制连接
+		c.controlConn = poolConn
+		c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
+	case "client":
+		rawSignal, err := c.bufReader.ReadBytes('\n')
+		if err != nil {
+			return fmt.Errorf("commonControl: read upgrade signal failed: %w", err)
+		}
+
+		signalData, err := c.decode(rawSignal)
+		if err != nil {
+			return fmt.Errorf("commonControl: decode upgrade signal failed: %w", err)
+		}
+
+		signalURL, err := url.Parse(string(signalData))
+		if err != nil || signalURL.Fragment != "u" {
+			return fmt.Errorf("commonControl: invalid upgrade signal: %w", err)
+		}
+
+		// 用 ID 从池中取出同一条连接
+		poolConn, err := c.tunnelPool.OutgoingGet(signalURL.Host, poolGetTimeout)
+		if err != nil {
+			return fmt.Errorf("commonControl: upgrade outgoingGet failed: %w", err)
+		}
+
+		// 替换控制连接
+		c.controlConn = poolConn
+		c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
+	}
+
+	// 关闭握手连接
+	if handshakeConn != nil {
+		handshakeConn.Close()
+	}
+	c.logger.Info("CtrlConn upgraded: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
+
 	errChan := make(chan error, 3)
 
 	// 信号消纳、信号队列和健康检查
@@ -912,7 +981,7 @@ func (c *Common) commonQueue() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -926,7 +995,7 @@ func (c *Common) commonQueue() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 		}
 	}
@@ -958,8 +1027,8 @@ func (c *Common) healthCheck() error {
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.flushURL.String())))
+			if c.ctx.Err() == nil && c.controlConn != nil {
+				_, err := c.controlConn.Write(c.encode([]byte(c.flushURL.String())))
 				if err != nil {
 					c.mu.Unlock()
 					return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
@@ -979,8 +1048,8 @@ func (c *Common) healthCheck() error {
 
 		// 发送PING信号
 		c.checkPoint = time.Now()
-		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-			_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pingURL.String())))
+		if c.ctx.Err() == nil && c.controlConn != nil {
+			_, err := c.controlConn.Write(c.encode([]byte(c.pingURL.String())))
 			if err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
@@ -1007,7 +1076,7 @@ func (c *Common) incomingVerify() {
 		select {
 		case <-c.ctx.Done():
 			continue
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 
@@ -1032,21 +1101,21 @@ func (c *Common) incomingVerify() {
 	// 构建并发送验证信号
 	verifyURL := &url.URL{
 		Scheme:   "np",
-		Host:     c.tunnelTCPConn.RemoteAddr().String(),
+		Host:     c.controlConn.RemoteAddr().String(),
 		Path:     url.PathEscape(id),
 		Fragment: "v", // TLS验证
 	}
 
-	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+	if c.ctx.Err() == nil && c.controlConn != nil {
 		c.mu.Lock()
-		_, err = c.tunnelTCPConn.Write(c.encode([]byte(verifyURL.String())))
+		_, err = c.controlConn.Write(c.encode([]byte(verifyURL.String())))
 		c.mu.Unlock()
 		if err != nil {
 			return
 		}
 	}
 
-	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 }
 
 // commonLoop 共用处理循环
@@ -1066,7 +1135,7 @@ func (c *Common) commonLoop() {
 		select {
 		case <-c.ctx.Done():
 			return
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 }
@@ -1085,7 +1154,7 @@ func (c *Common) commonTCPLoop() {
 			select {
 			case <-c.ctx.Done():
 				return
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1135,9 +1204,9 @@ func (c *Common) commonTCPLoop() {
 				Fragment: "1", // TCP模式
 			}
 
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
 				c.mu.Unlock()
 
 				if err != nil {
@@ -1146,7 +1215,7 @@ func (c *Common) commonTCPLoop() {
 				}
 			}
 
-			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 
 			buffer1 := c.getTCPBuffer()
 			buffer2 := c.getTCPBuffer()
@@ -1180,7 +1249,7 @@ func (c *Common) commonUDPLoop() {
 			select {
 			case <-c.ctx.Done():
 				return
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1266,9 +1335,9 @@ func (c *Common) commonUDPLoop() {
 				Fragment: "2", // UDP模式
 			}
 
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
 				c.mu.Unlock()
 				if err != nil {
 					c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
@@ -1276,7 +1345,7 @@ func (c *Common) commonUDPLoop() {
 				}
 			}
 
-			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 			c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 		}
 
@@ -1306,7 +1375,7 @@ func (c *Common) commonOnce() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1322,7 +1391,7 @@ func (c *Common) commonOnce() error {
 				select {
 				case <-c.ctx.Done():
 					return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-				case <-time.After(50 * time.Millisecond):
+				case <-time.After(contextCheckInterval):
 				}
 				continue
 			}
@@ -1355,9 +1424,9 @@ func (c *Common) commonOnce() error {
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
 			case "i": // PING
-				if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				if c.ctx.Err() == nil && c.controlConn != nil {
 					c.mu.Lock()
-					_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pongURL.String())))
+					_, err := c.controlConn.Write(c.encode([]byte(c.pongURL.String())))
 					c.mu.Unlock()
 					if err != nil {
 						return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
@@ -1388,7 +1457,7 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 		select {
 		case <-c.ctx.Done():
 			continue
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 
@@ -1399,7 +1468,7 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
 	if err != nil {
@@ -1435,7 +1504,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 从连接池获取连接
 	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
@@ -1508,7 +1577,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 获取池连接
 	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
@@ -1718,7 +1787,7 @@ func (c *Common) singleTCPLoop() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("singleTCPLoop: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1795,7 +1864,7 @@ func (c *Common) singleUDPLoop() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
