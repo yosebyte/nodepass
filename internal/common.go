@@ -36,7 +36,7 @@ type Common struct {
 	tlsConfig        *tls.Config        // TLS配置
 	coreType         string             // 核心类型
 	runMode          string             // 运行模式
-	quicMode         string             // QUIC模式
+	poolType         string             // 连接池类型
 	dataFlow         string             // 数据流向
 	dialerIP         string             // 拨号本地IP
 	dialerFallback   uint32             // 拨号回落标志
@@ -129,7 +129,7 @@ const (
 	defaultMinPool       = 64                    // 默认最小池容量
 	defaultMaxPool       = 1024                  // 默认最大池容量
 	defaultRunMode       = "0"                   // 默认运行模式
-	defaultQuicMode      = "0"                   // 默认QUIC模式
+	defaultPoolType      = "0"                   // 默认连接池类型
 	defaultDialerIP      = "auto"                // 默认拨号本地IP
 	defaultReadTimeout   = 0 * time.Second       // 默认读取超时
 	defaultRateLimit     = 0                     // 默认速率限制
@@ -574,14 +574,14 @@ func (c *Common) getRunMode() {
 	}
 }
 
-// getQuicMode 获取QUIC模式
-func (c *Common) getQuicMode() {
-	if quicMode := c.parsedURL.Query().Get("quic"); quicMode != "" {
-		c.quicMode = quicMode
+// getPoolType 获取连接池类型
+func (c *Common) getPoolType() {
+	if poolType := c.parsedURL.Query().Get("type"); poolType != "" {
+		c.poolType = poolType
 	} else {
-		c.quicMode = defaultQuicMode
+		c.poolType = defaultPoolType
 	}
-	if c.quicMode != "0" && c.tlsCode == "0" {
+	if c.poolType == "1" && c.tlsCode == "0" {
 		c.tlsCode = "1"
 	}
 }
@@ -670,7 +670,7 @@ func (c *Common) initConfig() error {
 	c.getTunnelKey()
 	c.getPoolCapacity()
 	c.getRunMode()
-	c.getQuicMode()
+	c.getPoolType()
 	c.getDialerIP()
 	c.getReadTimeout()
 	c.getRateLimit()
