@@ -1817,7 +1817,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: dns, max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		// server参数: dns, max, mode, type, dial, read, rate, slot, proxy, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
 		}
@@ -1827,8 +1827,8 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
 		}
-		if query.Get("quic") == "" {
-			query.Set("quic", defaultQuicMode)
+		if query.Get("type") == "" {
+			query.Set("type", defaultPoolType)
 		}
 		if query.Get("dial") == "" {
 			query.Set("dial", defaultDialerIP)
