@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
 )
@@ -63,9 +64,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&type=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), s.dnsCacheTTL, s.maxPoolCapacity,
-			s.runMode, s.quicMode, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
+			s.runMode, s.poolType, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
 			s.proxyProtocol, s.disableTCP, s.disableUDP)
 	}
 	logInfo("Server started")
@@ -144,7 +145,7 @@ func (s *Server) start() error {
 	}
 
 	// 初始化隧道连接池
-	switch s.quicMode {
+	switch s.poolType {
 	case "0":
 		tcpPool := pool.NewServerPool(
 			s.maxPoolCapacity,
@@ -155,16 +156,25 @@ func (s *Server) start() error {
 		go tcpPool.ServerManager()
 		s.tunnelPool = tcpPool
 	case "1":
-		udpPool := quic.NewServerPool(
+		quicPool := quic.NewServerPool(
 			s.maxPoolCapacity,
 			s.clientIP,
 			s.tlsConfig,
 			s.tunnelUDPAddr.String(),
 			reportInterval)
-		go udpPool.ServerManager()
-		s.tunnelPool = udpPool
+		go quicPool.ServerManager()
+		s.tunnelPool = quicPool
+	case "2":
+		wsPool := npws.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go wsPool.ServerManager()
+		s.tunnelPool = wsPool
 	default:
-		return fmt.Errorf("start: unknown quic mode: %s", s.quicMode)
+		return fmt.Errorf("start: unknown pool type: %s", s.poolType)
 	}
 
 	// 判断数据流向
@@ -291,7 +301,7 @@ func (s *Server) tunnelHandshake() error {
 	// 构建隧道配置信息
 	tunnelURL := &url.URL{
 		Scheme:   "np",
-		User:     url.User(s.quicMode),
+		User:     url.User(s.poolType),
 		Host:     strconv.Itoa(s.maxPoolCapacity),
 		Path:     s.dataFlow,
 		Fragment: s.tlsCode,

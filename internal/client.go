@@ -18,6 +18,7 @@ import (
 
 	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
 )
@@ -63,9 +64,9 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: client://%v@%v/%v?dns=%v&min=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+		c.logger.Info("%v: client://%v@%v/%v?dns=%v&min=%v&mode=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
 			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), c.dnsCacheTTL, c.minPoolCapacity,
-			c.runMode, c.quicMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
+			c.runMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
 			c.proxyProtocol, c.disableTCP, c.disableUDP)
 	}
 	logInfo("Client started")
@@ -146,7 +147,7 @@ func (c *Client) commonStart() error {
 	}
 
 	// 初始化连接池
-	switch c.quicMode {
+	switch c.poolType {
 	case "0":
 		tcpPool := pool.NewClientPool(
 			c.minPoolCapacity,
@@ -166,7 +167,7 @@ func (c *Client) commonStart() error {
 		go tcpPool.ClientManager()
 		c.tunnelPool = tcpPool
 	case "1":
-		udpPool := quic.NewClientPool(
+		quicPool := quic.NewClientPool(
 			c.minPoolCapacity,
 			c.maxPoolCapacity,
 			minPoolInterval,
@@ -181,10 +182,21 @@ func (c *Client) commonStart() error {
 				}
 				return udpAddr.String(), nil
 			})
-		go udpPool.ClientManager()
-		c.tunnelPool = udpPool
+		go quicPool.ClientManager()
+		c.tunnelPool = quicPool
+	case "2":
+		wsPool := npws.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.tunnelAddr)
+		go wsPool.ClientManager()
+		c.tunnelPool = wsPool
 	default:
-		return fmt.Errorf("commonStart: unknown quic mode: %s", c.quicMode)
+		return fmt.Errorf("commonStart: unknown pool type: %s", c.poolType)
 	}
 
 	// 判断数据流向
@@ -245,7 +257,7 @@ func (c *Client) tunnelHandshake() error {
 	if tunnelURL.User.Username() == "" || tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
 		return net.UnknownNetworkError(tunnelURL.String())
 	}
-	c.quicMode = tunnelURL.User.Username()
+	c.poolType = tunnelURL.User.Username()
 	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
 		return fmt.Errorf("tunnelHandshake: parse max pool capacity failed: %w", err)
 	} else {
