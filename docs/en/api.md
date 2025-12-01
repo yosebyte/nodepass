@@ -65,7 +65,7 @@ API Key authentication is enabled by default, automatically generated and saved 
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&type=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
   "restart": true,
   "meta": {
     "peer": {
@@ -111,7 +111,7 @@ API Key authentication is enabled by default, automatically generated and saved 
 
 - Server: `server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<parameters>`
 - Client: `client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>`
-- Supported parameters: `log`, `tls`, `crt`, `key`, `dns`, `min`, `max`, `mode`, `quic`, `dial`, `read`, `rate`, `slot`, `proxy`, `notcp`, `noudp`
+- Supported parameters: `log`, `tls`, `crt`, `key`, `dns`, `min`, `max`, `mode`, `type`, `dial`, `read`, `rate`, `slot`, `proxy`, `notcp`, `noudp`
 
 ### URL Query Parameters
 
@@ -123,7 +123,7 @@ API Key authentication is enabled by default, automatically generated and saved 
 - `mode`: Runtime mode control (`0`, `1`, `2`) - Controls operation behavior
   - For server: `0`=auto, `1`=reverse mode, `2`=forward mode
   - For client: `0`=auto, `1`=single-end forwarding, `2`=dual-end handshake
-- `quic`: QUIC transport mode (`0`=TCP pool, `1`=QUIC pool, default: `0`) - Server mode only, client receives configuration during handshake
+- `type`: Connection pool type (`0`=TCP pool, `1`=QUIC pool, `2`=WebSocket pool, default: `0`) - Server mode only, client receives configuration during handshake
 - `dial`: Source IP for outbound connections (default: `auto`) - Server/Client mode only
 - `read`: Data read timeout duration (e.g., 1h, 30m, 15s, default: `0` for no timeout)
 - `rate`: Bandwidth rate limit in Mbps (0=unlimited)
@@ -1116,7 +1116,7 @@ The instance object in API responses contains the following fields:
   "type": "server",           // Instance type: server or client
   "status": "running",        // Instance status: running, stopped, or error
   "url": "server://...",      // Instance configuration URL
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // Complete configuration URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&type=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // Complete configuration URL
   "restart": true,            // Auto-restart policy
   "meta": {                   // Metadata for organization and peer tracking
     "peer": {
@@ -1585,7 +1585,7 @@ Examples:
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
 | `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
-| `quic` | QUIC protocol support | `0`(disabled), `1`(enabled) | `0` | Server only |
+| `type` | Connection pool type | `0`(TCP), `1`(QUIC), `2`(WebSocket) | `0` | Server only |
 | `dial` | Source IP for outbound | IP address or `auto` | `auto` | Both |
 | `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `0` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |

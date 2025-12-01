@@ -370,11 +370,11 @@
 - 在生产环境中，建议将 `nodepass.gob` 定期备份到不同的存储位置
 - 使用配置管理工具保存实例配置的文本形式备份
 
-## QUIC特定问题
+## 连接池类型问题
 
-### QUIC连接失败
+### QUIC连接池连接失败
 
-**症状**：启用`quic=1`时QUIC隧道无法建立。
+**症状**：启用`type=1`时QUIC连接池隧道无法建立。
 
 **可能的原因和解决方案**：
 
@@ -386,14 +386,14 @@
 
 2. **TLS配置问题**
    - QUIC需要启用TLS（至少`tls=1`）
-   - 如果设置了`quic=1`但禁用TLS，系统会自动启用`tls=1`
+   - 如果设置了`type=1`但禁用TLS，系统会自动启用`tls=1`
    - 生产环境使用`tls=2`和有效证书
    - 检查QUIC连接的证书有效性
 
-3. **客户端-服务器QUIC不匹配**
-   - 服务器和客户端必须使用相同的`quic`设置
-   - 带`quic=1`的服务器需要带`quic=1`的客户端
-   - 带`quic=0`的服务器需要带`quic=0`的客户端
+3. **客户端-服务器连接池类型不匹配**
+   - 服务器和客户端必须使用相同的`type`设置
+   - 带`type=1`的服务器需要带`type=1`的客户端
+   - 带`type=0`的服务器需要带`type=0`的客户端
    - 检查日志中的"QUIC connection not available"错误
 
 4. **模式兼容性**
@@ -401,16 +401,42 @@
    - 单端转发模式（mode=1）不可用
    - 如果模式不兼容，系统将回退到TCP连接池
 
-### QUIC性能问题
+### WebSocket连接池连接失败
 
-**症状**：QUIC隧道性能低于预期或不如TCP连接池。
+**症状**：启用`type=2`时WebSocket连接池隧道无法建立。
+
+**可能的原因和解决方案**：
+
+1. **HTTP/WebSocket端口被阻止**
+   - 验证TCP端口支持WebSocket协议访问
+   - 检查防火墙规则和代理配置
+   - 某些代理或CDN可能干扰WebSocket升级
+   - 使用WebSocket客户端工具测试连接性
+
+2. **TLS配置问题**
+   - WebSocket Secure（WSS）需要启用TLS（至少`tls=1`）
+   - 如果设置了`type=2`但禁用TLS，系统会自动启用`tls=1`
+   - 生产环境使用`tls=2`和有效证书
+   - 检查WSS连接的证书有效性
+
+3. **客户端-服务器连接池类型不匹配**
+   - 服务器和客户端必须使用相同的`type`设置
+   - 带`type=2`的服务器需要带`type=2`的客户端
+   - 配置在握手时自动下发
+   - 检查日志中的"WebSocket connection not available"错误
+
+### QUIC连接池性能问题
+
+### QUIC连接池性能问题
+
+**症状**：QUIC连接池隧道性能低于预期或不如TCP连接池。
 
 **可能的原因和解决方案**：
 
 1. **网络路径问题**
    - 某些网络会降低UDP流量的优先级或进行流量整形
    - 检查网络中间设备是否干扰QUIC
-   - 考虑使用TCP连接池（`quic=0`）进行对比测试
+   - 考虑使用TCP连接池（`type=0`）进行对比测试
    - 监控丢包率 - QUIC在低丢包率下性能更好
 
 2. **连接池容量配置**
@@ -428,6 +454,29 @@
    - 某些应用程序在QUIC流上可能无法达到最佳性能
    - 使用TCP和QUIC连接池进行对比测试
    - 对于需要严格顺序的应用考虑使用TCP连接池
+
+### WebSocket连接池性能问题
+
+**症状**：WebSocket连接池隧道性能低于预期。
+
+**可能的原因和解决方案**：
+
+1. **代理/CDN开销**
+   - 通过代理的WebSocket连接可能增加延迟
+   - 检查中间代理是否缓冲流量
+   - 考虑使用TCP连接池（`type=0`）或QUIC连接池（`type=1`）进行对比测试
+   - 直接连接通常比代理连接性能更好
+
+2. **帧开销**
+   - WebSocket协议为每条消息添加帧开销
+   - 较大的消息大小减少相对开销
+   - 监控帧大小并根据需要调整应用行为
+   - 在延迟和吞吐量之间取得平衡
+
+3. **TLS握手开销**
+   - WSS需要为每个连接进行TLS握手
+   - 使用连接池来分摊握手成本
+   - 增加`min`和`max`参数以获得更好的性能
 
 ### QUIC流耗尽
 
@@ -453,16 +502,23 @@
    - NAT超时可能断开UDP连接 - 调整NAT设置
    - 如果网络延迟高，增加连接超时
 
-### QUIC与TCP连接池选择
+### 连接池类型选择
 
-**何时使用QUIC**（`quic=1`）：
+**何时使用QUIC连接池**（`type=1`）：
 - 移动网络或频繁变化的网络条件
 - 高延迟连接（卫星、长距离）
 - NAT密集环境，UDP穿透性能更好
 - 受益于流独立性的实时应用
 - 0-RTT重连提供价值的场景
 
-**何时使用TCP连接池**（`quic=0`）：
+**何时使用WebSocket连接池**（`type=2`）：
+- 需要穿透HTTP代理或CDN的场景
+- 企业环境中仅允许HTTP/HTTPS流量
+- 防火墙阻止原始TCP连接的环境
+- 需要与现有网络基础设施兼容
+- Web代理或VPN替代方案
+
+**何时使用TCP连接池**（`type=0`）：
 - 阻止或严重限制UDP流量的网络
 - 需要严格TCP语义的应用
 - 具有UDP限制的企业环境
@@ -472,12 +528,16 @@
 **对比测试**：
 ```bash
 # 测试TCP连接池性能
-nodepass "server://0.0.0.0:10101/backend:8080?quic=0&mode=2&log=event"
-nodepass "client://server:10101/127.0.0.1:8080?quic=0&mode=2&log=event"
+nodepass "server://0.0.0.0:10101/backend:8080?type=0&mode=2&log=event"
+nodepass "client://server:10101/127.0.0.1:8080?mode=2&log=event"
 
 # 测试QUIC连接池性能
-nodepass "server://0.0.0.0:10102/backend:8080?quic=1&mode=2&log=event"
-nodepass "client://server:10102/127.0.0.1:8081?quic=1&mode=2&log=event"
+nodepass "server://0.0.0.0:10102/backend:8080?type=1&mode=2&log=event"
+nodepass "client://server:10102/127.0.0.1:8081?mode=2&log=event"
+
+# 测试WebSocket连接池性能
+nodepass "server://0.0.0.0:10103/backend:8080?type=2&mode=2&log=event"
+nodepass "client://server:10103/127.0.0.1:8082?mode=2&log=event"
 ```
 
 监控流量统计并根据观察到的性能进行选择。
