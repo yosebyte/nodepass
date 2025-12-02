@@ -636,7 +636,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
-- Configure QUIC transport (`quic`) on the server only - clients automatically receive the configuration during handshake.
+- Configure connection pool type (`type`) on the server only - clients automatically receive the configuration during handshake.
 - Set `notcp=1` when only UDP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
