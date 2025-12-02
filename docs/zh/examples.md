@@ -669,7 +669,7 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=inf
 在企业防火墙后使用WebSocket连接池：
 
 ```bash
-# 服务器端：启用WebSocket连接池
+# 服务器端：启用WebSocket连接池（需要TLS）
 nodepass "server://0.0.0.0:10101/internal.backend:8080?type=2&mode=2&tls=1&log=info"
 
 # 客户端：自动接收WebSocket配置
@@ -678,11 +678,13 @@ nodepass "client://wss.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
 
 此配置：
 - 使用WebSocket协议可以穿透HTTP代理和CDN
+- **需要TLS加密** - 最少`tls=1`，生产环境建议使用带证书的`tls=2`
 - 使用标准HTTPS端口，容易通过防火墙
 - 与现有Web基础设施兼容
 - 支持全双工通信
 - 适合企业环境中仅允许HTTP/HTTPS流量的场景
 - 客户端自动采用服务器的连接池类型配置
+- **注意**：WebSocket连接池不支持不加密模式（tls=0）
 
 ### 示例33: 移动/高延迟网络的QUIC连接池
 

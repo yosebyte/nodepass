@@ -63,7 +63,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `type`: Connection pool type (0, 1, 2)
   - `0`: Use TCP-based connection pool (default)
   - `1`: Use QUIC-based UDP connection pool with stream multiplexing
-  - `2`: Use WebSocket/WSS-based connection pool
+  - `2`: Use WebSocket/WSS-based connection pool (requires TLS, minimum `tls=1`)
   - Configuration is automatically delivered to client during handshake
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)

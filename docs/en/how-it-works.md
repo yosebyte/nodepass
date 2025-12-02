@@ -231,7 +231,7 @@ NodePass provides three connection pool transport options via the `type` paramet
 3. **WebSocket-based Pool (type=2)**:
    - WebSocket connections established via HTTP upgrade
    - Can traverse HTTP proxies and CDNs
-   - Uses standard HTTP/HTTPS ports
+   - Uses standard HTTPS ports
    - Suitable for enterprise environments and firewall-restricted scenarios
 
 ### QUIC Pool Architecture
@@ -331,8 +331,8 @@ When `type=2` is enabled, NodePass uses WebSocket protocol for connection poolin
 
 **Security Features**:
 - Supports WSS (WebSocket Secure) with TLS encryption
-- Three TLS modes:
-  - Mode 0: Plain WS (unencrypted) for testing only
+- TLS is required for WebSocket pool
+- Two TLS modes supported:
   - Mode 1: WSS with self-signed certificates
   - Mode 2: WSS with full certificate verification for production
 - Origin validation prevents cross-site WebSocket hijacking
@@ -343,7 +343,7 @@ When `type=2` is enabled, NodePass uses WebSocket protocol for connection poolin
 - Compatible with enterprise HTTP proxies and load balancers
 - Can be deployed through CDNs and reverse proxies
 - Blends with HTTP traffic, reducing detection and blocking risks
-- Supports HTTP/2 upgrade for better multiplexing
+- Requires TLS encryption
 
 ### Design Philosophy
 The connection pool design follows the principle of "warm-up over cold start," eliminating network latency through pre-established connections. This design philosophy draws from modern high-performance server best practices, amortizing the cost of connection establishment to the system startup phase rather than bearing this overhead on the critical path.

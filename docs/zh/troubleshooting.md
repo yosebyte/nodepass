@@ -415,7 +415,8 @@
 
 2. **TLS配置问题**
    - WebSocket Secure（WSS）需要启用TLS（至少`tls=1`）
-   - 如果设置了`type=2`但禁用TLS，系统会自动启用`tls=1`
+   - **WebSocket连接池不支持不加密模式** - type=2不允许使用tls=0
+   - 如果设置了`type=2`但禁用TLS，系统将自动强制使用`tls=1`
    - 生产环境使用`tls=2`和有效证书
    - 检查WSS连接的证书有效性
 

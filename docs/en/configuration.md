@@ -284,9 +284,10 @@ Connection pool based on WebSocket protocol, establishing connections via HTTP u
 - Web proxy or VPN alternative solutions
 
 **Requirements:**
-- TLS mode must be enabled for WSS (tls=1 or tls=2)
+- **TLS must be enabled** - WebSocket pool requires WSS (encrypted). Minimum `tls=1` required, `tls=2` recommended for production
 - Only available in dual-end handshake mode (mode=2)
 - TCP port with WebSocket upgrade support required
+- **Important**: Type 2 does NOT support unencrypted mode (tls=0). If tls=0 is specified with type=2, system will automatically enforce tls=1
 
 ### Configuration Examples
 
@@ -306,7 +307,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
 **Important Notes:**
 - Only server needs to configure `type` parameter - client receives configuration automatically
-- If type=1 or type=2 but TLS not configured, system automatically sets tls=1
+- **WebSocket pool (type=2) requires TLS**: Minimum `tls=1`. If type=2 without TLS, system automatically sets tls=1
 - All pool types only available in dual-end handshake mode (mode=2 or mode=0 with remote addresses)
 - Not applicable to single-end forwarding mode (mode=1)
 

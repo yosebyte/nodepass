@@ -669,7 +669,7 @@ This setup:
 Use WebSocket pool behind enterprise firewalls:
 
 ```bash
-# Server side: Enable WebSocket pool
+# Server side: Enable WebSocket pool (TLS required)
 nodepass "server://0.0.0.0:10101/internal.backend:8080?type=2&mode=2&tls=1&log=info"
 
 # Client side: Automatically receives WebSocket configuration
@@ -678,11 +678,13 @@ nodepass "client://wss.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
 
 This configuration:
 - Uses WebSocket protocol to traverse HTTP proxies and CDNs
+- **Requires TLS encryption** - minimum `tls=1`, use `tls=2` with certificates for production
 - Uses standard HTTPS ports, easily passes through firewalls
 - Compatible with existing web infrastructure
 - Supports full-duplex communication
 - Suitable for enterprise environments allowing only HTTP/HTTPS traffic
 - Client automatically adopts server's pool type configuration
+- **Note**: WebSocket pool does not support unencrypted mode (tls=0)
 
 ### Example 33: QUIC Pool for Mobile/High-Latency Networks
 

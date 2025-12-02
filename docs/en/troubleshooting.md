@@ -415,7 +415,8 @@ This guide helps you diagnose and resolve common issues you might encounter when
 
 2. **TLS Configuration Issues**
    - WebSocket Secure (WSS) requires TLS to be enabled (minimum `tls=1`)
-   - If `type=2` is set but TLS is disabled, system auto-enables `tls=1`
+   - **WebSocket pool does NOT support unencrypted mode** - `tls=0` is not allowed for type=2
+   - If `type=2` is set but TLS is disabled, system will automatically enforce `tls=1`
    - For production, use `tls=2` with valid certificates
    - Check certificate validity for WSS connections
 

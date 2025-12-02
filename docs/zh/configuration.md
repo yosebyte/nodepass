@@ -284,9 +284,10 @@ NodePass支持三种连接池类型，用于双端握手模式下的隧道连接
 - Web代理或VPN替代方案
 
 **要求：**
-- 必须启用TLS模式为WSS（tls=1或tls=2）
+- **必须启用TLS** - WebSocket连接池必须使用WSS（加密）。需要至少`tls=1`，生产环境推荐`tls=2`
 - 仅在双端握手模式下可用（mode=2）
 - 需要TCP端口支持WebSocket升级
+- **重要**：类型2不支持不加密模式（tls=0）。如果指定tls=0与type=2，系统将自动强制使用tls=1
 
 ### 配置示例
 
@@ -306,7 +307,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 
 **重要说明：**
 - 仅需服务端配置`type`参数 - 客户端自动接收配置
-- 如果type=1或type=2，但未配置TLS，系统会自动设置tls=1
+- **WebSocket连接池（type=2）需要TLS**：至少`tls=1`。如果type=2但未配置TLS，系统会自动设置tls=1
 - 所有连接池类型仅在双端握手模式下可用（mode=2或带远程地址的mode=0）
 - 不适用于单端转发模式（mode=1）
 

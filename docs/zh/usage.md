@@ -63,7 +63,7 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `type`：连接池类型 (0, 1, 2)
   - `0`：使用基于TCP的连接池（默认）
   - `1`：使用基于QUIC的UDP连接池，支持流多路复用
-  - `2`：使用基于WebSocket/WSS的连接池
+  - `2`：使用基于WebSocket/WSS的连接池（需要TLS，至少`tls=1`）
   - 配置在握手时自动下发给客户端
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
