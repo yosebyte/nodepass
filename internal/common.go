@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -106,20 +107,19 @@ type TransportPool interface {
 
 // 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
-	tcpDataBufSize   = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
-	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
-	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 5*time.Second)        // 握手超时
-	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
-	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
-	udpReadTimeout   = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
-	poolGetTimeout   = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
-	minPoolInterval  = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
-	maxPoolInterval  = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
-	reportInterval   = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)          // 报告间隔
-	serviceCooldown  = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)         // 服务冷却时间
-	shutdownTimeout  = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)         // 关闭超时
-	ReloadInterval   = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
+	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
+	tcpDataBufSize  = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
+	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
+	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
+	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
+	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
+	poolGetTimeout  = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
+	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
+	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
+	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)          // 报告间隔
+	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)         // 服务冷却时间
+	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)         // 关闭超时
+	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
 // 常量定义
@@ -243,6 +243,16 @@ func (c *Common) xor(data []byte) []byte {
 		data[i] ^= c.tunnelKey[i%len(c.tunnelKey)]
 	}
 	return data
+}
+
+// generateAuthToken 生成认证令牌
+func (c *Common) generateAuthToken() string {
+	return hex.EncodeToString(hmac.New(sha256.New, []byte(c.tunnelKey)).Sum(nil))
+}
+
+// verifyAuthToken 验证认证令牌
+func (c *Common) verifyAuthToken(token string) bool {
+	return hmac.Equal([]byte(token), []byte(c.generateAuthToken()))
 }
 
 // encode base64编码数据
@@ -880,76 +890,31 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	}
 }
 
-// commonControl 共用控制逻辑
-func (c *Common) commonControl() error {
+// setControlConn 设置控制连接
+func (c *Common) setControlConn() error {
 	for c.ctx.Err() == nil {
 		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
 			break
 		}
 		select {
 		case <-c.ctx.Done():
-			return fmt.Errorf("commonControl: context error: %w", c.ctx.Err())
+			return fmt.Errorf("setControlConn: context error: %w", c.ctx.Err())
 		case <-time.After(contextCheckInterval):
 		}
 	}
 
-	// 保留握手连接
-	handshakeConn := c.controlConn
-
-	// 升级控制连接
-	switch c.coreType {
-	case "server":
-		id, poolConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
-		if err != nil {
-			return fmt.Errorf("commonControl: upgrade incomingGet failed: %w", err)
-		}
-
-		upgradeURL := &url.URL{
-			Scheme:   "np",
-			Host:     id,
-			Fragment: "u", // 升级标志
-		}
-		if _, err := handshakeConn.Write(c.encode([]byte(upgradeURL.String()))); err != nil {
-			poolConn.Close()
-			return fmt.Errorf("commonControl: write upgrade signal failed: %w", err)
-		}
-
-		// 替换控制连接
-		c.controlConn = poolConn
-		c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
-	case "client":
-		rawSignal, err := c.bufReader.ReadBytes('\n')
-		if err != nil {
-			return fmt.Errorf("commonControl: read upgrade signal failed: %w", err)
-		}
-
-		signalData, err := c.decode(rawSignal)
-		if err != nil {
-			return fmt.Errorf("commonControl: decode upgrade signal failed: %w", err)
-		}
-
-		signalURL, err := url.Parse(string(signalData))
-		if err != nil || signalURL.Fragment != "u" {
-			return fmt.Errorf("commonControl: invalid upgrade signal: %w", err)
-		}
-
-		// 用 ID 从池中取出同一条连接
-		poolConn, err := c.tunnelPool.OutgoingGet(signalURL.Host, poolGetTimeout)
-		if err != nil {
-			return fmt.Errorf("commonControl: upgrade outgoingGet failed: %w", err)
-		}
-
-		// 替换控制连接
-		c.controlConn = poolConn
-		c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
+	poolConn, err := c.tunnelPool.OutgoingGet("00000000", poolGetTimeout)
+	if err != nil {
+		return fmt.Errorf("setControlConn: outgoingGet failed: %w", err)
 	}
+	c.controlConn = poolConn
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
+	c.logger.Info("Setting tunnel control: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
+	return nil
+}
 
-	// 关闭握手连接
-	if handshakeConn != nil {
-		handshakeConn.Close()
-	}
-	c.logger.Info("CtrlConn upgraded: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
-
+// commonControl 共用控制逻辑
+func (c *Common) commonControl() error {
 	errChan := make(chan error, 3)
 
 	// 信号消纳、信号队列和健康检查
@@ -1225,7 +1190,7 @@ func (c *Common) commonTCPLoop() {
 			}()
 
 			// 交换数据
-			c.logger.Info("Starting exchange: %v <-> %v", targetConn.RemoteAddr(), remoteConn.RemoteAddr())
+			c.logger.Info("Starting exchange: %v <-> %v", targetConn.RemoteAddr(), remoteConn.LocalAddr())
 			c.logger.Info("Exchange complete: %v", conn.DataExchange(targetConn, remoteConn, c.readTimeout, buffer1, buffer2))
 		}(targetConn)
 	}
@@ -1564,7 +1529,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	}()
 
 	// 交换数据
-	c.logger.Info("Starting exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
+	c.logger.Info("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.RemoteAddr())
 	c.logger.Info("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, buffer1, buffer2))
 }
 
