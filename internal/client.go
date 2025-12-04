@@ -2,21 +2,19 @@
 package internal
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
 	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
@@ -141,12 +139,41 @@ func (c *Client) singleStart() error {
 
 // commonStart 启动双端握手模式
 func (c *Client) commonStart() error {
-	// 与隧道服务端进行握手
+	// 发起隧道握手
+	c.logger.Info("Pending tunnel handshake...")
 	if err := c.tunnelHandshake(); err != nil {
 		return fmt.Errorf("commonStart: tunnelHandshake failed: %w", err)
 	}
 
 	// 初始化连接池
+	if err := c.initTunnelPool(); err != nil {
+		return fmt.Errorf("commonStart: initTunnelPool failed: %w", err)
+	}
+
+	// 设置控制连接
+	c.logger.Info("Getting tunnel pool ready...")
+	if err := c.setControlConn(); err != nil {
+		return fmt.Errorf("commonStart: setControlConn failed: %w", err)
+	}
+
+	// 判断数据流向
+	if c.dataFlow == "+" {
+		if err := c.initTargetListener(); err != nil {
+			return fmt.Errorf("commonStart: initTargetListener failed: %w", err)
+		}
+		go c.commonLoop()
+	}
+
+	// 启动共用控制
+	if err := c.commonControl(); err != nil {
+		return fmt.Errorf("commonStart: commonControl failed: %w", err)
+	}
+
+	return nil
+}
+
+// initTunnelPool 初始化隧道连接池
+func (c *Client) initTunnelPool() error {
 	switch c.poolType {
 	case "0":
 		tcpPool := pool.NewClientPool(
@@ -185,7 +212,7 @@ func (c *Client) commonStart() error {
 		go quicPool.ClientManager()
 		c.tunnelPool = quicPool
 	case "2":
-		wsPool := npws.NewClientPool(
+		wssPool := npws.NewClientPool(
 			c.minPoolCapacity,
 			c.maxPoolCapacity,
 			minPoolInterval,
@@ -193,80 +220,56 @@ func (c *Client) commonStart() error {
 			reportInterval,
 			c.tlsCode,
 			c.tunnelAddr)
-		go wsPool.ClientManager()
-		c.tunnelPool = wsPool
+		go wssPool.ClientManager()
+		c.tunnelPool = wssPool
 	default:
-		return fmt.Errorf("commonStart: unknown pool type: %s", c.poolType)
-	}
-
-	// 判断数据流向
-	if c.dataFlow == "+" {
-		if err := c.initTargetListener(); err != nil {
-			return fmt.Errorf("commonStart: initTargetListener failed: %w", err)
-		}
-		go c.commonLoop()
-	}
-
-	// 启动共用控制
-	if err := c.commonControl(); err != nil {
-		return fmt.Errorf("commonStart: commonControl failed: %w", err)
+		return fmt.Errorf("initTunnelPool: unknown pool type: %s", c.poolType)
 	}
 	return nil
 }
 
 // tunnelHandshake 与隧道服务端进行握手
 func (c *Client) tunnelHandshake() error {
-	// 建立隧道TCP连接
-	tunnelTCPAddr, err := c.getTunnelTCPAddr()
+	// 构建请求
+	tunnelAddr, err := c.getTunnelTCPAddr()
 	if err != nil {
-		return fmt.Errorf("tunnelHandshake: getTunnelTCPAddr failed: %w", err)
+		return fmt.Errorf("tunnelHandshake: %w", err)
 	}
-	handshakeConn, err := net.DialTimeout("tcp", tunnelTCPAddr.String(), tcpDialTimeout)
+
+	req, _ := http.NewRequest(http.MethodGet, "http://"+tunnelAddr.String()+"/", nil)
+	req.Host = c.tunnelName
+	req.Header.Set("Authorization", "Bearer "+c.generateAuthToken())
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("tunnelHandshake: dialTimeout failed: %w", err)
+		return fmt.Errorf("tunnelHandshake: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tunnelHandshake: status %d", resp.StatusCode)
 	}
 
-	c.controlConn = handshakeConn
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
-
-	// 发送隧道密钥
-	_, err = c.controlConn.Write(c.encode([]byte(c.tunnelKey)))
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
+	// 解析配置
+	var config struct {
+		Flow string `json:"flow"`
+		Max  int    `json:"max"`
+		TLS  string `json:"tls"`
+		Type string `json:"type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
+		return fmt.Errorf("tunnelHandshake: %w", err)
 	}
 
-	// 读取隧道URL
-	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: readBytes failed: %w", err)
-	}
+	// 更新配置
+	c.dataFlow = config.Flow
+	c.maxPoolCapacity = config.Max
+	c.tlsCode = config.TLS
+	c.poolType = config.Type
 
-	// 解码隧道URL
-	tunnelURLData, err := c.decode(rawTunnelURL)
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: decode tunnel URL failed: %w", err)
-	}
-
-	// 解析隧道URL
-	tunnelURL, err := url.Parse(string(tunnelURLData))
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: parse tunnel URL failed: %w", err)
-	}
-
-	// 更新客户端配置
-	if tunnelURL.User.Username() == "" || tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
-		return net.UnknownNetworkError(tunnelURL.String())
-	}
-	c.poolType = tunnelURL.User.Username()
-	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
-		return fmt.Errorf("tunnelHandshake: parse max pool capacity failed: %w", err)
-	} else {
-		c.maxPoolCapacity = max
-	}
-	c.dataFlow = strings.TrimPrefix(tunnelURL.Path, "/")
-	c.tlsCode = tunnelURL.Fragment
-
-	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.controlConn.RemoteAddr())
-	c.logger.Info("Tunnel handshaked: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
+	c.logger.Info("Loading tunnel config: FLOW=%v|MAX=%v|TLS=%v|TYPE=%v",
+		c.dataFlow, c.maxPoolCapacity, c.tlsCode, c.poolType)
 	return nil
 }
