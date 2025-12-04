@@ -4,12 +4,12 @@ github.com/NodePassProject/conn v1.0.16 h1:ojHfyBveZMcyOikdUs1SOW4yKp92NOBnNhfNe
 github.com/NodePassProject/conn v1.0.16/go.mod h1:xfQ7ZLUxrtdLsljGHYYCToW+Hdg6DAbmL1Cs94n5h6E=
 github.com/NodePassProject/logs v1.0.3 h1:CDUZVQ477vmmFQHazrQCWM0gJPNINm0C2N3FzC4jVyw=
 github.com/NodePassProject/logs v1.0.3/go.mod h1:TwtPXOzLtb8iH+fdduQjEEywICXivsM39cy9AinMSks=
-github.com/NodePassProject/npws v1.0.3 h1:E4G/FdH0Tu7OCrk4cAxy4CR3dh675RhuFUUnPcfqzGc=
-github.com/NodePassProject/npws v1.0.3/go.mod h1:cyVS2X3/8f07yOkVEl53D+ozHLljJvHQx/s6xoLl/s8=
+github.com/NodePassProject/npws v1.0.4 h1:uoIv/ITXkPqJYVW3k2O3AKk2+RsBuyGGX6ODJuJeo7c=
+github.com/NodePassProject/npws v1.0.4/go.mod h1:cyVS2X3/8f07yOkVEl53D+ozHLljJvHQx/s6xoLl/s8=
 github.com/NodePassProject/pool v1.0.50 h1:Xmvb0hSHq24U06moHICr8CkqEHB4ZHBbY9Z+a7fSejQ=
 github.com/NodePassProject/pool v1.0.50/go.mod h1:joQFk1oocg56QpJ1QK/2g5Jv/AyqYUQgPXMG1gWe8iA=
-github.com/NodePassProject/quic v1.0.9 h1:ZQkvSpMlY6jin/bxhwYasmPPudVa/KuHCkhGrBnmY0A=
-github.com/NodePassProject/quic v1.0.9/go.mod h1:oiPM1d2iDf60gITRs6lPniOnJPYDRqB68NiKCHkMYZY=
+github.com/NodePassProject/quic v1.0.13 h1:kFrnizcb/sjP2c2QVwtNMmNfto6p+ZIost9+J6I5SQ8=
+github.com/NodePassProject/quic v1.0.13/go.mod h1:oiPM1d2iDf60gITRs6lPniOnJPYDRqB68NiKCHkMYZY=
 github.com/coder/websocket v1.8.14 h1:9L0p0iKiNOibykf283eHkKUHHrpG7f65OE3BhhO7v9g=
 github.com/coder/websocket v1.8.14/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
