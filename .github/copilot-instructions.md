@@ -123,9 +123,6 @@ export NP_SEMAPHORE_LIMIT=131072
 # Larger TCP buffer for high-bandwidth links (default 16384)
 export NP_TCP_DATA_BUF_SIZE=32768
 
-# Extend handshake timeout for slow networks (default 5s)
-export NP_HANDSHAKE_TIMEOUT=10s
-
 # Pool connection acquisition timeout (default 5s)
 export NP_POOL_GET_TIMEOUT=10s
 
@@ -421,28 +418,39 @@ Custom DNS resolution via `dnsCacheEntry` stored in `sync.Map` with TTL. Functio
 
 ### Handshake Protocol
 
-**Server-side handshake** (`server.go` lines 194-320):
-1. Accepts connections on `tunnelListener`
-2. Reads XOR+base64 encoded `tunnelKey` from client (5s timeout)
-3. Validates key match - closes connection on mismatch with "access denied" warning
-4. Extracts client IP from `RemoteAddr()`
-5. Constructs tunnel config URL: `np://<poolType>@<maxPoolCapacity>/<dataFlow>#<tlsCode>`
-6. Sends encoded config to client
-7. Assigns connection to `controlConn` for signal channel
+**Server-side handshake** (`server.go` lines 208-279):
+1. Creates HTTP server with `HandlerFunc` on `tunnelListener`
+2. Validates incoming HTTP GET request to path `/`
+3. Extracts `Authorization` header and verifies Bearer token using HMAC-SHA256:
+   - Client sends: `Authorization: Bearer <HMAC-SHA256(tunnelKey)>`
+   - Server verifies via `hmac.Equal()` constant-time comparison
+4. Extracts client IP from `RemoteAddr()` (strips port if present)
+5. Responds with JSON config containing:
+   ```json
+   {
+     "flow": "<dataFlow>",      // Direction: "+" or "-"
+     "max": <maxPoolCapacity>,  // Server pool capacity
+     "tls": "<tlsCode>",        // TLS mode: "0", "1", or "2"
+     "type": "<poolType>"       // Transport: "0" (TCP), "1" (QUIC), "2" (WS)
+   }
+   ```
+6. Closes HTTP server after successful handshake
+7. Recreates `tunnelListener` for subsequent pool connections
 
-**Client-side handshake** (`client.go` lines 218-273):
-1. Dials server tunnel address with 5s timeout
-2. Sends XOR+base64 encoded `tunnelKey`
-3. Reads tunnel config URL from server
-4. Decodes and parses URL to extract:
-   - `poolType`: Transport protocol to use
-   - `maxPoolCapacity`: Server-allocated pool size
-   - `dataFlow`: Direction indicator (`+` or `-`)
-   - `tlsCode`: TLS mode for data connections
-5. Updates local config with server values
-6. Wraps connection in `TimeoutReader` (3x reportInterval = 15s default)
+**Client-side handshake** (`client.go` lines 231-273):
+1. Constructs HTTP GET request to `http://<tunnelAddr>/`
+2. Sets `Host` header to `tunnelName` for DNS-based routing
+3. Generates HMAC-SHA256 token: `hex.EncodeToString(hmac.New(sha256.New, []byte(tunnelKey)).Sum(nil))`
+4. Sends `Authorization: Bearer <token>` header
+5. Receives JSON response and decodes config
+6. Updates local configuration:
+   - `dataFlow`: Controls connection direction
+   - `maxPoolCapacity`: Adopts server's pool size
+   - `tlsCode`: Applies server's TLS settings to data connections
+   - `poolType`: Switches transport type if needed
+7. Logs loaded configuration for debugging
 
-Handshake encoding uses `xor()` followed by `base64.StdEncoding` - see `common.go` lines 250-270.
+**Authentication mechanism**: HMAC-SHA256 provides cryptographic authentication without transmitting the raw `tunnelKey`. Token generation in `common.go` lines 248-256 uses standard library `crypto/hmac` and `crypto/sha256`.
 
 ### Load Balancing & Failover
 
