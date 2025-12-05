@@ -129,9 +129,9 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		}
 		return "2", tlsConfig
 	default:
-		if parsedURL.Query().Get("type") == "1" || parsedURL.Query().Get("type") == "2" {
-			// QUIC/WSS池类型不支持明文传输
-			logger.Info("TLS code-1: RAM cert with TLS 1.3 for QUIC/WSS pool")
+		if parsedURL.Query().Get("type") == "1" {
+			// QUIC池类型不支持明文传输
+			logger.Info("TLS code-1: RAM cert with TLS 1.3 for QUIC pool")
 			return "1", tlsConfig
 		}
 		// 不使用加密

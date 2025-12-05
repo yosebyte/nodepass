@@ -39,6 +39,9 @@ type Common struct {
 	runMode          string             // 运行模式
 	poolType         string             // 连接池类型
 	dataFlow         string             // 数据流向
+	serverName       string             // 服务器名称
+	serverPort       string             // 服务器端口
+	clientIP         string             // 客户端地址
 	dialerIP         string             // 拨号本地IP
 	dialerFallback   uint32             // 拨号回落标志
 	tunnelKey        string             // 隧道密钥
@@ -68,6 +71,7 @@ type Common struct {
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
+	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
 	flushURL         *url.URL           // 重置信号
 	pingURL          *url.URL           // PING信号
@@ -107,19 +111,20 @@ type TransportPool interface {
 
 // 配置变量，可通过环境变量调整
 var (
-	semaphoreLimit  = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
-	tcpDataBufSize  = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
-	udpDataBufSize  = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
-	tcpDialTimeout  = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
-	udpDialTimeout  = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
-	udpReadTimeout  = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
-	poolGetTimeout  = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
-	minPoolInterval = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
-	maxPoolInterval = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
-	reportInterval  = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)          // 报告间隔
-	serviceCooldown = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)         // 服务冷却时间
-	shutdownTimeout = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)         // 关闭超时
-	ReloadInterval  = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
+	semaphoreLimit   = getEnvAsInt("NP_SEMAPHORE_LIMIT", 65536)                       // 信号量限制
+	tcpDataBufSize   = getEnvAsInt("NP_TCP_DATA_BUF_SIZE", 16384)                     // TCP缓冲区大小
+	udpDataBufSize   = getEnvAsInt("NP_UDP_DATA_BUF_SIZE", 16384)                     // UDP缓冲区大小
+	handshakeTimeout = getEnvAsDuration("NP_HANDSHAKE_TIMEOUT", 5*time.Second)        // 握手超时
+	tcpDialTimeout   = getEnvAsDuration("NP_TCP_DIAL_TIMEOUT", 5*time.Second)         // TCP拨号超时
+	udpDialTimeout   = getEnvAsDuration("NP_UDP_DIAL_TIMEOUT", 5*time.Second)         // UDP拨号超时
+	udpReadTimeout   = getEnvAsDuration("NP_UDP_READ_TIMEOUT", 30*time.Second)        // UDP读取超时
+	poolGetTimeout   = getEnvAsDuration("NP_POOL_GET_TIMEOUT", 5*time.Second)         // 池连接获取超时
+	minPoolInterval  = getEnvAsDuration("NP_MIN_POOL_INTERVAL", 100*time.Millisecond) // 最小池间隔
+	maxPoolInterval  = getEnvAsDuration("NP_MAX_POOL_INTERVAL", 1*time.Second)        // 最大池间隔
+	reportInterval   = getEnvAsDuration("NP_REPORT_INTERVAL", 5*time.Second)          // 报告间隔
+	serviceCooldown  = getEnvAsDuration("NP_SERVICE_COOLDOWN", 3*time.Second)         // 服务冷却时间
+	shutdownTimeout  = getEnvAsDuration("NP_SHUTDOWN_TIMEOUT", 5*time.Second)         // 关闭超时
+	ReloadInterval   = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
 // 常量定义
@@ -459,6 +464,9 @@ func (c *Common) getAddress() error {
 
 	// 保存原始隧道地址
 	c.tunnelAddr = tunnelAddr
+	if name, port, err := net.SplitHostPort(tunnelAddr); err == nil {
+		c.serverName, c.serverPort = name, port
+	}
 
 	// 解析隧道TCP地址
 	tcpAddr, err := c.resolveAddr("tcp", tunnelAddr)
@@ -892,9 +900,13 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 
 // setControlConn 设置控制连接
 func (c *Common) setControlConn() error {
+	start := time.Now()
 	for c.ctx.Err() == nil {
 		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
 			break
+		}
+		if time.Since(start) > handshakeTimeout {
+			return fmt.Errorf("setControlConn: handshake timeout")
 		}
 		select {
 		case <-c.ctx.Done():
@@ -909,7 +921,7 @@ func (c *Common) setControlConn() error {
 	}
 	c.controlConn = poolConn
 	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
-	c.logger.Info("Setting tunnel control: %v <-> %v", c.controlConn.LocalAddr(), c.controlConn.RemoteAddr())
+	c.logger.Info("Marking tunnel handshake as complete in %vms", time.Since(c.handshakeStart).Milliseconds())
 	return nil
 }
 
@@ -1190,7 +1202,7 @@ func (c *Common) commonTCPLoop() {
 			}()
 
 			// 交换数据
-			c.logger.Info("Starting exchange: %v <-> %v", targetConn.RemoteAddr(), remoteConn.LocalAddr())
+			c.logger.Info("Starting exchange: %v <-> %v", targetConn.RemoteAddr(), remoteConn.RemoteAddr())
 			c.logger.Info("Exchange complete: %v", conn.DataExchange(targetConn, remoteConn, c.readTimeout, buffer1, buffer2))
 		}(targetConn)
 	}
@@ -1529,7 +1541,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	}()
 
 	// 交换数据
-	c.logger.Info("Starting exchange: %v <-> %v", remoteConn.LocalAddr(), targetConn.RemoteAddr())
+	c.logger.Info("Starting exchange: %v <-> %v", remoteConn.RemoteAddr(), targetConn.RemoteAddr())
 	c.logger.Info("Exchange complete: %v", conn.DataExchange(remoteConn, targetConn, c.readTimeout, buffer1, buffer2))
 }
 
