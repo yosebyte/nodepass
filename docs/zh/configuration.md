@@ -651,6 +651,7 @@ NodePass支持通过URL查询参数进行灵活配置,不同参数在 server、c
 | `NP_SEMAPHORE_LIMIT` | 信号缓冲区大小 | 65536 | `export NP_SEMAPHORE_LIMIT=2048` |
 | `NP_TCP_DATA_BUF_SIZE` | TCP数据传输缓冲区大小 | 16384 | `export NP_TCP_DATA_BUF_SIZE=65536` |
 | `NP_UDP_DATA_BUF_SIZE` | UDP数据包缓冲区大小 | 16384 | `export NP_UDP_DATA_BUF_SIZE=16384` |
+| `NP_HANDSHAKE_TIMEOUT` | 握手操作超时 | 5s | `export NP_HANDSHAKE_TIMEOUT=30s` |
 | `NP_UDP_READ_TIMEOUT` | UDP读取操作超时 | 30s | `export NP_UDP_READ_TIMEOUT=60s` |
 | `NP_TCP_DIAL_TIMEOUT` | TCP连接建立超时 | 5s | `export NP_TCP_DIAL_TIMEOUT=60s` |
 | `NP_UDP_DIAL_TIMEOUT` | UDP连接建立超时 | 5s | `export NP_UDP_DIAL_TIMEOUT=30s` |

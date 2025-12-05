@@ -123,6 +123,9 @@ export NP_SEMAPHORE_LIMIT=131072
 # Larger TCP buffer for high-bandwidth links (default 16384)
 export NP_TCP_DATA_BUF_SIZE=32768
 
+# Extend handshake timeout for slow networks (default 5s)
+export NP_HANDSHAKE_TIMEOUT=10s
+
 # Pool connection acquisition timeout (default 5s)
 export NP_POOL_GET_TIMEOUT=10s
 
