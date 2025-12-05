@@ -22,10 +22,7 @@ import (
 )
 
 // Client 实现客户端模式功能
-type Client struct {
-	Common            // 继承共享功能
-	tunnelName string // 隧道名称
-}
+type Client struct{ Common }
 
 // NewClient 创建新的客户端实例
 func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
@@ -50,7 +47,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
-		tunnelName: parsedURL.Hostname(),
 	}
 	if err := client.initConfig(); err != nil {
 		return nil, fmt.Errorf("newClient: initConfig failed: %w", err)
@@ -141,6 +137,7 @@ func (c *Client) singleStart() error {
 func (c *Client) commonStart() error {
 	// 发起隧道握手
 	c.logger.Info("Pending tunnel handshake...")
+	c.handshakeStart = time.Now()
 	if err := c.tunnelHandshake(); err != nil {
 		return fmt.Errorf("commonStart: tunnelHandshake failed: %w", err)
 	}
@@ -183,7 +180,7 @@ func (c *Client) initTunnelPool() error {
 			maxPoolInterval,
 			reportInterval,
 			c.tlsCode,
-			c.tunnelName,
+			c.serverName,
 			func() (net.Conn, error) {
 				tcpAddr, err := c.getTunnelTCPAddr()
 				if err != nil {
@@ -201,7 +198,7 @@ func (c *Client) initTunnelPool() error {
 			maxPoolInterval,
 			reportInterval,
 			c.tlsCode,
-			c.tunnelName,
+			c.serverName,
 			func() (string, error) {
 				udpAddr, err := c.getTunnelUDPAddr()
 				if err != nil {
@@ -230,14 +227,14 @@ func (c *Client) initTunnelPool() error {
 
 // tunnelHandshake 与隧道服务端进行握手
 func (c *Client) tunnelHandshake() error {
-	// 构建请求
-	tunnelAddr, err := c.getTunnelTCPAddr()
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: %w", err)
+	scheme := "http"
+	if c.serverPort == "443" {
+		scheme = "https"
 	}
 
-	req, _ := http.NewRequest(http.MethodGet, "http://"+tunnelAddr.String()+"/", nil)
-	req.Host = c.tunnelName
+	// 构建请求
+	req, _ := http.NewRequest(http.MethodGet, scheme+"://"+c.tunnelAddr+"/", nil)
+	req.Host = c.serverName
 	req.Header.Set("Authorization", "Bearer "+c.generateAuthToken())
 
 	// 发送请求

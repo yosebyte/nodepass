@@ -24,10 +24,7 @@ import (
 )
 
 // Server 实现服务端模式功能
-type Server struct {
-	Common          // 继承共享功能
-	clientIP string // 客户端IP
-}
+type Server struct{ Common }
 
 // NewServer 创建新的服务端实例
 func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
@@ -142,6 +139,7 @@ func (s *Server) start() error {
 
 	// 接受隧道握手
 	s.logger.Info("Pending tunnel handshake...")
+	s.handshakeStart = time.Now()
 	if err := s.tunnelHandshake(); err != nil {
 		return fmt.Errorf("start: tunnelHandshake failed: %w", err)
 	}
@@ -193,7 +191,7 @@ func (s *Server) initTunnelPool() error {
 	case "2":
 		wssPool := npws.NewServerPool(
 			s.maxPoolCapacity,
-			s.clientIP,
+			"",
 			s.tlsConfig,
 			s.tunnelListener,
 			reportInterval)
@@ -232,7 +230,7 @@ func (s *Server) tunnelHandshake() error {
 			return
 		}
 
-		// 记录客户端IP
+		// 记录客户端地址
 		clientIP = r.RemoteAddr
 		if host, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = host
