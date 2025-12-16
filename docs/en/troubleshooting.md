@@ -426,7 +426,41 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Configuration is automatically delivered during handshake
    - Check logs for "WebSocket connection not available" errors
 
-### QUIC Pool Performance Issues
+### HTTP/2 Pool Connection Failures
+
+**Symptoms**: HTTP/2 pool tunnel fails to establish when `type=3` is enabled.
+
+**Possible Causes and Solutions**:
+
+1. **TCP Port or HTTP/2 Protocol Blocked**
+   - Verify TCP port is accessible with HTTP/2 protocol support
+   - Check firewall rules and network policies
+   - Some networks may block or inspect HTTPS traffic
+   - Test connectivity with HTTP/2-capable client tools
+
+2. **TLS Configuration Issues**
+   - HTTP/2 requires TLS to be enabled (minimum `tls=1`)
+   - If `type=3` is set but TLS is disabled, system will automatically enforce `tls=1`
+   - For production, use `tls=2` with valid certificates
+   - HTTP/2 requires TLS 1.3 with ALPN (Application-Layer Protocol Negotiation)
+   - Check certificate validity and ALPN configuration
+
+3. **Client-Server Pool Type Mismatch**
+   - Both server and client must use same `type` setting
+   - Server with `type=3` requires client with `type=3`
+   - Configuration is automatically delivered during handshake
+   - Check logs for "HTTP/2 connection not available" errors
+
+4. **Mode Compatibility**
+   - HTTP/2 pool only works in dual-end handshake mode (mode=2)
+   - Not available in single-end forwarding mode (mode=1)
+   - System will fall back to TCP pool if mode incompatible
+
+5. **HTTP/2 Protocol Negotiation Failures**
+   - Verify ALPN extension is enabled and negotiates "h2" protocol
+   - Some older TLS implementations may not support ALPN
+   - Check logs for protocol negotiation errors
+   - Ensure both endpoints support HTTP/2 over TLS
 
 ### QUIC Pool Performance Issues
 

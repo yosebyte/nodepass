@@ -23,7 +23,7 @@ Common query parameters:
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
-- `type=<pool_type>`: Connection pool type (`0` for TCP pool, `1` for QUIC UDP pool, `2` for WebSocket/WSS pool, default: 0, server-side only)
+- `type=<pool_type>`: Connection pool type (`0` for TCP pool, `1` for QUIC UDP pool, `2` for WebSocket/WSS pool, `3` for HTTP/2 pool, default: 0, server-side only)
 - `dial=<source_ip>`: Source IP address for outbound connections (default: `auto`, supports both IPv4 and IPv6)
 - `read=<timeout>`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
@@ -60,10 +60,11 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
 - `dns`: DNS cache TTL duration (default: 5m, supports time units like `1h`, `30m`, `15s`, etc.)
-- `type`: Connection pool type (0, 1, 2)
+- `type`: Connection pool type (0, 1, 2, 3)
   - `0`: Use TCP-based connection pool (default)
-  - `1`: Use QUIC-based UDP connection pool with stream multiplexing
-  - `2`: Use WebSocket/WSS-based connection pool (requires TLS, minimum `tls=1`)
+  - `1`: Use QUIC-based UDP connection pool with stream multiplexing(requires TLS, minimum `tls=1`)
+  - `2`: Use WebSocket/WSS-based connection pool
+  - `3`: Use HTTP/2-based connection pool with multiplexed streams (requires TLS, minimum `tls=1`)
   - Configuration is automatically delivered to client during handshake
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
@@ -121,6 +122,9 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=1&mode=2"
 
 # WebSocket pool with custom certificate
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=2&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# HTTP/2 pool with automatic TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=3&mode=2&tls=1"
 ```
 
 ### Client Mode

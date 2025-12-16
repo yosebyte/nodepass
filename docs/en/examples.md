@@ -686,7 +686,30 @@ This configuration:
 - Client automatically adopts server's pool type configuration
 - **Note**: WebSocket pool does not support unencrypted mode (tls=0)
 
-### Example 33: QUIC Pool for Mobile/High-Latency Networks
+### Example 33: HTTP/2 Pool for High-Concurrency Environments
+
+Use HTTP/2 pool for efficient multiplexed streams with protocol optimization:
+
+```bash
+# Server side: Enable HTTP/2 pool (TLS required)
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=3&mode=2&tls=1&log=info"
+
+# Client side: Automatically receives HTTP/2 configuration
+nodepass "client://h2.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+This configuration:
+- Uses HTTP/2 protocol for multiplexed streams over a single TLS connection
+- **Requires TLS encryption** - minimum `tls=1`, use `tls=2` with certificates for production
+- HPACK header compression reduces bandwidth usage
+- Binary framing protocol with efficient parsing
+- Per-stream flow control for optimal resource utilization
+- Works with HTTP/2-aware proxies and load balancers
+- Suitable for HTTP/HTTPS-only policy environments
+- Client automatically adopts server's pool type configuration
+- Ideal for high-concurrency scenarios benefiting from stream multiplexing
+
+### Example 34: QUIC Pool for Mobile/High-Latency Networks
 
 Optimize for mobile networks or satellite connections:
 
@@ -706,9 +729,9 @@ This configuration:
 - 0-RTT reconnection for faster recovery after network changes
 - Client automatically adopts pool type from server
 
-### Example 34: Pool Type Performance Comparison
+### Example 35: Pool Type Performance Comparison
 
-Side-by-side comparison of TCP, QUIC, and WebSocket pools:
+Side-by-side comparison of TCP, QUIC, WebSocket, and HTTP/2 pools:
 
 ```bash
 # Traditional TCP pool (default)
@@ -722,6 +745,10 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=ev
 # WebSocket pool (proxy traversal)
 nodepass "server://0.0.0.0:10103/backend.example.com:8080?type=2&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=event"
+
+# HTTP/2 pool (multiplexed streams)
+nodepass "server://0.0.0.0:10104/backend.example.com:8080?type=3&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10104/127.0.0.1:8083?mode=2&min=128&log=event"
 ```
 
 **TCP Pool Advantages**:
@@ -742,7 +769,15 @@ nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=ev
 - Integrates with existing web infrastructure
 - Suitable for enterprise firewall environments
 
-### Example 35: QUIC Pool for Real-Time Applications
+**HTTP/2 Pool Advantages**:
+- Efficient stream multiplexing over single TCP connection
+- HPACK header compression reduces bandwidth
+- Binary protocol with efficient parsing
+- Per-stream flow control for resource optimization
+- Works with HTTP/2-aware infrastructure
+- Ideal for HTTP/HTTPS-only policy environments
+
+### Example 36: QUIC Pool for Real-Time Applications
 
 Configure QUIC tunnel for gaming, VoIP, or video streaming:
 
@@ -766,6 +801,7 @@ This setup:
 - **TCP Pool**: Standard enterprise environments, maximum compatibility, stable networks
 - **QUIC Pool**: Mobile networks, high-latency links, real-time apps, complex NAT environments
 - **WebSocket Pool**: HTTP proxy traversal, enterprise firewall restrictions, web infrastructure integration
+- **HTTP/2 Pool**: High-concurrency HTTP/HTTPS services, bandwidth optimization, HTTP/2-aware environments
 
 ## Next Steps
 

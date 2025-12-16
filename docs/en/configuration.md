@@ -221,6 +221,7 @@ NodePass supports three connection pool types for tunnel connection management i
   - Value 0: Use TCP-based connection pool (traditional pool library)
   - Value 1: Use QUIC-based connection pool (UDP multiplexing with streams)
   - Value 2: Use WebSocket/WSS-based connection pool (HTTP upgrade connections)
+  - Value 3: Use HTTP/2-based connection pool (multiplexed streams over single TLS connection)
   - Only applies to dual-end handshake mode (mode=2)
   - Automatically enables TLS if not already configured (minimum tls=1)
   - Server configuration is automatically delivered to client during handshake
@@ -289,6 +290,32 @@ Connection pool based on WebSocket protocol, establishing connections via HTTP u
 - TCP port with WebSocket upgrade support required
 - **Important**: Type 2 does NOT support unencrypted mode (tls=0). If tls=0 is specified with type=2, system will automatically enforce tls=1
 
+### HTTP/2 Pool (type=3)
+
+Connection pool based on HTTP/2 protocol, providing multiplexed streams over a single TLS connection.
+
+**Advantages:**
+- **Stream Multiplexing**: Multiple independent streams over a single TCP connection
+- **Header Compression**: HPACK compression reduces bandwidth usage
+- **Binary Protocol**: Efficient binary framing reduces parsing overhead
+- **Flow Control**: Per-stream and connection-level flow control
+- **Server Push**: Potential for optimized data transfer patterns
+- **TLS Integration**: Native TLS 1.3 support with strong encryption
+- **Firewall Friendly**: Uses standard HTTPS ports and protocol patterns
+
+**Use Cases:**
+- Corporate environments with HTTP/HTTPS-only policies
+- Networks requiring protocol-level optimization and efficiency
+- High-concurrency scenarios benefiting from stream multiplexing
+- Environments needing both proxy traversal and performance
+- Applications requiring fine-grained flow control
+- Infrastructure with HTTP/2-aware load balancers or proxies
+
+**Requirements:**
+- TLS mode must be enabled (tls=1 or tls=2)
+- Only available in dual-end handshake mode (mode=2)
+- HTTP/2 protocol support required (built into NodePass)
+
 ### Configuration Examples
 
 ```bash
@@ -300,6 +327,9 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=1&mode=2"
 
 # WebSocket pool (with custom TLS certificate)
 nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=2&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# HTTP/2 pool (multiplexed streams with TLS)
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=3&mode=2&tls=1"
 
 # Client automatically adopts server's pool type configuration
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
@@ -315,6 +345,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
 - **TCP Pool**: Standard enterprise environments, maximum compatibility, stable networks
 - **QUIC Pool**: High-latency networks, mobile networks, real-time applications, complex NAT environments
 - **WebSocket Pool**: HTTP proxy traversal, enterprise firewall restrictions, web infrastructure integration
+- **HTTP/2 Pool**: HTTP/HTTPS-only policies, high-concurrency scenarios, protocol-level optimization needs
 
 ## Connection Pool Capacity Parameters
 

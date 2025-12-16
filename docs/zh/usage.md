@@ -23,7 +23,7 @@ nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `min=<min_pool>`：最小连接池容量（默认：64，由客户端设置）
 - `max=<max_pool>`：最大连接池容量（默认：1024，由服务端设置并下发给客户端）
 - `mode=<run_mode>`：运行模式控制（`0`、`1` 或 `2`）- 控制操作行为
-- `type=<pool_type>`：连接池类型（`0`为TCP连接池，`1`为QUIC UDP连接池，`2`为WebSocket/WSS连接池，默认：0，仅服务端配置）
+- `type=<pool_type>`：连接池类型（`0`为TCP连接池，`1`为QUIC UDP连接池，`2`为WebSocket/WSS连接池，`3`为HTTP/2连接池，默认：0，仅服务端配置）
 - `dial=<source_ip>`：出站连接的源IP地址（默认：`auto`，支持IPv4和IPv6）
 - `read=<timeout>`：数据读取超时时长（默认：0，支持时间单位如30s、5m、1h等）
 - `rate=<mbps>`：带宽速率限制，单位Mbps（默认：0表示无限制）
@@ -60,10 +60,11 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `target_addr`：业务数据的目标地址，支持双向数据流模式(例如, 10.1.0.1:8080)
 - `log`：日志级别(debug, info, warn, error, event)
 - `dns`：DNS缓存TTL持续时间（默认：5m，支持时间单位如`1h`、`30m`、`15s`等）
-- `type`：连接池类型 (0, 1, 2)
+- `type`：连接池类型 (0, 1, 2, 3)
   - `0`：使用基于TCP的连接池（默认）
-  - `1`：使用基于QUIC的UDP连接池，支持流多路复用
-  - `2`：使用基于WebSocket/WSS的连接池（需要TLS，至少`tls=1`）
+  - `1`：使用基于QUIC的UDP连接池，支持流多路复用（需要TLS，至少`tls=1`）
+  - `2`：使用基于WebSocket/WSS的连接池
+  - `3`：使用基于HTTP/2的连接池，支持多路复用流（需要TLS，至少`tls=1`）
   - 配置在握手时自动下发给客户端
 - `tls`：目标数据通道的TLS加密模式 (0, 1, 2)
   - `0`：无TLS加密（明文TCP/UDP）
@@ -121,6 +122,9 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=1&mode=2"
 
 # WebSocket连接池，使用自定义证书
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=2&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# HTTP/2连接池，自动启用TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=3&mode=2&tls=1"
 ```
 
 ### 客户端模式

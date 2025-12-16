@@ -686,7 +686,30 @@ nodepass "client://wss.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
 - 客户端自动采用服务器的连接池类型配置
 - **注意**：WebSocket连接池不支持不加密模式（tls=0）
 
-### 示例33: 移动/高延迟网络的QUIC连接池
+### 示例33: 高并发环境的HTTP/2连接池
+
+使用HTTP/2连接池实现高效的多路复用流和协议优化：
+
+```bash
+# 服务器端：启用HTTP/2连接池（需要TLS）
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=3&mode=2&tls=1&log=info"
+
+# 客户端：自动接收HTTP/2配置
+nodepass "client://h2.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+此配置：
+- 使用HTTP/2协议在单个TLS连接上实现多路复用流
+- **需要TLS加密** - 最少`tls=1`，生产环境建议使用带证书的`tls=2`
+- HPACK头部压缩减少带宽使用
+- 高效解析的二进制帧协议
+- 每个流的流量控制实现最优资源利用
+- 与HTTP/2感知的代理和负载均衡器配合使用
+- 适合HTTP/HTTPS仅支持策略的环境
+- 客户端自动采用服务器的连接池类型配置
+- 适用于受益于流多路复用的高并发场景
+
+### 示例34: 移动/高延迟网络的QUIC连接池
 
 针对移动网络或卫星连接进行优化：
 
@@ -708,7 +731,7 @@ nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=war
 
 ### 示例34: 连接池类型性能对比
 
-TCP、QUIC和WebSocket连接池的并排比较：
+TCP、QUIC、WebSocket和HTTP/2连接池的并排比较：
 
 ```bash
 # 传统TCP连接池（默认）
@@ -722,6 +745,10 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=ev
 # WebSocket连接池（代理穿透）
 nodepass "server://0.0.0.0:10103/backend.example.com:8080?type=2&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=event"
+
+# HTTP/2连接池（多路复用流）
+nodepass "server://0.0.0.0:10104/backend.example.com:8080?type=3&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10104/127.0.0.1:8083?mode=2&min=128&log=event"
 ```
 
 **TCP连接池优势**：
@@ -742,7 +769,15 @@ nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=ev
 - 与现有Web基础设施集成
 - 适合企业防火墙环境
 
-### 示例35: 实时应用的QUIC连接池
+**HTTP/2连接池优势**：
+- 在单个TCP连接上高效的流多路复用
+- HPACK头部压缩减少带宽
+- 高效解析的二进制协议
+- 每个流的流量控制实现资源优化
+- 与HTTP/2感知的基础设施配合使用
+- 适合HTTP/HTTPS仅支持策略的环境
+
+### 示例36: 实时应用的QUIC连接池
 
 为游戏、VoIP或视频流配置QUIC隧道：
 
@@ -766,6 +801,7 @@ nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 - **TCP连接池**：标准企业环境、最大兼容性、稳定网络
 - **QUIC连接池**：移动网络、高延迟链路、实时应用、复杂NAT环境
 - **WebSocket连接池**：HTTP代理穿透、企业防火墙限制、Web基础设施集成
+- **HTTP/2连接池**：HTTP/HTTPS仅支持策略、高并发Web流量、与HTTP/2感知基础设施集成
 
 ## 下一步
 
