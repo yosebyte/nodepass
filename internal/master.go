@@ -1038,7 +1038,8 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		// 创建新实例
 		var reqData struct {
-			URL string `json:"url"`
+			Alias string `json:"alias"`
+			URL   string `json:"url"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil || reqData.URL == "" {
 			httpError(w, "Invalid request body", http.StatusBadRequest)
@@ -1069,6 +1070,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		// 创建实例
 		instance := &Instance{
 			ID:      id,
+			Alias:   reqData.Alias,
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
@@ -2087,7 +2089,10 @@ func (m *Master) generateOpenAPISpec() string {
 	  "CreateInstanceRequest": {
 		"type": "object",
 		"required": ["url"],
-		"properties": {"url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}}
+		"properties": {
+		  "alias": {"type": "string", "description": "Instance alias"},
+		  "url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}
+		}
 	  },
 	  "UpdateInstanceRequest": {
 		"type": "object",
