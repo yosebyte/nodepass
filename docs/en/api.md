@@ -1335,7 +1335,7 @@ const instances = await fetch(`${API_URL}/instances`, {
 #### POST /instances
 - **Description**: Create new instance
 - **Authentication**: Requires API Key
-- **Request body**: `{ "url": "client:// or server:// format URL" }`
+- **Request body**: `{ "alias": "Instance alias (optional)", "url": "client:// or server:// format URL" }`
 - **Response**: Newly created instance object
 - **Example**:
 ```javascript
@@ -1345,7 +1345,10 @@ const newInstance = await fetch(`${API_URL}/instances`, {
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ url: 'server://0.0.0.0:8080/localhost:3000' })
+  body: JSON.stringify({ 
+    alias: 'My Server',
+    url: 'server://0.0.0.0:8080/localhost:3000' 
+  })
 });
 ```
 

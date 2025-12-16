@@ -1335,7 +1335,7 @@ const instances = await fetch(`${API_URL}/instances`, {
 #### POST /instances
 - **描述**：创建新实例
 - **认证**：需要API Key
-- **请求体**：`{ "url": "client://或server://格式的URL" }`
+- **请求体**：`{ "alias": "实例别名（可选）", "url": "client://或server://格式的URL" }`
 - **响应**：新创建的实例对象
 - **示例**：
 ```javascript
@@ -1345,7 +1345,10 @@ const newInstance = await fetch(`${API_URL}/instances`, {
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ url: 'server://0.0.0.0:8080/localhost:3000' })
+  body: JSON.stringify({ 
+    alias: '我的服务器',
+    url: 'server://0.0.0.0:8080/localhost:3000' 
+  })
 });
 ```
 
