@@ -4,8 +4,8 @@ github.com/NodePassProject/conn v1.0.16 h1:ojHfyBveZMcyOikdUs1SOW4yKp92NOBnNhfNe
 github.com/NodePassProject/conn v1.0.16/go.mod h1:xfQ7ZLUxrtdLsljGHYYCToW+Hdg6DAbmL1Cs94n5h6E=
 github.com/NodePassProject/logs v1.0.3 h1:CDUZVQ477vmmFQHazrQCWM0gJPNINm0C2N3FzC4jVyw=
 github.com/NodePassProject/logs v1.0.3/go.mod h1:TwtPXOzLtb8iH+fdduQjEEywICXivsM39cy9AinMSks=
-github.com/NodePassProject/nph2 v1.0.3 h1:xcHV7JdSnuhPldm2i93U7x3VhQ4XXJpqTLyBHlyIvv8=
-github.com/NodePassProject/nph2 v1.0.3/go.mod h1:fzNbTk0zh+0gXer2aKpPXF69o4/BOd15Ys2gvicwWR0=
+github.com/NodePassProject/nph2 v1.0.4 h1:szvp7hlvMRt1g/g1hF++0DfgM++5yqWWAPlfMDh226c=
+github.com/NodePassProject/nph2 v1.0.4/go.mod h1:fzNbTk0zh+0gXer2aKpPXF69o4/BOd15Ys2gvicwWR0=
 github.com/NodePassProject/npws v1.0.5 h1:UpVm4UYytNQHq6Nkli4Qqq17wpuwvKqoCY571+vubBA=
 github.com/NodePassProject/npws v1.0.5/go.mod h1:cyVS2X3/8f07yOkVEl53D+ozHLljJvHQx/s6xoLl/s8=
 github.com/NodePassProject/pool v1.0.50 h1:Xmvb0hSHq24U06moHICr8CkqEHB4ZHBbY9Z+a7fSejQ=
