@@ -4,6 +4,8 @@ github.com/NodePassProject/conn v1.0.16 h1:ojHfyBveZMcyOikdUs1SOW4yKp92NOBnNhfNe
 github.com/NodePassProject/conn v1.0.16/go.mod h1:xfQ7ZLUxrtdLsljGHYYCToW+Hdg6DAbmL1Cs94n5h6E=
 github.com/NodePassProject/logs v1.0.3 h1:CDUZVQ477vmmFQHazrQCWM0gJPNINm0C2N3FzC4jVyw=
 github.com/NodePassProject/logs v1.0.3/go.mod h1:TwtPXOzLtb8iH+fdduQjEEywICXivsM39cy9AinMSks=
+github.com/NodePassProject/nph2 v1.0.3 h1:xcHV7JdSnuhPldm2i93U7x3VhQ4XXJpqTLyBHlyIvv8=
+github.com/NodePassProject/nph2 v1.0.3/go.mod h1:fzNbTk0zh+0gXer2aKpPXF69o4/BOd15Ys2gvicwWR0=
 github.com/NodePassProject/npws v1.0.5 h1:UpVm4UYytNQHq6Nkli4Qqq17wpuwvKqoCY571+vubBA=
 github.com/NodePassProject/npws v1.0.5/go.mod h1:cyVS2X3/8f07yOkVEl53D+ozHLljJvHQx/s6xoLl/s8=
 github.com/NodePassProject/pool v1.0.50 h1:Xmvb0hSHq24U06moHICr8CkqEHB4ZHBbY9Z+a7fSejQ=
@@ -28,6 +30,8 @@ golang.org/x/net v0.48.0 h1:zyQRTTrjc33Lhh0fBgT/H3oZq9WuvRR5gPC70xpDiQU=
 golang.org/x/net v0.48.0/go.mod h1:+ndRgGjkh8FGtu1w1FGbEC31if4VrNVMuKTgcAAnQRY=
 golang.org/x/sys v0.39.0 h1:CvCKL8MeisomCi6qNZ+wbb0DN9E5AATixKsvNtMoMFk=
 golang.org/x/sys v0.39.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+golang.org/x/text v0.32.0 h1:ZD01bjUt1FQ9WJ0ClOL5vxgxOI/sVCNgX1YtKwcY0mU=
+golang.org/x/text v0.32.0/go.mod h1:o/rUWzghvpD5TXrTIBuJU77MTaN0ljMWE47kxGJQ7jY=
 golang.org/x/time v0.12.0 h1:ScB/8o8olJvc+CQPWrK3fPZNfh7qgwCrY0zJmoEQLSE=
 golang.org/x/time v0.12.0/go.mod h1:CDIdPxbZBQxdj6cxyCIdrNogrJKMJ7pr37NYpMcMDSg=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

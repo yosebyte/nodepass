@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/nph2"
 	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
@@ -209,7 +210,7 @@ func (c *Client) initTunnelPool() error {
 		go quicPool.ClientManager()
 		c.tunnelPool = quicPool
 	case "2":
-		wssPool := npws.NewClientPool(
+		websocketPool := npws.NewClientPool(
 			c.minPoolCapacity,
 			c.maxPoolCapacity,
 			minPoolInterval,
@@ -217,8 +218,26 @@ func (c *Client) initTunnelPool() error {
 			reportInterval,
 			c.tlsCode,
 			c.tunnelAddr)
-		go wssPool.ClientManager()
-		c.tunnelPool = wssPool
+		go websocketPool.ClientManager()
+		c.tunnelPool = websocketPool
+	case "3":
+		http2Pool := nph2.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.serverName,
+			func() (string, error) {
+				tcpAddr, err := c.getTunnelTCPAddr()
+				if err != nil {
+					return "", err
+				}
+				return tcpAddr.String(), nil
+			})
+		go http2Pool.ClientManager()
+		c.tunnelPool = http2Pool
 	default:
 		return fmt.Errorf("initTunnelPool: unknown pool type: %s", c.poolType)
 	}
