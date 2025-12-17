@@ -1787,7 +1787,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: dns, sni, min, mode, dial, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, sni, min, mode, dial, read, rate, slot, proxy, block, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
 		}
@@ -1815,6 +1815,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
 		}
+		if query.Get("block") == "" {
+			query.Set("block", defaultBlockProtocol)
+		}
 		if query.Get("notcp") == "" {
 			query.Set("notcp", defaultTCPStrategy)
 		}
@@ -1822,7 +1825,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: dns, max, mode, type, dial, read, rate, slot, proxy, notcp, noudp
+		// server参数: dns, max, mode, type, dial, read, rate, slot, proxy, block, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
 		}
@@ -1849,6 +1852,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		}
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
+		}
+		if query.Get("block") == "" {
+			query.Set("block", defaultBlockProtocol)
 		}
 		if query.Get("notcp") == "" {
 			query.Set("notcp", defaultTCPStrategy)
