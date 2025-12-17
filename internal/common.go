@@ -776,7 +776,10 @@ func (c *Common) detectBlockProtocol(conn net.Conn) bool {
 
 	// 检测SOCKS
 	if strings.Contains(c.blockProtocol, "1") && len(b) >= 2 {
-		if (b[0] == 0x04 && (b[1] == 0x01 || b[1] == 0x02)) || (b[0] == 0x05 && b[1] > 0) {
+		if b[0] == 0x04 && (b[1] == 0x01 || b[1] == 0x02) {
+			return true
+		}
+		if b[0] == 0x05 && b[1] >= 0x01 && b[1] <= 0x03 {
 			return true
 		}
 	}
@@ -784,13 +787,10 @@ func (c *Common) detectBlockProtocol(conn net.Conn) bool {
 	// 检测HTTP
 	if strings.Contains(c.blockProtocol, "2") && len(b) >= 4 && b[0] >= 'A' && b[0] <= 'Z' {
 		for i, c := range b[1:] {
-			if i >= 7 {
-				break
-			}
 			if c == ' ' {
 				return true
 			}
-			if c < 'A' || c > 'Z' {
+			if c < 'A' || c > 'Z' || i >= 7 {
 				break
 			}
 		}
