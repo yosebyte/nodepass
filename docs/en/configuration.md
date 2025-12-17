@@ -648,10 +648,11 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `crt` | Custom certificate path | N/A | File path | O | X | O |
 | `key` | Custom key path | N/A | File path | O | X | O |
 | `dns` | DNS cache TTL | `5m` | `30s`/`5m`/`1h` etc. | O | O | X |
+| `sni` | Server Name Indication | `none` | Hostname | X | O | X |
 | `min` | Minimum pool capacity | `64` | Positive integer | X | O | X |
 | `max` | Maximum pool capacity | `1024` | Positive integer | O | X | X |
 | `mode` | Run mode control | `0` | `0`/`1`/`2` | O | O | X |
-| `type` | Connection pool type | `0` | `0`/`1`/`2` | O | X | X |
+| `type` | Connection pool type | `0` | `0`/`1`/`2`/`3` | O | X | X |
 | `dial` | Source IP for outbound | `auto` | `auto`/IP address | O | O | X |
 | `read` | Data read timeout | `0` | `0`/`30s`/`5m` etc. | O | O | X |
 | `rate` | Bandwidth rate limit | `0` | `0` or integer (Mbps) | O | O | X |

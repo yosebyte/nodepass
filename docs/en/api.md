@@ -1585,10 +1585,11 @@ Examples:
 | `crt` | Certificate path | File path | None | Server only |
 | `key` | Private key path | File path | None | Server only |
 | `dns` | DNS cache duration | Time duration (e.g., `5m`, `30s`, `1h`) | `5m` | Both |
+| `sni` | Server Name Indication | Hostname | `none` | Client dual-end handshake mode only |
 | `min` | Minimum pool capacity | Integer > 0 | `64` | Client dual-end handshake mode only |
 | `max` | Maximum pool capacity | Integer > 0 | `1024` | Dual-end handshake mode |
 | `mode` | Runtime mode control | `0`(auto), `1`(force mode 1), `2`(force mode 2) | `0` | Both |
-| `type` | Connection pool type | `0`(TCP), `1`(QUIC), `2`(WebSocket) | `0` | Server only |
+| `type` | Connection pool type | `0`(TCP), `1`(QUIC), `2`(WebSocket), `3`(HTTP/2) | `0` | Server only |
 | `dial` | Source IP for outbound | IP address or `auto` | `auto` | Both |
 | `read` | Read timeout duration | Time duration (e.g., `10m`, `30s`, `1h`) | `0` | Both |
 | `rate` | Bandwidth rate limit | Integer (Mbps), 0=unlimited | `0` | Both |
