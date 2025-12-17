@@ -133,6 +133,7 @@ const (
 	defaultDNSTTL        = 5 * time.Minute       // 默认DNS缓存TTL
 	defaultMinPool       = 64                    // 默认最小池容量
 	defaultMaxPool       = 1024                  // 默认最大池容量
+	defaultServerName    = "none"                // 默认服务器名称
 	defaultRunMode       = "0"                   // 默认运行模式
 	defaultPoolType      = "0"                   // 默认连接池类型
 	defaultDialerIP      = "auto"                // 默认拨号本地IP
@@ -564,6 +565,17 @@ func (c *Common) getDNSTTL() {
 	}
 }
 
+// getServerName 获取服务器名称
+func (c *Common) getServerName() {
+	if serverName := c.parsedURL.Query().Get("sni"); serverName != "" {
+		c.serverName = serverName
+		return
+	}
+	if c.serverName == "" || net.ParseIP(c.serverName) != nil {
+		c.serverName = defaultServerName
+	}
+}
+
 // getPoolCapacity 获取连接池容量设置
 func (c *Common) getPoolCapacity() {
 	if min := c.parsedURL.Query().Get("min"); min != "" {
@@ -687,6 +699,7 @@ func (c *Common) initConfig() error {
 	c.getDNSTTL()
 	c.getTunnelKey()
 	c.getPoolCapacity()
+	c.getServerName()
 	c.getRunMode()
 	c.getPoolType()
 	c.getDialerIP()

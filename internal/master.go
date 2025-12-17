@@ -1787,9 +1787,12 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: dns, min, mode, dial, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, sni, min, mode, dial, read, rate, slot, proxy, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
+		}
+		if query.Get("sni") == "" {
+			query.Set("sni", defaultServerName)
 		}
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
