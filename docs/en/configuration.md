@@ -580,6 +580,100 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&noudp=1"
 - Existing UDP sessions will be terminated when switching to noudp=1
 - UDP buffer pools and session management are disabled when noudp=1
 
+## Protocol Blocking
+
+NodePass provides fine-grained protocol blocking capabilities to prevent specific protocols from being tunneled. This is useful for security policies that require blocking certain protocols while allowing others.
+
+The `block` parameter uses a numeric string where each digit represents a protocol category:
+- `1`: Block SOCKS protocols (SOCKS4/4a/5)
+- `2`: Block HTTP protocols (all HTTP methods)
+- `3`: Block TLS/SSL protocols (encrypted connections)
+
+Multiple protocols can be blocked by including the corresponding digits in any order. The parameter value can contain duplicate digits without affecting behavior.
+
+### Configuration Options
+
+- `block`: Protocol blocking control (default: not set or `0`)
+  - Not set or `0`: Allow all protocols (no blocking)
+  - Contains `1`: Block SOCKS4, SOCKS4a, and SOCKS5 protocols
+  - Contains `2`: Block HTTP protocols (GET, POST, CONNECT, etc.)
+  - Contains `3`: Block TLS/SSL handshake (0x16 content type)
+
+### Examples
+
+Block SOCKS protocols only:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=1"
+```
+
+Block HTTP protocols only:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=2"
+```
+
+Block both SOCKS and HTTP:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=12"
+# OR
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=21"
+```
+
+Block all three protocol categories:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=123"
+# OR any combination like: 321, 213, 312, etc.
+```
+
+Combined with other security settings:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&block=12&slot=1024"
+```
+
+### Detection Mechanism
+
+NodePass uses efficient protocol detection with minimal overhead:
+
+- **SOCKS Detection**: Examines the first 2 bytes of incoming connections
+  - SOCKS4/4a: Checks for version byte `0x04` and command byte `0x01`/`0x02`
+  - SOCKS5: Checks for version byte `0x05` and valid method count
+
+- **HTTP Detection**: Scans up to 8 bytes for HTTP method patterns
+  - Identifies uppercase letters followed by a space character
+  - Detects all standard HTTP methods (GET, POST, CONNECT, DELETE, etc.)
+  - Also detects custom HTTP methods and WebDAV extensions
+
+- **TLS Detection**: Examines the first byte for TLS handshake
+  - Identifies TLS handshake record type `0x16`
+  - Blocks TLS 1.0, 1.1, 1.2, and 1.3 handshakes
+
+### Use Cases
+
+**Block proxy protocols in tunnel services:**
+```bash
+# Allow only application traffic, block proxy protocols
+nodepass "server://0.0.0.0:10101/app.backend.local:8080?block=12"
+```
+
+**Enforce encryption policy:**
+```bash
+# Allow only encrypted traffic, block plaintext protocols
+nodepass "server://0.0.0.0:10101/0.0.0.0:443?block=12&tls=2"
+```
+
+**Prevent TLS-in-TLS:**
+```bash
+# Block nested TLS when outer layer already encrypts
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=1&block=3"
+```
+
+### Important Notes
+
+- Protocol detection occurs at connection establishment (first bytes received)
+- Blocked connections are immediately closed with a warning log entry
+- This feature adds minimal CPU overhead (typically <0.1ms per connection)
+- Protocol blocking applies to both single-end and dual-end forwarding modes
+- Combine with `notcp`/`noudp` for complete traffic control
+
 ## Target Address Groups and Load Balancing
 
 NodePass supports configuring multiple target addresses to achieve high availability and load balancing. Target address groups are only applicable to the egress side (the final destination of traffic) and should not be used on the ingress side.
@@ -658,6 +752,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 | `rate` | Bandwidth rate limit | `0` | `0` or integer (Mbps) | O | O | X |
 | `slot` | Maximum connection limit | `65536` | `0` or integer | O | O | X |
 | `proxy` | PROXY protocol support | `0` | `0`/`1` | O | O | X |
+| `block` | Protocol blocking | `0` | `0`/`1`/`2`/`3` | O | O | X |
 | `notcp` | TCP support control | `0` | `0`/`1` | O | O | X |
 | `noudp` | UDP support control | `0` | `0`/`1` | O | O | X |
 
@@ -672,6 +767,7 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - Configure connection pool type (`type`) on the server only - clients automatically receive the configuration during handshake.
 - Set `notcp=1` when only UDP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
+- Use `block` parameter to enforce security policies by blocking specific protocol categories (SOCKS/HTTP/TLS).
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables
