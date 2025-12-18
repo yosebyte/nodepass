@@ -63,6 +63,9 @@ type Common struct {
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
 	blockProtocol    string             // 屏蔽协议
+	blockSOCKS       bool               // 屏蔽SOCKS协议
+	blockHTTP        bool               // 屏蔽HTTP协议
+	blockTLS         bool               // 屏蔽TLS协议
 	disableTCP       string             // 禁用TCP
 	disableUDP       string             // 禁用UDP
 	rateLimit        int                // 速率限制
@@ -93,6 +96,17 @@ type dnsCacheEntry struct {
 	tcpAddr   *net.TCPAddr
 	udpAddr   *net.UDPAddr
 	expiredAt time.Time
+}
+
+// readerConn 包装自定义读取器
+type readerConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+// Read 实现自定义读
+func (rc *readerConn) Read(b []byte) (int, error) {
+	return rc.reader.Read(b)
 }
 
 // TransportPool 统一连接池接口
@@ -680,6 +694,9 @@ func (c *Common) getBlockProtocol() {
 	} else {
 		c.blockProtocol = defaultBlockProtocol
 	}
+	c.blockSOCKS = strings.Contains(c.blockProtocol, "1")
+	c.blockHTTP = strings.Contains(c.blockProtocol, "2")
+	c.blockTLS = strings.Contains(c.blockProtocol, "3")
 }
 
 // getTCPStrategy 获取TCP策略
@@ -763,32 +780,32 @@ func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
 }
 
 // detectBlockProtocol 检测屏蔽协议
-func (c *Common) detectBlockProtocol(conn net.Conn) bool {
-	if c.blockProtocol == "" || c.blockProtocol == "0" {
-		return false
+func (c *Common) detectBlockProtocol(conn net.Conn) (string, net.Conn) {
+	if !c.blockSOCKS && !c.blockHTTP && !c.blockTLS {
+		return "", conn
 	}
 
 	reader := bufio.NewReader(conn)
 	b, err := reader.Peek(8)
 	if err != nil || len(b) < 1 {
-		return false
+		return "", &readerConn{Conn: conn, reader: reader}
 	}
 
 	// 检测SOCKS
-	if strings.Contains(c.blockProtocol, "1") && len(b) >= 2 {
+	if c.blockSOCKS && len(b) >= 2 {
 		if b[0] == 0x04 && (b[1] == 0x01 || b[1] == 0x02) {
-			return true
+			return "SOCKS4", &readerConn{Conn: conn, reader: reader}
 		}
 		if b[0] == 0x05 && b[1] >= 0x01 && b[1] <= 0x03 {
-			return true
+			return "SOCKS5", &readerConn{Conn: conn, reader: reader}
 		}
 	}
 
 	// 检测HTTP
-	if strings.Contains(c.blockProtocol, "2") && len(b) >= 4 && b[0] >= 'A' && b[0] <= 'Z' {
+	if c.blockHTTP && len(b) >= 4 && b[0] >= 'A' && b[0] <= 'Z' {
 		for i, c := range b[1:] {
 			if c == ' ' {
-				return true
+				return "HTTP", &readerConn{Conn: conn, reader: reader}
 			}
 			if c < 'A' || c > 'Z' || i >= 7 {
 				break
@@ -797,11 +814,11 @@ func (c *Common) detectBlockProtocol(conn net.Conn) bool {
 	}
 
 	// 检测TLS
-	if strings.Contains(c.blockProtocol, "3") && b[0] == 0x16 {
-		return true
+	if c.blockTLS && b[0] == 0x16 {
+		return "TLS", &readerConn{Conn: conn, reader: reader}
 	}
 
-	return false
+	return "", &readerConn{Conn: conn, reader: reader}
 }
 
 // initRateLimiter 初始化全局限速器
@@ -1222,10 +1239,12 @@ func (c *Common) commonTCPLoop() {
 			defer c.releaseSlot(false)
 
 			// 阻止屏蔽协议
-			if c.detectBlockProtocol(targetConn) {
-				c.logger.Warn("commonTCPLoop: block protocol detected: %v", targetConn.RemoteAddr())
+			protocol, wrappedConn := c.detectBlockProtocol(targetConn)
+			if protocol != "" {
+				c.logger.Warn("commonTCPLoop: blocked %v protocol from %v", protocol, targetConn.RemoteAddr())
 				return
 			}
+			targetConn = wrappedConn
 
 			// 从连接池获取连接
 			id, remoteConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
@@ -1861,10 +1880,12 @@ func (c *Common) singleTCPLoop() error {
 			defer c.releaseSlot(false)
 
 			// 阻止屏蔽协议
-			if c.detectBlockProtocol(tunnelConn) {
-				c.logger.Warn("singleTCPLoop: block protocol detected: %v", tunnelConn.RemoteAddr())
+			protocol, wrappedConn := c.detectBlockProtocol(tunnelConn)
+			if protocol != "" {
+				c.logger.Warn("singleTCPLoop: blocked %v protocol from %v", protocol, tunnelConn.RemoteAddr())
 				return
 			}
+			tunnelConn = wrappedConn
 
 			// 尝试建立目标连接
 			targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
