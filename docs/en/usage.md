@@ -7,7 +7,7 @@ NodePass creates tunnels with an unencrypted TCP control channel and configurabl
 The general syntax for NodePass commands is:
 
 ```bash
-nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&quic=<quic_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "<core>://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&min=<min_pool>&max=<max_pool>&mode=<run_mode>&type=<pool_type>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 Where:
@@ -23,7 +23,7 @@ Common query parameters:
 - `min=<min_pool>`: Minimum connection pool capacity (default: 64, set by client)
 - `max=<max_pool>`: Maximum connection pool capacity (default: 1024, set by server and delivered to client)
 - `mode=<run_mode>`: Run mode control (`0`, `1`, or `2`) - controls operational behavior
-- `quic=<quic_mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0, server-side only)
+- `type=<pool_type>`: Connection pool type (`0` for TCP pool, `1` for QUIC UDP pool, `2` for WebSocket/WSS pool, `3` for HTTP/2 pool, default: 0, server-side only)
 - `dial=<source_ip>`: Source IP address for outbound connections (default: `auto`, supports both IPv4 and IPv6)
 - `read=<timeout>`: Data read timeout duration (default: 0, supports time units like 30s, 5m, 1h, etc.)
 - `rate=<mbps>`: Bandwidth rate limit in Mbps (default: 0 for unlimited)
@@ -37,10 +37,10 @@ TLS-related parameters (server/master modes only):
 - `crt=<cert_file>`: Path to certificate file (when `tls=2`)
 - `key=<key_file>`: Path to private key file (when `tls=2`)
 
-QUIC transport protocol (server mode only):
-- `quic=<mode>`: QUIC transport mode (`0` for TCP pool, `1` for QUIC UDP pool, default: 0)
+Connection pool type (server mode only):
+- `type=<mode>`: Connection pool type (`0` for TCP pool, `1` for QUIC UDP pool, `2` for WebSocket/WSS pool, default: 0)
   - Server configuration is automatically delivered to client during handshake
-  - Client does not need to specify quic parameter
+  - Client does not need to specify type parameter
 
 ## Operating Modes
 
@@ -51,7 +51,7 @@ NodePass offers three complementary operating modes to suit various deployment s
 Server mode establishes tunnel control channels and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&quic=<quic_mode>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_file>&key=<key_file>&dns=<duration>&type=<pool_type>&max=<max_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### Parameters
@@ -60,9 +60,11 @@ nodepass "server://<tunnel_addr>/<target_addr>?log=<level>&tls=<mode>&crt=<cert_
 - `target_addr`: The destination address for business data with bidirectional flow support (e.g., 10.1.0.1:8080)
 - `log`: Log level (debug, info, warn, error, event)
 - `dns`: DNS cache TTL duration (default: 5m, supports time units like `1h`, `30m`, `15s`, etc.)
-- `quic`: QUIC transport mode (0, 1)
+- `type`: Connection pool type (0, 1, 2, 3)
   - `0`: Use TCP-based connection pool (default)
-  - `1`: Use QUIC-based UDP connection pool with stream multiplexing
+  - `1`: Use QUIC-based UDP connection pool with stream multiplexing(requires TLS, minimum `tls=1`)
+  - `2`: Use WebSocket/WSS-based connection pool
+  - `3`: Use HTTP/2-based connection pool with multiplexed streams (requires TLS, minimum `tls=1`)
   - Configuration is automatically delivered to client during handshake
 - `tls`: TLS encryption mode for the target data channel (0, 1, 2)
   - `0`: No TLS encryption (plain TCP/UDP)
@@ -115,11 +117,14 @@ nodepass "server://10.1.0.1:10101/10.1.0.1:8080?log=debug&tls=1&mode=1"
 # Force forward mode with custom certificate
 nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
 
-# QUIC transport with automatic TLS
-nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&mode=2"
+# QUIC pool with automatic TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=1&mode=2"
 
-# QUIC with custom certificate
-nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+# WebSocket pool with custom certificate
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=2&tls=2&mode=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# HTTP/2 pool with automatic TLS
+nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&type=3&mode=2&tls=1"
 ```
 
 ### Client Mode
@@ -127,7 +132,7 @@ nodepass "server://10.1.0.1:10101/192.168.1.100:8080?log=debug&quic=1&tls=2&mode
 Client mode connects to a NodePass server and supports bidirectional data flow forwarding.
 
 ```bash
-nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<duration>&quic=<quic_mode>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
+nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<duration>&min=<min_pool>&mode=<run_mode>&dial=<source_ip>&read=<timeout>&rate=<mbps>&slot=<limit>&proxy=<mode>&notcp=<0|1>&noudp=<0|1>"
 ```
 
 #### Parameters
@@ -149,7 +154,7 @@ nodepass "client://<tunnel_addr>/<target_addr>?log=<level>&dns=<duration>&quic=<
 - `notcp`: TCP support control (default: `0` enabled, `1` disabled)
 - `noudp`: UDP support control (default: `0` enabled, `1` disabled)
 
-**Note**: QUIC transport configuration is automatically received from the server during handshake. Clients do not need to specify the `quic` parameter.
+**Note**: Connection pool type configuration is automatically received from the server during handshake. Clients do not need to specify the `type` parameter.
 
 #### How Client Mode Works
 
@@ -200,10 +205,10 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=16&log=inf
 # Resource-constrained configuration - Small connection pool
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=16&log=info"
 
-# Client automatically receives QUIC configuration from server (no quic parameter needed)
+# Client automatically receives pool type configuration from server (no type parameter needed)
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 
-# Client for real-time applications (QUIC config from server)
+# Client for real-time applications (pool type config from server)
 nodepass "client://server.example.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 

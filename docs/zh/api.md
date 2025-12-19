@@ -65,7 +65,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
   "type": "client|server",
   "status": "running|stopped|error",
   "url": "...",
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&type=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0",
   "restart": true,
   "meta": {
     "peer": {
@@ -111,7 +111,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 
 - 服务端：`server://<bind_addr>:<bind_port>/<target_host>:<target_port>?<参数>`
 - 客户端：`client://<server_host>:<server_port>/<local_host>:<local_port>?<参数>`
-- 支持参数：`log`、`tls`、`crt`、`key`、`dns`、`min`、`max`、`mode`、`quic`、`dial`、`read`、`rate`、`slot`、`proxy`、`notcp`、`noudp`
+- 支持参数：`log`、`tls`、`crt`、`key`、`dns`、`min`、`max`、`mode`、`type`、`dial`、`read`、`rate`、`slot`、`proxy`、`notcp`、`noudp`
 
 ### URL 查询参数
 
@@ -123,7 +123,7 @@ API Key 认证默认启用，首次启动自动生成并保存在 `nodepass.gob`
 - `mode`：运行模式控制（`0`、`1`、`2`）- 控制操作行为
   - 对于服务端：`0`=自动，`1`=反向模式，`2`=正向模式
   - 对于客户端：`0`=自动，`1`=单端转发，`2`=双端握手
-- `quic`：QUIC传输模式（`0`=TCP连接池，`1`=QUIC连接池，默认：`0`）- 仅服务端配置，客户端在握手时接收配置
+- `type`：连接池类型（`0`=TCP连接池，`1`=QUIC连接池，`2`=WebSocket/WSS连接池，默认：`0`）- 仅服务端配置，客户端在握手时接收配置
 - `dial`：出站连接的源IP地址（默认：`auto`）- 仅服务端/客户端模式
 - `read`：数据读取超时时长（如1h、30m、15s，默认：`0`表示无超时）
 - `rate`：带宽速率限制，单位Mbps（0=无限制）
@@ -1116,7 +1116,7 @@ API响应中的实例对象包含以下字段：
   "type": "server",           // 实例类型：server 或 client
   "status": "running",        // 实例状态：running、stopped 或 error
   "url": "server://...",      // 实例配置URL
-  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&quic=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // 完整配置URL
+  "config": "server://0.0.0.0:8080/localhost:3000?log=info&tls=1&dns=5m&max=1024&mode=0&type=0&dial=auto&read=1h&rate=100&slot=65536&proxy=0&notcp=0&noudp=0", // 完整配置URL
   "restart": true,            // 自启动策略
   "meta": {                   // 用于组织和对端跟踪的元数据
     "peer": {
@@ -1335,7 +1335,7 @@ const instances = await fetch(`${API_URL}/instances`, {
 #### POST /instances
 - **描述**：创建新实例
 - **认证**：需要API Key
-- **请求体**：`{ "url": "client://或server://格式的URL" }`
+- **请求体**：`{ "alias": "实例别名（可选）", "url": "client://或server://格式的URL" }`
 - **响应**：新创建的实例对象
 - **示例**：
 ```javascript
@@ -1345,7 +1345,10 @@ const newInstance = await fetch(`${API_URL}/instances`, {
     'Content-Type': 'application/json',
     'X-API-Key': apiKey 
   },
-  body: JSON.stringify({ url: 'server://0.0.0.0:8080/localhost:3000' })
+  body: JSON.stringify({ 
+    alias: '我的服务器',
+    url: 'server://0.0.0.0:8080/localhost:3000' 
+  })
 });
 ```
 
@@ -1582,14 +1585,16 @@ client://<server_host>:<server_port>/<local_host>:<local_port>?<parameters>
 | `crt` | 证书路径 | 文件路径 | 无 | 仅服务端 |
 | `key` | 私钥路径 | 文件路径 | 无 | 仅服务端 |
 | `dns` | DNS缓存时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `5m` | 两者 |
+| `sni` | 主机名指示 | 主机名 | `none` | 仅客户端双端握手模式 |
 | `min` | 最小连接池容量 | 整数 > 0 | `64` | 仅客户端双端握手模式 |
 | `max` | 最大连接池容量 | 整数 > 0 | `1024` | 双端握手模式 |
 | `mode` | 运行模式控制 | `0`(自动), `1`(强制模式1), `2`(强制模式2) | `0` | 两者 |
-| `quic` | QUIC协议支持 | `0`(禁用), `1`(启用) | `0` | 仅服务端 |
+| `type` | 连接池类型 | `0`(TCP), `1`(QUIC), `2`(WebSocket), `3`(HTTP/2) | `0` | 仅服务端 |
 | `dial` | 出站源IP地址 | IP地址或 `auto` | `auto` | 两者 |
 | `read` | 读取超时时间 | 时间长度 (如 `10m`, `30s`, `1h`) | `0` | 两者 |
 | `rate` | 带宽速率限制 | 整数 (Mbps), 0=无限制 | `0` | 两者 |
 | `slot` | 连接槽位数 | 整数 (1-65536) | `65536` | 两者 |
 | `proxy` | PROXY协议支持 | `0`(禁用), `1`(启用) | `0` | 两者 |
+| `block` | 协议屏蔽 | `0`(禁用), `1`(SOCKS), `2`(HTTP), `3`(TLS) | `0` | 两者 |
 | `notcp` | TCP支持控制 | `0`(启用), `1`(禁用) | `0` | 两者 |
 | `noudp` | UDP支持控制 | `0`(启用), `1`(禁用) | `0` | 两者 |

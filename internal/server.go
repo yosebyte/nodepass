@@ -2,31 +2,30 @@
 package internal
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/nph2"
+	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
 )
 
 // Server 实现服务端模式功能
-type Server struct {
-	Common          // 继承共享功能
-	clientIP string // 客户端IP
-}
+type Server struct{ Common }
 
 // NewServer 创建新的服务端实例
 func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger *logs.Logger) (*Server, error) {
@@ -64,10 +63,10 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 // Run 管理服务端生命周期
 func (s *Server) Run() {
 	logInfo := func(prefix string) {
-		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
+		s.logger.Info("%v: server://%v@%v/%v?dns=%v&max=%v&mode=%v&type=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&block=%v&notcp=%v&noudp=%v",
 			prefix, s.tunnelKey, s.tunnelTCPAddr, s.getTargetAddrsString(), s.dnsCacheTTL, s.maxPoolCapacity,
-			s.runMode, s.quicMode, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
-			s.proxyProtocol, s.disableTCP, s.disableUDP)
+			s.runMode, s.poolType, s.dialerIP, s.readTimeout, s.rateLimit/125000, s.slotLimit,
+			s.proxyProtocol, s.blockProtocol, s.disableTCP, s.disableUDP)
 	}
 	logInfo("Server started")
 
@@ -115,6 +114,11 @@ func (s *Server) start() error {
 		return fmt.Errorf("start: initTunnelListener failed: %w", err)
 	}
 
+	// 关闭UDP监听器
+	if s.tunnelUDPConn != nil {
+		s.tunnelUDPConn.Close()
+	}
+
 	// 运行模式判断
 	switch s.runMode {
 	case "1": // 反向模式
@@ -134,38 +138,22 @@ func (s *Server) start() error {
 		}
 	}
 
-	// 与客户端进行握手
+	// 接受隧道握手
+	s.logger.Info("Pending tunnel handshake...")
+	s.handshakeStart = time.Now()
 	if err := s.tunnelHandshake(); err != nil {
 		return fmt.Errorf("start: tunnelHandshake failed: %w", err)
 	}
 
-	// 握手之后把UDP监听关掉
-	if s.tunnelUDPConn != nil {
-		s.tunnelUDPConn.Close()
+	// 初始化连接池
+	if err := s.initTunnelPool(); err != nil {
+		return fmt.Errorf("start: initTunnelPool failed: %w", err)
 	}
 
-	// 初始化隧道连接池
-	switch s.quicMode {
-	case "0":
-		tcpPool := pool.NewServerPool(
-			s.maxPoolCapacity,
-			s.clientIP,
-			s.tlsConfig,
-			s.tunnelListener,
-			reportInterval)
-		go tcpPool.ServerManager()
-		s.tunnelPool = tcpPool
-	case "1":
-		udpPool := quic.NewServerPool(
-			s.maxPoolCapacity,
-			s.clientIP,
-			s.tlsConfig,
-			s.tunnelUDPAddr.String(),
-			reportInterval)
-		go udpPool.ServerManager()
-		s.tunnelPool = udpPool
-	default:
-		return fmt.Errorf("start: unknown quic mode: %s", s.quicMode)
+	// 设置控制连接
+	s.logger.Info("Getting tunnel pool ready...")
+	if err := s.setControlConn(); err != nil {
+		return fmt.Errorf("start: setControlConn failed: %w", err)
 	}
 
 	// 判断数据流向
@@ -180,138 +168,110 @@ func (s *Server) start() error {
 	return nil
 }
 
-// tunnelHandshake 与客户端进行握手
-func (s *Server) tunnelHandshake() error {
-	type handshakeResult struct {
-		conn      *net.TCPConn
-		bufReader *bufio.Reader
-		clientIP  string
+// initTunnelPool 初始化隧道连接池
+func (s *Server) initTunnelPool() error {
+	switch s.poolType {
+	case "0":
+		tcpPool := pool.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go tcpPool.ServerManager()
+		s.tunnelPool = tcpPool
+	case "1":
+		quicPool := quic.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelUDPAddr.String(),
+			reportInterval)
+		go quicPool.ServerManager()
+		s.tunnelPool = quicPool
+	case "2":
+		websocketPool := npws.NewServerPool(
+			s.maxPoolCapacity,
+			"",
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go websocketPool.ServerManager()
+		s.tunnelPool = websocketPool
+	case "3":
+		http2Pool := nph2.NewServerPool(
+			s.maxPoolCapacity,
+			s.clientIP,
+			s.tlsConfig,
+			s.tunnelListener,
+			reportInterval)
+		go http2Pool.ServerManager()
+		s.tunnelPool = http2Pool
+	default:
+		return fmt.Errorf("initTunnelPool: unknown pool type: %s", s.poolType)
 	}
-
-	successChan := make(chan handshakeResult, 1)
-	closeChan := make(chan struct{})
-	var wg sync.WaitGroup
-
-	go func() {
-		for {
-			select {
-			case <-closeChan:
-				return
-			default:
-			}
-
-			// 接受隧道连接
-			rawConn, err := s.tunnelListener.Accept()
-			if err != nil {
-				select {
-				case <-closeChan:
-					return
-				default:
-					continue
-				}
-			}
-
-			// 并发处理握手
-			wg.Add(1)
-			go func(rawConn net.Conn) {
-				defer wg.Done()
-
-				select {
-				case <-closeChan:
-					rawConn.Close()
-					return
-				default:
-				}
-
-				bufReader := bufio.NewReader(rawConn)
-				peek, err := bufReader.Peek(4)
-				if err == nil && len(peek) == 4 && peek[3] == ' ' {
-					clientIP := rawConn.RemoteAddr().(*net.TCPAddr).IP.String() + "\n"
-					if peek[0] == 'G' && peek[1] == 'E' && peek[2] == 'T' {
-						fmt.Fprintf(rawConn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", len(clientIP), clientIP)
-					} else {
-						fmt.Fprint(rawConn, "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-					}
-					rawConn.Close()
-					return
-				}
-
-				// 读取隧道密钥
-				rawConn.SetReadDeadline(time.Now().Add(handshakeTimeout))
-				rawTunnelKey, err := bufReader.ReadBytes('\n')
-				if err != nil {
-					s.logger.Warn("tunnelHandshake: read timeout: %v", rawConn.RemoteAddr())
-					rawConn.Close()
-					return
-				}
-				rawConn.SetReadDeadline(time.Time{})
-
-				// 解码隧道密钥
-				tunnelKeyData, err := s.decode(rawTunnelKey)
-				if err != nil {
-					s.logger.Warn("tunnelHandshake: decode failed: %v", rawConn.RemoteAddr())
-					rawConn.Close()
-					return
-				}
-
-				// 验证隧道密钥
-				if string(tunnelKeyData) != s.tunnelKey {
-					s.logger.Warn("tunnelHandshake: access denied: %v", rawConn.RemoteAddr())
-					rawConn.Close()
-					return
-				}
-
-				tcpConn := rawConn.(*net.TCPConn)
-				tcpConn.SetKeepAlive(true)
-				tcpConn.SetKeepAlivePeriod(reportInterval)
-
-				// 返回握手结果
-				select {
-				case successChan <- handshakeResult{
-					conn:      tcpConn,
-					bufReader: bufio.NewReader(&conn.TimeoutReader{Conn: tcpConn, Timeout: 3 * reportInterval}),
-					clientIP:  tcpConn.RemoteAddr().(*net.TCPAddr).IP.String(),
-				}:
-					close(closeChan)
-				case <-closeChan:
-					rawConn.Close()
-				}
-			}(rawConn)
-		}
-	}()
-
-	// 阻塞等待握手结果
-	var result handshakeResult
-	select {
-	case result = <-successChan:
-		wg.Wait()
-	case <-s.ctx.Done():
-		close(closeChan)
-		wg.Wait()
-		return fmt.Errorf("tunnelHandshake: context error: %w", s.ctx.Err())
-	}
-
-	// 保存握手结果
-	s.tunnelTCPConn = result.conn
-	s.bufReader = result.bufReader
-	s.clientIP = result.clientIP
-
-	// 构建隧道配置信息
-	tunnelURL := &url.URL{
-		Scheme:   "np",
-		User:     url.User(s.quicMode),
-		Host:     strconv.Itoa(s.maxPoolCapacity),
-		Path:     s.dataFlow,
-		Fragment: s.tlsCode,
-	}
-
-	// 发送隧道配置信息
-	_, err := s.tunnelTCPConn.Write(s.encode([]byte(tunnelURL.String())))
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: write tunnel config failed: %w", err)
-	}
-
-	s.logger.Info("Tunnel signal -> : %v -> %v", tunnelURL.String(), s.tunnelTCPConn.RemoteAddr())
-	s.logger.Info("Tunnel handshaked: %v <-> %v", s.tunnelTCPConn.LocalAddr(), s.tunnelTCPConn.RemoteAddr())
 	return nil
+}
+
+// tunnelHandshake 与客户端进行HTTP握手
+func (s *Server) tunnelHandshake() error {
+	var clientIP string
+	done := make(chan struct{})
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Connection", "close")
+
+		// 验证请求
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 验证路径
+		if r.URL.Path != "/" {
+			http.Error(w, "Not Found", http.StatusNotFound)
+			return
+		}
+
+		// 验证令牌
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Bearer ") || !s.verifyAuthToken(strings.TrimPrefix(auth, "Bearer ")) {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// 记录客户端地址
+		clientIP = r.RemoteAddr
+		if host, _, err := net.SplitHostPort(clientIP); err == nil {
+			clientIP = host
+		}
+
+		// 发送配置
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"flow": s.dataFlow,
+			"max":  s.maxPoolCapacity,
+			"tls":  s.tlsCode,
+			"type": s.poolType,
+		})
+
+		s.logger.Info("Sending tunnel config: FLOW=%v|MAX=%v|TLS=%v|TYPE=%v",
+			s.dataFlow, s.maxPoolCapacity, s.tlsCode, s.poolType)
+
+		close(done)
+	})
+
+	server := &http.Server{Handler: handler}
+	go server.Serve(s.tunnelListener)
+
+	select {
+	case <-done:
+		server.Close()
+		s.clientIP = clientIP
+		s.tunnelListener, _ = net.ListenTCP("tcp", s.tunnelTCPAddr)
+		return nil
+	case <-s.ctx.Done():
+		server.Close()
+		return fmt.Errorf("tunnelHandshake: context canceled")
+	}
 }

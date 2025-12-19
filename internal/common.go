@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -36,8 +37,11 @@ type Common struct {
 	tlsConfig        *tls.Config        // TLS配置
 	coreType         string             // 核心类型
 	runMode          string             // 运行模式
-	quicMode         string             // QUIC模式
+	poolType         string             // 连接池类型
 	dataFlow         string             // 数据流向
+	serverName       string             // 服务器名称
+	serverPort       string             // 服务器端口
+	clientIP         string             // 客户端地址
 	dialerIP         string             // 拨号本地IP
 	dialerFallback   uint32             // 拨号回落标志
 	tunnelKey        string             // 隧道密钥
@@ -50,7 +54,7 @@ type Common struct {
 	targetIdx        uint64             // 目标地址索引
 	targetListener   *net.TCPListener   // 目标监听器
 	tunnelListener   net.Listener       // 隧道监听器
-	tunnelTCPConn    *net.TCPConn       // 隧道TCP连接
+	controlConn      net.Conn           // 隧道控制连接
 	tunnelUDPConn    *conn.StatConn     // 隧道UDP连接
 	targetUDPConn    *conn.StatConn     // 目标UDP连接
 	targetUDPSession sync.Map           // 目标UDP会话
@@ -58,6 +62,10 @@ type Common struct {
 	minPoolCapacity  int                // 最小池容量
 	maxPoolCapacity  int                // 最大池容量
 	proxyProtocol    string             // 代理协议
+	blockProtocol    string             // 屏蔽协议
+	blockSOCKS       bool               // 屏蔽SOCKS协议
+	blockHTTP        bool               // 屏蔽HTTP协议
+	blockTLS         bool               // 屏蔽TLS协议
 	disableTCP       string             // 禁用TCP
 	disableUDP       string             // 禁用UDP
 	rateLimit        int                // 速率限制
@@ -67,6 +75,7 @@ type Common struct {
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
+	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
 	flushURL         *url.URL           // 重置信号
 	pingURL          *url.URL           // PING信号
@@ -87,6 +96,17 @@ type dnsCacheEntry struct {
 	tcpAddr   *net.TCPAddr
 	udpAddr   *net.UDPAddr
 	expiredAt time.Time
+}
+
+// readerConn 包装自定义读取器
+type readerConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+// Read 实现自定义读
+func (rc *readerConn) Read(b []byte) (int, error) {
+	return rc.reader.Read(b)
 }
 
 // TransportPool 统一连接池接口
@@ -122,20 +142,23 @@ var (
 	ReloadInterval   = getEnvAsDuration("NP_RELOAD_INTERVAL", 1*time.Hour)            // 重载间隔
 )
 
-// 默认配置
+// 常量定义
 const (
-	defaultDNSTTL        = 5 * time.Minute // 默认DNS缓存TTL
-	defaultMinPool       = 64              // 默认最小池容量
-	defaultMaxPool       = 1024            // 默认最大池容量
-	defaultRunMode       = "0"             // 默认运行模式
-	defaultQuicMode      = "0"             // 默认QUIC模式
-	defaultDialerIP      = "auto"          // 默认拨号本地IP
-	defaultReadTimeout   = 0 * time.Second // 默认读取超时
-	defaultRateLimit     = 0               // 默认速率限制
-	defaultSlotLimit     = 65536           // 默认槽位限制
-	defaultProxyProtocol = "0"             // 默认代理协议
-	defaultTCPStrategy   = "0"             // 默认TCP策略
-	defaultUDPStrategy   = "0"             // 默认UDP策略
+	contextCheckInterval = 50 * time.Millisecond // 上下文检查间隔
+	defaultDNSTTL        = 5 * time.Minute       // 默认DNS缓存TTL
+	defaultMinPool       = 64                    // 默认最小池容量
+	defaultMaxPool       = 1024                  // 默认最大池容量
+	defaultServerName    = "none"                // 默认服务器名称
+	defaultRunMode       = "0"                   // 默认运行模式
+	defaultPoolType      = "0"                   // 默认连接池类型
+	defaultDialerIP      = "auto"                // 默认拨号本地IP
+	defaultReadTimeout   = 0 * time.Second       // 默认读取超时
+	defaultRateLimit     = 0                     // 默认速率限制
+	defaultSlotLimit     = 65536                 // 默认槽位限制
+	defaultProxyProtocol = "0"                   // 默认代理协议
+	defaultBlockProtocol = "0"                   // 默认协议屏蔽
+	defaultTCPStrategy   = "0"                   // 默认TCP策略
+	defaultUDPStrategy   = "0"                   // 默认UDP策略
 )
 
 // getTCPBuffer 获取TCP缓冲区
@@ -242,6 +265,16 @@ func (c *Common) xor(data []byte) []byte {
 		data[i] ^= c.tunnelKey[i%len(c.tunnelKey)]
 	}
 	return data
+}
+
+// generateAuthToken 生成认证令牌
+func (c *Common) generateAuthToken() string {
+	return hex.EncodeToString(hmac.New(sha256.New, []byte(c.tunnelKey)).Sum(nil))
+}
+
+// verifyAuthToken 验证认证令牌
+func (c *Common) verifyAuthToken(token string) bool {
+	return hmac.Equal([]byte(token), []byte(c.generateAuthToken()))
 }
 
 // encode base64编码数据
@@ -448,6 +481,9 @@ func (c *Common) getAddress() error {
 
 	// 保存原始隧道地址
 	c.tunnelAddr = tunnelAddr
+	if name, port, err := net.SplitHostPort(tunnelAddr); err == nil {
+		c.serverName, c.serverPort = name, port
+	}
 
 	// 解析隧道TCP地址
 	tcpAddr, err := c.resolveAddr("tcp", tunnelAddr)
@@ -545,6 +581,17 @@ func (c *Common) getDNSTTL() {
 	}
 }
 
+// getServerName 获取服务器名称
+func (c *Common) getServerName() {
+	if serverName := c.parsedURL.Query().Get("sni"); serverName != "" {
+		c.serverName = serverName
+		return
+	}
+	if c.serverName == "" || net.ParseIP(c.serverName) != nil {
+		c.serverName = defaultServerName
+	}
+}
+
 // getPoolCapacity 获取连接池容量设置
 func (c *Common) getPoolCapacity() {
 	if min := c.parsedURL.Query().Get("min"); min != "" {
@@ -573,14 +620,14 @@ func (c *Common) getRunMode() {
 	}
 }
 
-// getQuicMode 获取QUIC模式
-func (c *Common) getQuicMode() {
-	if quicMode := c.parsedURL.Query().Get("quic"); quicMode != "" {
-		c.quicMode = quicMode
+// getPoolType 获取连接池类型
+func (c *Common) getPoolType() {
+	if poolType := c.parsedURL.Query().Get("type"); poolType != "" {
+		c.poolType = poolType
 	} else {
-		c.quicMode = defaultQuicMode
+		c.poolType = defaultPoolType
 	}
-	if c.quicMode != "0" && c.tlsCode == "0" {
+	if c.poolType == "1" && c.tlsCode == "0" {
 		c.tlsCode = "1"
 	}
 }
@@ -640,6 +687,18 @@ func (c *Common) getProxyProtocol() {
 	}
 }
 
+// getBlockProtocol 获取屏蔽协议设置
+func (c *Common) getBlockProtocol() {
+	if protocol := c.parsedURL.Query().Get("block"); protocol != "" {
+		c.blockProtocol = protocol
+	} else {
+		c.blockProtocol = defaultBlockProtocol
+	}
+	c.blockSOCKS = strings.Contains(c.blockProtocol, "1")
+	c.blockHTTP = strings.Contains(c.blockProtocol, "2")
+	c.blockTLS = strings.Contains(c.blockProtocol, "3")
+}
+
 // getTCPStrategy 获取TCP策略
 func (c *Common) getTCPStrategy() {
 	if tcpStrategy := c.parsedURL.Query().Get("notcp"); tcpStrategy != "" {
@@ -668,13 +727,15 @@ func (c *Common) initConfig() error {
 	c.getDNSTTL()
 	c.getTunnelKey()
 	c.getPoolCapacity()
+	c.getServerName()
 	c.getRunMode()
-	c.getQuicMode()
+	c.getPoolType()
 	c.getDialerIP()
 	c.getReadTimeout()
 	c.getRateLimit()
 	c.getSlotLimit()
 	c.getProxyProtocol()
+	c.getBlockProtocol()
 	c.getTCPStrategy()
 	c.getUDPStrategy()
 
@@ -716,6 +777,48 @@ func (c *Common) sendProxyV1Header(ip string, conn net.Conn) error {
 	}
 
 	return nil
+}
+
+// detectBlockProtocol 检测屏蔽协议
+func (c *Common) detectBlockProtocol(conn net.Conn) (string, net.Conn) {
+	if !c.blockSOCKS && !c.blockHTTP && !c.blockTLS {
+		return "", conn
+	}
+
+	reader := bufio.NewReader(conn)
+	b, err := reader.Peek(8)
+	if err != nil || len(b) < 1 {
+		return "", &readerConn{Conn: conn, reader: reader}
+	}
+
+	// 检测SOCKS
+	if c.blockSOCKS && len(b) >= 2 {
+		if b[0] == 0x04 && (b[1] == 0x01 || b[1] == 0x02) {
+			return "SOCKS4", &readerConn{Conn: conn, reader: reader}
+		}
+		if b[0] == 0x05 && b[1] >= 0x01 && b[1] <= 0x03 {
+			return "SOCKS5", &readerConn{Conn: conn, reader: reader}
+		}
+	}
+
+	// 检测HTTP
+	if c.blockHTTP && len(b) >= 4 && b[0] >= 'A' && b[0] <= 'Z' {
+		for i, c := range b[1:] {
+			if c == ' ' {
+				return "HTTP", &readerConn{Conn: conn, reader: reader}
+			}
+			if c < 'A' || c > 'Z' || i >= 7 {
+				break
+			}
+		}
+	}
+
+	// 检测TLS
+	if c.blockTLS && b[0] == 0x16 {
+		return "TLS", &readerConn{Conn: conn, reader: reader}
+	}
+
+	return "", &readerConn{Conn: conn, reader: reader}
 }
 
 // initRateLimiter 初始化全局限速器
@@ -833,10 +936,10 @@ func (c *Common) stop() {
 		c.logger.Debug("Tunnel connection closed: %v", c.tunnelUDPConn.LocalAddr())
 	}
 
-	// 关闭隧道TCP连接
-	if c.tunnelTCPConn != nil {
-		c.tunnelTCPConn.Close()
-		c.logger.Debug("Tunnel connection closed: %v", c.tunnelTCPConn.LocalAddr())
+	// 关闭隧道控制连接
+	if c.controlConn != nil {
+		c.controlConn.Close()
+		c.logger.Debug("Control connection closed: %v", c.controlConn.LocalAddr())
 	}
 
 	// 关闭目标监听器
@@ -879,6 +982,33 @@ func (c *Common) shutdown(ctx context.Context, stopFunc func()) error {
 	}
 }
 
+// setControlConn 设置控制连接
+func (c *Common) setControlConn() error {
+	start := time.Now()
+	for c.ctx.Err() == nil {
+		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
+			break
+		}
+		if time.Since(start) > handshakeTimeout {
+			return fmt.Errorf("setControlConn: handshake timeout")
+		}
+		select {
+		case <-c.ctx.Done():
+			return fmt.Errorf("setControlConn: context error: %w", c.ctx.Err())
+		case <-time.After(contextCheckInterval):
+		}
+	}
+
+	poolConn, err := c.tunnelPool.OutgoingGet("00000000", poolGetTimeout)
+	if err != nil {
+		return fmt.Errorf("setControlConn: outgoingGet failed: %w", err)
+	}
+	c.controlConn = poolConn
+	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
+	c.logger.Info("Marking tunnel handshake as complete in %vms", time.Since(c.handshakeStart).Milliseconds())
+	return nil
+}
+
 // commonControl 共用控制逻辑
 func (c *Common) commonControl() error {
 	errChan := make(chan error, 3)
@@ -912,7 +1042,7 @@ func (c *Common) commonQueue() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -926,7 +1056,7 @@ func (c *Common) commonQueue() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 		}
 	}
@@ -958,8 +1088,8 @@ func (c *Common) healthCheck() error {
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-				_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.flushURL.String())))
+			if c.ctx.Err() == nil && c.controlConn != nil {
+				_, err := c.controlConn.Write(c.encode([]byte(c.flushURL.String())))
 				if err != nil {
 					c.mu.Unlock()
 					return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
@@ -979,8 +1109,8 @@ func (c *Common) healthCheck() error {
 
 		// 发送PING信号
 		c.checkPoint = time.Now()
-		if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
-			_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pingURL.String())))
+		if c.ctx.Err() == nil && c.controlConn != nil {
+			_, err := c.controlConn.Write(c.encode([]byte(c.pingURL.String())))
 			if err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
@@ -1007,7 +1137,7 @@ func (c *Common) incomingVerify() {
 		select {
 		case <-c.ctx.Done():
 			continue
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 
@@ -1032,21 +1162,21 @@ func (c *Common) incomingVerify() {
 	// 构建并发送验证信号
 	verifyURL := &url.URL{
 		Scheme:   "np",
-		Host:     c.tunnelTCPConn.RemoteAddr().String(),
+		Host:     c.controlConn.RemoteAddr().String(),
 		Path:     url.PathEscape(id),
 		Fragment: "v", // TLS验证
 	}
 
-	if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+	if c.ctx.Err() == nil && c.controlConn != nil {
 		c.mu.Lock()
-		_, err = c.tunnelTCPConn.Write(c.encode([]byte(verifyURL.String())))
+		_, err = c.controlConn.Write(c.encode([]byte(verifyURL.String())))
 		c.mu.Unlock()
 		if err != nil {
 			return
 		}
 	}
 
-	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 }
 
 // commonLoop 共用处理循环
@@ -1066,7 +1196,7 @@ func (c *Common) commonLoop() {
 		select {
 		case <-c.ctx.Done():
 			return
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 }
@@ -1085,7 +1215,7 @@ func (c *Common) commonTCPLoop() {
 			select {
 			case <-c.ctx.Done():
 				return
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1107,6 +1237,14 @@ func (c *Common) commonTCPLoop() {
 			}
 
 			defer c.releaseSlot(false)
+
+			// 阻止屏蔽协议
+			protocol, wrappedConn := c.detectBlockProtocol(targetConn)
+			if protocol != "" {
+				c.logger.Warn("commonTCPLoop: blocked %v protocol from %v", protocol, targetConn.RemoteAddr())
+				return
+			}
+			targetConn = wrappedConn
 
 			// 从连接池获取连接
 			id, remoteConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
@@ -1135,9 +1273,9 @@ func (c *Common) commonTCPLoop() {
 				Fragment: "1", // TCP模式
 			}
 
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
 				c.mu.Unlock()
 
 				if err != nil {
@@ -1146,7 +1284,7 @@ func (c *Common) commonTCPLoop() {
 				}
 			}
 
-			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 
 			buffer1 := c.getTCPBuffer()
 			buffer2 := c.getTCPBuffer()
@@ -1180,7 +1318,7 @@ func (c *Common) commonUDPLoop() {
 			select {
 			case <-c.ctx.Done():
 				return
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1266,9 +1404,9 @@ func (c *Common) commonUDPLoop() {
 				Fragment: "2", // UDP模式
 			}
 
-			if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.tunnelTCPConn.Write(c.encode([]byte(launchURL.String())))
+				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
 				c.mu.Unlock()
 				if err != nil {
 					c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
@@ -1276,7 +1414,7 @@ func (c *Common) commonUDPLoop() {
 				}
 			}
 
-			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.tunnelTCPConn.RemoteAddr())
+			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
 			c.logger.Debug("Starting transfer: %v <-> %v", remoteConn.LocalAddr(), c.targetUDPConn.LocalAddr())
 		}
 
@@ -1306,7 +1444,7 @@ func (c *Common) commonOnce() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1322,7 +1460,7 @@ func (c *Common) commonOnce() error {
 				select {
 				case <-c.ctx.Done():
 					return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-				case <-time.After(50 * time.Millisecond):
+				case <-time.After(contextCheckInterval):
 				}
 				continue
 			}
@@ -1355,9 +1493,9 @@ func (c *Common) commonOnce() error {
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
 			case "i": // PING
-				if c.ctx.Err() == nil && c.tunnelTCPConn != nil {
+				if c.ctx.Err() == nil && c.controlConn != nil {
 					c.mu.Lock()
-					_, err := c.tunnelTCPConn.Write(c.encode([]byte(c.pongURL.String())))
+					_, err := c.controlConn.Write(c.encode([]byte(c.pongURL.String())))
 					c.mu.Unlock()
 					if err != nil {
 						return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
@@ -1388,7 +1526,7 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 		select {
 		case <-c.ctx.Done():
 			continue
-		case <-time.After(50 * time.Millisecond):
+		case <-time.After(contextCheckInterval):
 		}
 	}
 
@@ -1399,7 +1537,7 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
 	if err != nil {
@@ -1435,7 +1573,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 从连接池获取连接
 	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
@@ -1508,7 +1646,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	} else {
 		id = unescapedID
 	}
-	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.tunnelTCPConn.RemoteAddr())
+	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 获取池连接
 	remoteConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
@@ -1718,7 +1856,7 @@ func (c *Common) singleTCPLoop() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("singleTCPLoop: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}
@@ -1741,6 +1879,14 @@ func (c *Common) singleTCPLoop() error {
 
 			defer c.releaseSlot(false)
 
+			// 阻止屏蔽协议
+			protocol, wrappedConn := c.detectBlockProtocol(tunnelConn)
+			if protocol != "" {
+				c.logger.Warn("singleTCPLoop: blocked %v protocol from %v", protocol, tunnelConn.RemoteAddr())
+				return
+			}
+			tunnelConn = wrappedConn
+
 			// 尝试建立目标连接
 			targetConn, err := c.dialWithRotation("tcp", tcpDialTimeout)
 			if err != nil {
@@ -1761,6 +1907,7 @@ func (c *Common) singleTCPLoop() error {
 				c.logger.Error("singleTCPLoop: sendProxyV1Header failed: %v", err)
 				return
 			}
+
 			buffer1 := c.getTCPBuffer()
 			buffer2 := c.getTCPBuffer()
 			defer func() {
@@ -1795,7 +1942,7 @@ func (c *Common) singleUDPLoop() error {
 			select {
 			case <-c.ctx.Done():
 				return fmt.Errorf("singleUDPLoop: context error: %w", c.ctx.Err())
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(contextCheckInterval):
 			}
 			continue
 		}

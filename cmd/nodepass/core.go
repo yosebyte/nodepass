@@ -129,9 +129,9 @@ func getTLSProtocol(parsedURL *url.URL, logger *logs.Logger) (string, *tls.Confi
 		}
 		return "2", tlsConfig
 	default:
-		if parsedURL.Query().Get("quic") == "1" {
-			// QUIC模式下不支持明文传输
-			logger.Info("TLS code-1: RAM cert with TLS 1.3 for QUIC")
+		if poolType := parsedURL.Query().Get("type"); poolType == "1" || poolType == "3" {
+			// 流池类型不支持明文传输
+			logger.Info("TLS code-1: RAM cert with TLS 1.3 for stream pool")
 			return "1", tlsConfig
 		}
 		// 不使用加密
@@ -147,10 +147,6 @@ func exit(err error) {
 	}
 	fmt.Printf(`
 ╭─────────────────────────────────────╮
-│ ░░█▀█░█▀█░░▀█░█▀▀░█▀█░█▀█░█▀▀░█▀▀░░ │
-│ ░░█░█░█░█░█▀█░█▀▀░█▀▀░█▀█░▀▀█░▀▀█░░ │
-│ ░░▀░▀░▀▀▀░▀▀▀░▀▀▀░▀░░░▀░▀░▀▀▀░▀▀▀░░ │
-├─────────────────────────────────────┤
 │%*s │
 │%*s │
 ├─────────────────────────────────────┤
@@ -159,6 +155,6 @@ func exit(err error) {
 │ master://hostname:port/path?<query> │
 ╰─────────────────────────────────────╯
 
-`, 36, version, 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH))
+`, 36, fmt.Sprintf("nodepass-%s", version), 36, fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH))
 	os.Exit(1)
 }

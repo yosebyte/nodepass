@@ -213,59 +213,139 @@ nodepass "server://0.0.0.0:10101/remote.example.com:8080?log=info&tls=1&dial=10.
 - Binding failures trigger automatic fallback to prevent connection failures
 - This parameter does not affect incoming tunnel connections or server listen addresses
 
-## QUIC Transport Protocol
+## Connection Pool Types
 
-NodePass supports QUIC as an alternative transport protocol for connection pooling in dual-end handshake mode. QUIC provides UDP-based multiplexed streams with built-in encryption and improved performance characteristics compared to traditional TCP pools.
+NodePass supports three connection pool types for tunnel connection management in dual-end handshake mode. Each type provides different transport protocols and performance characteristics.
 
-- `quic`: QUIC transport mode (default: 0)
+- `type`: Connection pool type (default: 0)
   - Value 0: Use TCP-based connection pool (traditional pool library)
   - Value 1: Use QUIC-based connection pool (UDP multiplexing with streams)
+  - Value 2: Use WebSocket/WSS-based connection pool (HTTP upgrade connections)
+  - Value 3: Use HTTP/2-based connection pool (multiplexed streams over single TLS connection)
   - Only applies to dual-end handshake mode (mode=2)
   - Automatically enables TLS if not already configured (minimum tls=1)
-  - Uses QUIC streams for multiplexed connections over a single UDP connection
   - Server configuration is automatically delivered to client during handshake
 
-**QUIC Advantages:**
+### TCP Pool (type=0)
+
+Traditional TCP-based connection pool providing maximum compatibility and reliability.
+
+**Advantages:**
+- Maximum network compatibility, TCP supported by virtually all networks
+- Strict TCP semantics and ordering guarantees
+- Stable performance in low-loss networks
+- Widely accepted in enterprise environments
+- Low latency in stable networks
+
+**Use Cases:**
+- Networks that block or throttle UDP traffic
+- Applications requiring strict TCP semantics
+- Default choice in enterprise environments
+- Maximum compatibility requirements
+
+### QUIC Pool (type=1)
+
+Modern connection pool based on QUIC protocol, providing UDP-based multiplexed streams.
+
+**Advantages:**
 - **Multiplexing**: Multiple streams over a single UDP connection
 - **Reduced Latency**: Faster connection establishment with 0-RTT support
 - **Better Loss Recovery**: Stream-level flow control and congestion management
 - **NAT Traversal**: UDP-based protocol works better through NATs and firewalls
 - **Built-in Encryption**: Mandatory TLS 1.3 encryption for all QUIC connections
 
-**QUIC Requirements:**
-- Only server needs to configure the `quic` parameter - client receives configuration automatically
-- TLS mode must be enabled (tls=1 or tls=2) - automatically set if quic=1
-- Only available in dual-end handshake mode (mode=2 or mode=0 with remote addresses)
-- Not applicable to single-end forwarding mode (mode=1)
+**Use Cases:**
+- Mobile networks or frequently changing network conditions
+- High-latency connections (satellite, long-distance)
+- NAT-heavy environments
+- Real-time applications benefiting from stream independence
+- Scenarios where 0-RTT reconnection provides value
 
-Example:
+**Requirements:**
+- TLS mode must be enabled (tls=1 or tls=2)
+- Only available in dual-end handshake mode (mode=2)
+- UDP port accessibility required
+
+### WebSocket Pool (type=2)
+
+Connection pool based on WebSocket protocol, establishing connections via HTTP upgrade.
+
+**Advantages:**
+- **Proxy Traversal**: Can traverse HTTP proxies and CDNs
+- **Firewall Friendly**: Uses standard HTTP/HTTPS ports, easily passes through firewalls
+- **Web Infrastructure Compatible**: Integrates with existing web infrastructure
+- **Bidirectional Communication**: Supports full-duplex communication
+- **Wide Support**: Supported by all modern browsers and platforms
+
+**Use Cases:**
+- Need to traverse HTTP proxies or CDNs
+- Corporate environments allowing only HTTP/HTTPS traffic
+- Firewalls blocking raw TCP connections
+- Need compatibility with existing web infrastructure
+- Web proxy or VPN alternative solutions
+
+**Requirements:**
+- **TLS must be enabled** - WebSocket pool requires WSS (encrypted). Minimum `tls=1` required, `tls=2` recommended for production
+- Only available in dual-end handshake mode (mode=2)
+- TCP port with WebSocket upgrade support required
+- **Important**: Type 2 does NOT support unencrypted mode (tls=0). If tls=0 is specified with type=2, system will automatically enforce tls=1
+
+### HTTP/2 Pool (type=3)
+
+Connection pool based on HTTP/2 protocol, providing multiplexed streams over a single TLS connection.
+
+**Advantages:**
+- **Stream Multiplexing**: Multiple independent streams over a single TCP connection
+- **Header Compression**: HPACK compression reduces bandwidth usage
+- **Binary Protocol**: Efficient binary framing reduces parsing overhead
+- **Flow Control**: Per-stream and connection-level flow control
+- **Server Push**: Potential for optimized data transfer patterns
+- **TLS Integration**: Native TLS 1.3 support with strong encryption
+- **Firewall Friendly**: Uses standard HTTPS ports and protocol patterns
+
+**Use Cases:**
+- Corporate environments with HTTP/HTTPS-only policies
+- Networks requiring protocol-level optimization and efficiency
+- High-concurrency scenarios benefiting from stream multiplexing
+- Environments needing both proxy traversal and performance
+- Applications requiring fine-grained flow control
+- Infrastructure with HTTP/2-aware load balancers or proxies
+
+**Requirements:**
+- TLS mode must be enabled (tls=1 or tls=2)
+- Only available in dual-end handshake mode (mode=2)
+- HTTP/2 protocol support required (built into NodePass)
+
+### Configuration Examples
+
 ```bash
-# Server with QUIC transport (automatically enables TLS)
-nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2"
+# TCP pool (default)
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=0&mode=2&tls=1"
 
-# Client automatically adopts QUIC transport from server
+# QUIC pool (automatically enables TLS)
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=1&mode=2"
+
+# WebSocket pool (with custom TLS certificate)
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=2&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
+
+# HTTP/2 pool (multiplexed streams with TLS)
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=3&mode=2&tls=1"
+
+# Client automatically adopts server's pool type configuration
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2"
-
-# QUIC with custom TLS certificate (server-side only)
-nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem"
-
-# Traditional TCP pool (default behavior)
-nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=0&mode=2"
 ```
 
-**QUIC Use Cases:**
-- **High-Latency Networks**: Reduced connection overhead in satellite or long-distance links
-- **Mobile Networks**: Better handling of network transitions and packet loss
-- **Real-Time Applications**: Lower latency for gaming, VoIP, or video streaming
-- **NAT-Heavy Environments**: Improved connectivity through complex NAT scenarios
-- **Concurrent Streams**: Efficient handling of multiple parallel data flows
-
 **Important Notes:**
-- QUIC mode requires UDP port accessibility on both server and client
-- Firewall rules must allow UDP traffic on the tunnel port
-- Some network middleboxes may block or deprioritize UDP traffic
-- QUIC connection uses keep-alive and automatic reconnection
-- Stream multiplexing shares bandwidth across all concurrent connections
+- Only server needs to configure `type` parameter - client receives configuration automatically
+- **WebSocket pool (type=2) requires TLS**: Minimum `tls=1`. If type=2 without TLS, system automatically sets tls=1
+- All pool types only available in dual-end handshake mode (mode=2 or mode=0 with remote addresses)
+- Not applicable to single-end forwarding mode (mode=1)
+
+**Pool Type Use Cases:**
+- **TCP Pool**: Standard enterprise environments, maximum compatibility, stable networks
+- **QUIC Pool**: High-latency networks, mobile networks, real-time applications, complex NAT environments
+- **WebSocket Pool**: HTTP proxy traversal, enterprise firewall restrictions, web infrastructure integration
+- **HTTP/2 Pool**: HTTP/HTTPS-only policies, high-concurrency scenarios, protocol-level optimization needs
 
 ## Connection Pool Capacity Parameters
 
@@ -278,15 +358,15 @@ Connection pool capacity parameters only apply to dual-end handshake mode and ar
 - The `max` parameter set by client will be overridden by the value delivered from server during handshake
 - The `min` parameter is fully controlled by client and will not be modified by server
 - In client single-end forwarding mode, connection pools are not used and these parameters are ignored
-- Applies to both TCP pools (quic=0) and QUIC pools (quic=1)
+- Applies to all connection pool types (type=0 for TCP, type=1 for QUIC, type=2 for WebSocket)
 
 Example:
 ```bash
 # Client sets minimum pool to 32, maximum pool will be determined by server
 nodepass "client://server.example.com:10101/127.0.0.1:8080?min=32"
 
-# Client with QUIC and custom pool capacity
-nodepass "client://server.example.com:10101/127.0.0.1:8080?quic=1&min=128"
+# Client with QUIC pool and custom pool capacity
+nodepass "client://server.example.com:10101/127.0.0.1:8080?type=1&min=128"
 ```
 
 ## Data Read Timeout
@@ -500,6 +580,100 @@ nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&noudp=1"
 - Existing UDP sessions will be terminated when switching to noudp=1
 - UDP buffer pools and session management are disabled when noudp=1
 
+## Protocol Blocking
+
+NodePass provides fine-grained protocol blocking capabilities to prevent specific protocols from being tunneled. This is useful for security policies that require blocking certain protocols while allowing others.
+
+The `block` parameter uses a numeric string where each digit represents a protocol category:
+- `1`: Block SOCKS protocols (SOCKS4/4a/5)
+- `2`: Block HTTP protocols (all HTTP methods)
+- `3`: Block TLS/SSL protocols (encrypted connections)
+
+Multiple protocols can be blocked by including the corresponding digits in any order. The parameter value can contain duplicate digits without affecting behavior.
+
+### Configuration Options
+
+- `block`: Protocol blocking control (default: not set or `0`)
+  - Not set or `0`: Allow all protocols (no blocking)
+  - Contains `1`: Block SOCKS4, SOCKS4a, and SOCKS5 protocols
+  - Contains `2`: Block HTTP protocols (GET, POST, CONNECT, etc.)
+  - Contains `3`: Block TLS/SSL handshake (0x16 content type)
+
+### Examples
+
+Block SOCKS protocols only:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=1"
+```
+
+Block HTTP protocols only:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=2"
+```
+
+Block both SOCKS and HTTP:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=12"
+# OR
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=21"
+```
+
+Block all three protocol categories:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?block=123"
+# OR any combination like: 321, 213, 312, etc.
+```
+
+Combined with other security settings:
+```bash
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?log=info&tls=1&block=12&slot=1024"
+```
+
+### Detection Mechanism
+
+NodePass uses efficient protocol detection with minimal overhead:
+
+- **SOCKS Detection**: Examines the first 2 bytes of incoming connections
+  - SOCKS4/4a: Checks for version byte `0x04` and command byte `0x01`/`0x02`
+  - SOCKS5: Checks for version byte `0x05` and valid method count
+
+- **HTTP Detection**: Scans up to 8 bytes for HTTP method patterns
+  - Identifies uppercase letters followed by a space character
+  - Detects all standard HTTP methods (GET, POST, CONNECT, DELETE, etc.)
+  - Also detects custom HTTP methods and WebDAV extensions
+
+- **TLS Detection**: Examines the first byte for TLS handshake
+  - Identifies TLS handshake record type `0x16`
+  - Blocks TLS 1.0, 1.1, 1.2, and 1.3 handshakes
+
+### Use Cases
+
+**Block proxy protocols in tunnel services:**
+```bash
+# Allow only application traffic, block proxy protocols
+nodepass "server://0.0.0.0:10101/app.backend.local:8080?block=12"
+```
+
+**Enforce encryption policy:**
+```bash
+# Allow only encrypted traffic, block plaintext protocols
+nodepass "server://0.0.0.0:10101/0.0.0.0:443?block=12&tls=2"
+```
+
+**Prevent TLS-in-TLS:**
+```bash
+# Block nested TLS when outer layer already encrypts
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=1&block=3"
+```
+
+### Important Notes
+
+- Protocol detection occurs at connection establishment (first bytes received)
+- Blocked connections are immediately closed with a warning log entry
+- This feature adds minimal CPU overhead (typically <0.1ms per connection)
+- Protocol blocking applies to both single-end and dual-end forwarding modes
+- Combine with `notcp`/`noudp` for complete traffic control
+
 ## Target Address Groups and Load Balancing
 
 NodePass supports configuring multiple target addresses to achieve high availability and load balancing. Target address groups are only applicable to the egress side (the final destination of traffic) and should not be used on the ingress side.
@@ -561,24 +735,26 @@ nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?
 
 NodePass allows flexible configuration via URL query parameters. The following table shows which parameters are applicable in server, client, and master modes:
 
-| Parameter | Description              | Default           | server | client | master |
-|-----------|--------------------------|-------------------|:------:|:------:|:------:|
-| `log`     | Log level                | `info`            |   O    |   O    |   O    |
-| `tls`     | TLS encryption mode      | `0`               |   O    |   X    |   O    |
-| `crt`     | Custom certificate path  | N/A               |   O    |   X    |   O    |
-| `key`     | Custom key path          | N/A               |   O    |   X    |   O    |
-| `dns`     | DNS cache TTL            | `5m`              |   O    |   O    |   X    |
-| `min`     | Minimum pool capacity    | `64`              |   X    |   O    |   X    |
-| `max`     | Maximum pool capacity    | `1024`            |   O    |   X    |   X    |
-| `mode`    | Run mode control         | `0`               |   O    |   O    |   X    |
-| `quic`    | QUIC protocol support    | `0`               |   O    |   X    |   X    |
-| `dial`    | Source IP for outbound   | `auto`            |   O    |   O    |   X    |
-| `read`    | Data read timeout        | `0`               |   O    |   O    |   X    |
-| `rate`    | Bandwidth rate limit     | `0`               |   O    |   O    |   X    |
-| `slot`    | Maximum connection limit | `65536`           |   O    |   O    |   X    |
-| `proxy`   | PROXY protocol support   | `0`               |   O    |   O    |   X    |
-| `notcp`   | TCP support control      | `0`               |   O    |   O    |   X    |
-| `noudp`   | UDP support control      | `0`               |   O    |   O    |   X    |
+| Parameter | Description | Default | Accepted Values | server | client | master |
+|-----------|-------------|---------|-----------------|:------:|:------:|:------:|
+| `log` | Log level | `info` | `none`/`debug`/`info`/`warn`/`error`/`event` | O | O | O |
+| `tls` | TLS encryption mode | `0` | `0`/`1`/`2` | O | X | O |
+| `crt` | Custom certificate path | N/A | File path | O | X | O |
+| `key` | Custom key path | N/A | File path | O | X | O |
+| `dns` | DNS cache TTL | `5m` | `30s`/`5m`/`1h` etc. | O | O | X |
+| `sni` | Server Name Indication | `none` | Hostname | X | O | X |
+| `min` | Minimum pool capacity | `64` | Positive integer | X | O | X |
+| `max` | Maximum pool capacity | `1024` | Positive integer | O | X | X |
+| `mode` | Run mode control | `0` | `0`/`1`/`2` | O | O | X |
+| `type` | Connection pool type | `0` | `0`/`1`/`2`/`3` | O | X | X |
+| `dial` | Source IP for outbound | `auto` | `auto`/IP address | O | O | X |
+| `read` | Data read timeout | `0` | `0`/`30s`/`5m` etc. | O | O | X |
+| `rate` | Bandwidth rate limit | `0` | `0` or integer (Mbps) | O | O | X |
+| `slot` | Maximum connection limit | `65536` | `0` or integer | O | O | X |
+| `proxy` | PROXY protocol support | `0` | `0`/`1` | O | O | X |
+| `block` | Protocol blocking | `0` | `0`/`1`/`2`/`3` | O | O | X |
+| `notcp` | TCP support control | `0` | `0`/`1` | O | O | X |
+| `noudp` | UDP support control | `0` | `0`/`1` | O | O | X |
 
 - O: Parameter is valid and recommended for configuration
 - X: Parameter is not applicable and should be ignored
@@ -588,9 +764,10 @@ NodePass allows flexible configuration via URL query parameters. The following t
 - For client/server dual-end handshake modes, adjust connection pool capacity (`min`, `max`) based on traffic and resource constraints for optimal performance.
 - Use run mode control (`mode`) when automatic detection doesn't match your deployment requirements or for consistent behavior across environments.
 - Configure rate limiting (`rate`) to control bandwidth usage and prevent network congestion in shared environments.
-- Configure QUIC transport (`quic`) on the server only - clients automatically receive the configuration during handshake.
+- Configure connection pool type (`type`) on the server only - clients automatically receive the configuration during handshake.
 - Set `notcp=1` when only UDP traffic needs to be tunneled to reduce resource usage and simplify configuration.
 - Set `noudp=1` when only TCP traffic needs to be tunneled to reduce resource usage and simplify configuration.
+- Use `block` parameter to enforce security policies by blocking specific protocol categories (SOCKS/HTTP/TLS).
 - Log level (`log`) can be set in all modes for easier operations and troubleshooting.
 
 ## Environment Variables

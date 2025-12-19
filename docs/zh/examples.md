@@ -137,9 +137,85 @@ nodepass client://service-a:10101/127.0.0.1:8082
 - 将日志限制为仅警告和错误
 - 使服务A的API在服务B上显示为本地服务
 
+## 协议屏蔽和流量过滤
+
+### 示例9：屏蔽代理协议
+
+阻止SOCKS和HTTP代理使用你的隧道：
+
+```bash
+# 屏蔽SOCKS和HTTP代理协议的服务器
+nodepass "server://0.0.0.0:10101/app.backend.com:8080?block=12&tls=1"
+
+# 连接到受保护服务器的客户端
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
+```
+
+此配置：
+- 屏蔽所有SOCKS4/4a/5代理连接（`block`包含`1`）
+- 屏蔽所有HTTP代理方法如CONNECT、GET、POST（`block`包含`2`）
+- 仅允许应用特定协议通过隧道
+- 用于防止在应用隧道上滥用代理
+
+### 示例10：屏蔽TLS嵌套场景
+
+当外层已提供安全保护时，防止嵌套TLS加密：
+
+```bash
+# 使用TLS加密并屏蔽内部TLS连接的服务器
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=1&block=3"
+
+# 客户端自动继承TLS设置
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
+```
+
+此设置：
+- 使用TLS加密隧道本身（`tls=1`）
+- 屏蔽加密隧道内的TLS握手（`block=3`）
+- 防止不必要的双重加密开销
+- 有助于识别应用尝试添加冗余TLS的错误配置
+
+### 示例11：综合安全策略
+
+执行严格的安全策略，仅允许应用流量：
+
+```bash
+# 具有综合协议屏蔽的生产服务器
+nodepass "server://0.0.0.0:10101/secure-app.internal:443?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem&block=123&slot=500"
+
+# 强制加密的客户端
+nodepass "client://prod-server.example.com:10101/127.0.0.1:8443?log=warn"
+```
+
+此配置：
+- 使用经过验证的自定义证书以获得最大安全性（`tls=2`）
+- 屏蔽SOCKS代理（`block`包含`1`）
+- 屏蔽HTTP代理（`block`包含`2`）
+- 屏蔽嵌套TLS连接（`block`包含`3`）
+- 将并发连接限制为500以控制资源
+- 仅记录警告和错误以减少噪音
+
+### 示例12：开发环境的选择性协议屏蔽
+
+在开发环境中允许HTTP流量同时屏蔽代理：
+
+```bash
+# 仅屏蔽SOCKS协议的开发服务器
+nodepass "server://127.0.0.1:10101/localhost:3000?block=1&log=debug"
+
+# 开发客户端
+nodepass "client://127.0.0.1:10101/localhost:8080"
+```
+
+此设置：
+- 屏蔽SOCKS协议但允许HTTP请求
+- 适用于需要HTTP方法的Web应用测试
+- 防止开发人员隧道传输SOCKS代理流量
+- 启用调试日志记录以进行故障排除
+
 ## 带宽速率限制
 
-### 示例9：带速率限制的文件传输服务器
+### 示例13：带速率限制的文件传输服务器
 
 控制文件传输服务的带宽使用：
 
@@ -157,7 +233,7 @@ nodepass "client://fileserver.example.com:10101/127.0.0.1:3000?log=info&rate=50"
 - 允许文件传输的同时为其他服务保留带宽
 - 使用TLS加密确保文件传输安全
 
-### 示例10：物联网传感器数据收集的保守限制
+### 示例14：物联网传感器数据收集的保守限制
 
 对于带宽有限或按流量计费的物联网设备：
 
@@ -175,7 +251,7 @@ nodepass "client://iot-gateway.example.com:10101/127.0.0.1:1883?log=error&rate=2
 - 最小日志记录（warn/error）以减少物联网设备的资源使用
 - 高效适用于MQTT或其他物联网协议
 
-### 示例11：开发环境速率控制
+### 示例15：开发环境速率控制
 
 在带宽约束下测试应用程序：
 
@@ -194,7 +270,7 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:3000?log=debug&rate=500"
 
 ## 物联网设备管理
 
-### 示例12：物联网网关
+### 示例16：物联网网关
 
 创建物联网设备的中央访问点：
 
@@ -215,7 +291,7 @@ nodepass client://mgmt.example.com:10101/127.0.0.1:80
 
 ## 多网卡系统与源IP控制
 
-### 示例13：指定网络接口选择
+### 示例17：指定网络接口选择
 
 在多网卡系统上控制出站连接使用的网络接口：
 
@@ -234,7 +310,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=192.168.1.50&mod
 - 如果指定地址失败，自动回退到系统选择的IP
 - 支持IPv4和IPv6地址
 
-### 示例14：网络分段和VLAN路由
+### 示例18：网络分段和VLAN路由
 
 通过特定网络段或VLAN引导流量：
 
@@ -265,7 +341,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?dial=auto"
 
 ## DNS缓存TTL配置
 
-### 示例15：稳定的企业网络
+### 示例19：稳定的企业网络
 
 为稳定的内部服务使用较长的TTL：
 
@@ -283,7 +359,7 @@ nodepass "client://tunnel.corp.local:10101/127.0.0.1:8080?dns=1h"
 - 通过最小化DNS查找提高连接性能
 - 适用于DNS稳定的生产环境
 
-### 示例16：动态DNS环境
+### 示例20：动态DNS环境
 
 为频繁变化的DNS记录使用较短的TTL：
 
@@ -301,7 +377,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?dns=30s"
 - 确保连接使用当前的DNS记录
 - 适合IP频繁变化的云环境
 
-### 示例17：开发和测试
+### 示例21：开发和测试
 
 为开发环境禁用缓存：
 
@@ -319,7 +395,7 @@ nodepass "client://dev-server.local:10101/127.0.0.1:8080?dns=0&log=debug"
 - 在开发期间DNS记录频繁变化时很有用
 - 帮助在测试期间识别DNS相关问题
 
-### 示例18：混合环境的自定义TTL
+### 示例22：混合环境的自定义TTL
 
 使用适中的TTL平衡性能和新鲜度：
 
@@ -349,7 +425,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080"
 
 ## 高可用性与负载均衡
 
-### 示例19：多后端服务器负载均衡
+### 示例23：多后端服务器负载均衡
 
 使用目标地址组实现流量均衡分配和自动故障转移：
 
@@ -367,7 +443,7 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?log=info"
 - 故障服务器恢复后自动重新接入流量
 - 使用TLS加密确保隧道安全
 
-### 示例20：数据库主从切换
+### 示例24：数据库主从切换
 
 为数据库配置主从实例，实现高可用访问：
 
@@ -382,7 +458,7 @@ nodepass "client://127.0.0.1:3306/db-primary.local:3306,db-secondary.local:3306?
 - 应用程序无需修改，透明地实现故障转移
 - 仅记录警告和错误，减少日志输出
 
-### 示例21：API网关后端池
+### 示例25：API网关后端池
 
 为API网关配置多个后端服务实例：
 
@@ -400,7 +476,7 @@ nodepass "client://apigateway.example.com:10101/127.0.0.1:8080?rate=100&slot=200
 - 客户端限制带宽100 Mbps，最大2000并发连接
 - 单个实例故障不影响整体服务可用性
 
-### 示例22：地域分布式服务
+### 示例26：地域分布式服务
 
 配置多地域服务节点，优化网络延迟：
 
@@ -424,7 +500,7 @@ nodepass "server://0.0.0.0:10101/us-west.service:8080,us-east.service:8080,eu-ce
 
 ## PROXY协议集成
 
-### 示例23：负载均衡器与PROXY协议集成
+### 示例27：负载均衡器与PROXY协议集成
 
 启用PROXY协议支持，与负载均衡器和反向代理集成：
 
@@ -443,7 +519,7 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:3000?log=info&proxy=1"
 - 兼容HAProxy、Nginx和其他支持PROXY协议的服务
 - 有助于维护准确的访问日志和基于IP的访问控制
 
-### 示例24：Web应用的反向代理支持
+### 示例28：Web应用的反向代理支持
 
 使NodePass后的Web应用能够接收原始客户端信息：
 
@@ -467,7 +543,7 @@ nodepass "server://0.0.0.0:10101/127.0.0.1:8080?log=warn&tls=2&crt=/path/to/cert
 - 支持连接审计的合规性要求
 - 适用于支持PROXY协议的Web服务器（Nginx、HAProxy等）
 
-### 示例25：数据库访问与客户端IP保留
+### 示例29：数据库访问与客户端IP保留
 
 为数据库访问日志记录和安全维护客户端IP信息：
 
@@ -494,7 +570,7 @@ nodepass "client://dbproxy.example.com:10101/127.0.0.1:5432?proxy=1"
 
 ## 容器部署
 
-### 示例26：容器化NodePass
+### 示例30：容器化NodePass
 
 在Docker环境中部署NodePass：
 
@@ -529,7 +605,7 @@ docker run -d --name nodepass-client \
 
 ## 主控API管理
 
-### 示例27：集中化管理
+### 示例31：集中化管理
 
 为多个NodePass实例设置中央控制器：
 
@@ -566,7 +642,7 @@ curl -X PUT http://localhost:9090/api/v1/instances/{id} \
 - 提供用于自动化和集成的RESTful API
 - 包含内置的Swagger UI，位于http://localhost:9090/api/v1/docs
 
-### 示例28：自定义API前缀
+### 示例32：自定义API前缀
 
 为主控模式使用自定义API前缀：
 
@@ -585,7 +661,7 @@ curl -X POST http://localhost:9090/admin/v1/instances \
 - 用于安全或组织目的的自定义URL路径
 - 在http://localhost:9090/admin/v1/docs访问Swagger UI
 
-### 示例29：实时连接和流量监控
+### 示例33：实时连接和流量监控
 
 通过主控API监控实例的连接数和流量统计：
 
@@ -623,17 +699,17 @@ curl -H "X-API-Key: your-api-key" \
 - **容量规划**：基于历史连接数据进行资源规划
 - **故障诊断**：异常的连接数变化可能指示网络问题
 
-## QUIC传输协议
+## 连接池类型
 
-### 示例30: 基于QUIC的流多路复用隧道
+### 示例34: 基于QUIC的流多路复用隧道
 
 使用QUIC协议进行连接池管理，在高延迟网络中提供更优性能：
 
 ```bash
-# 服务器端：启用QUIC传输
-nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+# 服务器端：启用QUIC连接池
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=1&mode=2&tls=1&log=debug"
 
-# 客户端：自动从服务器接收QUIC配置
+# 客户端：自动从服务器接收连接池类型配置
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 ```
 
@@ -643,17 +719,17 @@ nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=de
 - 强制使用TLS 1.3加密（自动启用）
 - 在丢包场景中性能更好（无队头阻塞）
 - 通过0-RTT支持改善连接建立
-- 客户端在握手时自动接收服务器的QUIC配置
+- 客户端在握手时自动接收服务器的连接池类型配置
 
-### 示例31: 使用自定义TLS证书的QUIC
+### 示例35: 使用自定义TLS证书的QUIC连接池
 
 在生产环境部署带有验证证书的QUIC隧道：
 
 ```bash
-# 服务器端：使用自定义证书的QUIC
-nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+# 服务器端：使用自定义证书的QUIC连接池
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
 
-# 客户端：自动接收QUIC配置并进行证书验证
+# 客户端：自动接收连接池类型配置并进行证书验证
 nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
 ```
 
@@ -662,17 +738,62 @@ nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=inf
 - QUIC协议提供强制TLS 1.3加密
 - 适用于生产环境
 - 客户端进行完整证书验证
-- QUIC配置自动从服务器下发
+- 连接池类型配置自动从服务器下发
 
-### 示例32: 移动/高延迟网络的QUIC
+### 示例36: WebSocket连接池穿透HTTP代理
+
+在企业防火墙后使用WebSocket连接池：
+
+```bash
+# 服务器端：启用WebSocket连接池（需要TLS）
+nodepass "server://0.0.0.0:10101/internal.backend:8080?type=2&mode=2&tls=1&log=info"
+
+# 客户端：自动接收WebSocket配置
+nodepass "client://wss.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+此配置：
+- 使用WebSocket协议可以穿透HTTP代理和CDN
+- **需要TLS加密** - 最少`tls=1`，生产环境建议使用带证书的`tls=2`
+- 使用标准HTTPS端口，容易通过防火墙
+- 与现有Web基础设施兼容
+- 支持全双工通信
+- 适合企业环境中仅允许HTTP/HTTPS流量的场景
+- 客户端自动采用服务器的连接池类型配置
+- **注意**：WebSocket连接池不支持不加密模式（tls=0）
+
+### 示例37: 高并发环境的HTTP/2连接池
+
+使用HTTP/2连接池实现高效的多路复用流和协议优化：
+
+```bash
+# 服务器端：启用HTTP/2连接池（需要TLS）
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=3&mode=2&tls=1&log=info"
+
+# 客户端：自动接收HTTP/2配置
+nodepass "client://h2.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+此配置：
+- 使用HTTP/2协议在单个TLS连接上实现多路复用流
+- **需要TLS加密** - 最少`tls=1`，生产环境建议使用带证书的`tls=2`
+- HPACK头部压缩减少带宽使用
+- 高效解析的二进制帧协议
+- 每个流的流量控制实现最优资源利用
+- 与HTTP/2感知的代理和负载均衡器配合使用
+- 适合HTTP/HTTPS仅支持策略的环境
+- 客户端自动采用服务器的连接池类型配置
+- 适用于受益于流多路复用的高并发场景
+
+### 示例38: 移动/高延迟网络的QUIC连接池
 
 针对移动网络或卫星连接进行优化：
 
 ```bash
-# 服务器端：带自适应池大小的QUIC
-nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+# 服务器端：带自适应池大小的QUIC连接池
+nodepass "server://0.0.0.0:10101/api.backend:443?type=1&mode=2&max=512&tls=1&log=info"
 
-# 客户端：自动接收QUIC，配置较大最小连接池用于移动网络
+# 客户端：自动接收连接池类型，配置较大最小连接池用于移动网络
 nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
 ```
 
@@ -682,20 +803,28 @@ nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=war
 - 流多路复用减少连接开销
 - 更好地处理丢包和抖动
 - 0-RTT重连在网络变化后实现更快恢复
-- 客户端自动采用服务器的QUIC配置
+- 客户端自动采用服务器的连接池类型配置
 
-### 示例33: QUIC与TCP连接池性能对比
+### 示例39: 连接池类型性能对比
 
-QUIC和TCP连接池的并排比较：
+TCP、QUIC、WebSocket和HTTP/2连接池的并排比较：
 
 ```bash
 # 传统TCP连接池（默认）
-nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?type=0&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
 
 # QUIC连接池（现代方法）
-nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?type=1&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
+
+# WebSocket连接池（代理穿透）
+nodepass "server://0.0.0.0:10103/backend.example.com:8080?type=2&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=event"
+
+# HTTP/2连接池（多路复用流）
+nodepass "server://0.0.0.0:10104/backend.example.com:8080?type=3&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10104/127.0.0.1:8083?mode=2&min=128&log=event"
 ```
 
 **TCP连接池优势**：
@@ -710,15 +839,29 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=ev
 - 改善NAT穿透能力
 - 单个UDP套接字减少资源使用
 
-### 示例34: 实时应用的QUIC
+**WebSocket连接池优势**：
+- 可以穿透HTTP代理和CDN
+- 使用标准HTTP/HTTPS端口
+- 与现有Web基础设施集成
+- 适合企业防火墙环境
+
+**HTTP/2连接池优势**：
+- 在单个TCP连接上高效的流多路复用
+- HPACK头部压缩减少带宽
+- 高效解析的二进制协议
+- 每个流的流量控制实现资源优化
+- 与HTTP/2感知的基础设施配合使用
+- 适合HTTP/HTTPS仅支持策略的环境
+
+### 示例40: 实时应用的QUIC连接池
 
 为游戏、VoIP或视频流配置QUIC隧道：
 
 ```bash
 # 服务器端：为实时流量优化的QUIC设置
-nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?type=1&mode=2&tls=1&read=30s&slot=10000"
 
-# 客户端：自动从服务器接收QUIC配置
+# 客户端：自动从服务器接收连接池类型配置
 nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
@@ -728,14 +871,13 @@ nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 - 30秒读取超时快速检测陈旧连接
 - 大槽位限制支持许多并发玩家/流
 - 减少连接建立开销
-- 客户端自动采用服务器的QUIC配置
+- 客户端自动采用服务器的连接池类型配置
 
-**QUIC使用场景总结**：
-- **移动网络**：更好地处理网络切换和丢包
-- **高延迟链路**：通过0-RTT和多路复用减少开销
-- **实时应用**：流独立性防止队头阻塞
-- **复杂NAT环境**：基于UDP的协议更可靠地穿透NAT
-- **并发流**：在并行流之间高效共享带宽
+**连接池类型使用场景总结**：
+- **TCP连接池**：标准企业环境、最大兼容性、稳定网络
+- **QUIC连接池**：移动网络、高延迟链路、实时应用、复杂NAT环境
+- **WebSocket连接池**：HTTP代理穿透、企业防火墙限制、Web基础设施集成
+- **HTTP/2连接池**：HTTP/HTTPS仅支持策略、高并发Web流量、与HTTP/2感知基础设施集成
 
 ## 下一步
 

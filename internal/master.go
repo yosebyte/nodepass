@@ -1038,7 +1038,8 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		// 创建新实例
 		var reqData struct {
-			URL string `json:"url"`
+			Alias string `json:"alias"`
+			URL   string `json:"url"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&reqData); err != nil || reqData.URL == "" {
 			httpError(w, "Invalid request body", http.StatusBadRequest)
@@ -1069,6 +1070,7 @@ func (m *Master) handleInstances(w http.ResponseWriter, r *http.Request) {
 		// 创建实例
 		instance := &Instance{
 			ID:      id,
+			Alias:   reqData.Alias,
 			Type:    instanceType,
 			URL:     m.enhanceURL(reqData.URL, instanceType),
 			Status:  "stopped",
@@ -1785,9 +1787,12 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 	// 根据实例类型设置默认参数
 	switch instance.Type {
 	case "client":
-		// client参数: dns, min, mode, dial, read, rate, slot, proxy, notcp, noudp
+		// client参数: dns, sni, min, mode, dial, read, rate, slot, proxy, block, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
+		}
+		if query.Get("sni") == "" {
+			query.Set("sni", defaultServerName)
 		}
 		if query.Get("min") == "" {
 			query.Set("min", strconv.Itoa(defaultMinPool))
@@ -1810,6 +1815,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
 		}
+		if query.Get("block") == "" {
+			query.Set("block", defaultBlockProtocol)
+		}
 		if query.Get("notcp") == "" {
 			query.Set("notcp", defaultTCPStrategy)
 		}
@@ -1817,7 +1825,7 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 			query.Set("noudp", defaultUDPStrategy)
 		}
 	case "server":
-		// server参数: dns, max, mode, quic, dial, read, rate, slot, proxy, notcp, noudp
+		// server参数: dns, max, mode, type, dial, read, rate, slot, proxy, block, notcp, noudp
 		if query.Get("dns") == "" {
 			query.Set("dns", defaultDNSTTL.String())
 		}
@@ -1827,8 +1835,8 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		if query.Get("mode") == "" {
 			query.Set("mode", defaultRunMode)
 		}
-		if query.Get("quic") == "" {
-			query.Set("quic", defaultQuicMode)
+		if query.Get("type") == "" {
+			query.Set("type", defaultPoolType)
 		}
 		if query.Get("dial") == "" {
 			query.Set("dial", defaultDialerIP)
@@ -1844,6 +1852,9 @@ func (m *Master) generateConfigURL(instance *Instance) string {
 		}
 		if query.Get("proxy") == "" {
 			query.Set("proxy", defaultProxyProtocol)
+		}
+		if query.Get("block") == "" {
+			query.Set("block", defaultBlockProtocol)
 		}
 		if query.Get("notcp") == "" {
 			query.Set("notcp", defaultTCPStrategy)
@@ -2087,7 +2098,10 @@ func (m *Master) generateOpenAPISpec() string {
 	  "CreateInstanceRequest": {
 		"type": "object",
 		"required": ["url"],
-		"properties": {"url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}}
+		"properties": {
+		  "alias": {"type": "string", "description": "Instance alias"},
+		  "url": {"type": "string", "description": "Command string(scheme://host:port/host:port)"}
+		}
 	  },
 	  "UpdateInstanceRequest": {
 		"type": "object",

@@ -210,27 +210,33 @@ NodePass uses a sophisticated URL-based signaling protocol through the TCP tunne
 
 ## Connection Pool Architecture
 
-NodePass implements an efficient connection pooling system for managing network connections, which forms the core of its performance advantages. NodePass supports two transport protocols for connection pools: traditional TCP-based pools and modern QUIC-based UDP pools.
+NodePass implements an efficient connection pooling system for managing network connections, which forms the core of its performance advantages. NodePass supports three transport protocols for connection pools: traditional TCP-based pools, modern QUIC-based UDP pools, and WebSocket-based pools.
 
 ### Transport Protocol Selection
 
-NodePass provides two connection pool transport options via the `quic` parameter:
+NodePass provides three connection pool transport options via the `type` parameter:
 
-1. **TCP-based Pool (quic=0, default)**:
+1. **TCP-based Pool (type=0, default)**:
    - Traditional TCP connections managed by the `pool` library
    - Multiple independent TCP connections between client and server
    - Standard TLS encryption over individual TCP connections
    - Well-tested and widely compatible approach
 
-2. **QUIC-based Pool (quic=1)**:
+2. **QUIC-based Pool (type=1)**:
    - UDP-based multiplexed streams managed by the `quic` library
    - Single QUIC connection with multiple concurrent streams
    - Mandatory TLS 1.3 encryption with 0-RTT support
    - Superior performance in high-latency and mobile networks
 
+3. **WebSocket-based Pool (type=2)**:
+   - WebSocket connections established via HTTP upgrade
+   - Can traverse HTTP proxies and CDNs
+   - Uses standard HTTPS ports
+   - Suitable for enterprise environments and firewall-restricted scenarios
+
 ### QUIC Pool Architecture
 
-When `quic=1` is enabled, NodePass uses QUIC protocol for connection pooling with the following characteristics:
+When `type=1` is enabled, NodePass uses QUIC protocol for connection pooling with the following characteristics:
 
 **Stream Multiplexing**:
 - Single UDP connection carries multiple bidirectional streams
@@ -283,12 +289,69 @@ When `quic=1` is enabled, NodePass uses QUIC protocol for connection pooling wit
 - Improved NAT traversal compared to multiple TCP connections
 - Lower latency in packet loss scenarios (no head-of-line blocking)
 
+### WebSocket Pool Architecture
+
+When `type=2` is enabled, NodePass uses WebSocket protocol for connection pooling with the following characteristics:
+
+**HTTP Upgrade Mechanism**:
+- WebSocket connections established via standard HTTP upgrade requests
+- Compatible with HTTP/1.1 proxies and CDNs
+- Uses standard port 80 (ws) or 443 (wss)
+- Supports custom HTTP headers for authentication and routing
+
+**Connection Establishment**:
+- Server listens on TCP port for HTTP requests
+- Client initiates HTTP upgrade request to WebSocket
+- After handshake completion, connection upgrades to full-duplex WebSocket
+- Server assigns unique connection ID for each incoming connection
+
+**Connection Lifecycle**:
+1. **Connection Creation** (Server side):
+   - Server accepts HTTP upgrade request from authorized client
+   - Validates WebSocket handshake parameters (Origin, protocol, etc.)
+   - Upgrades connection and adds it to connection pool
+   - Generates connection ID sent to client for correlation
+
+2. **Connection Retrieval** (Client side):
+   - Client receives connection ID via control channel
+   - Client retrieves corresponding connection from WebSocket pool
+   - Connection wrapped as `net.Conn` for compatibility
+   - Connection used for data exchange with target endpoint
+
+3. **Connection Termination**:
+   - WebSocket close frame sent after data exchange completes
+   - Graceful closure with proper cleanup of underlying TCP connection
+   - Supports close reason codes and description messages
+
+**Dynamic Management**:
+- Pool capacity adjusted based on connection creation success rate
+- Connection creation intervals adapt to pool utilization
+- Automatic connection capacity scaling within min/max boundaries
+- Ping/Pong frames maintain connection health status
+
+**Security Features**:
+- Supports WSS (WebSocket Secure) with TLS encryption
+- TLS is required for WebSocket pool
+- Two TLS modes supported:
+  - Mode 1: WSS with self-signed certificates
+  - Mode 2: WSS with full certificate verification for production
+- Origin validation prevents cross-site WebSocket hijacking
+- Supports custom authentication headers
+
+**Traversal Advantages**:
+- Uses standard HTTP/HTTPS ports, easy to traverse firewalls
+- Compatible with enterprise HTTP proxies and load balancers
+- Can be deployed through CDNs and reverse proxies
+- Blends with HTTP traffic, reducing detection and blocking risks
+- Requires TLS encryption
+
 ### Design Philosophy
 The connection pool design follows the principle of "warm-up over cold start," eliminating network latency through pre-established connections. This design philosophy draws from modern high-performance server best practices, amortizing the cost of connection establishment to the system startup phase rather than bearing this overhead on the critical path.
 
-Both TCP and QUIC pools share this philosophy but implement it differently:
-- **TCP pools**: Pre-establish multiple TCP connections
+All three pool types share this philosophy but implement it differently:
+- **TCP pools**: Pre-establish multiple independent TCP connections
 - **QUIC pools**: Pre-create multiple streams over a single QUIC connection
+- **WebSocket pools**: Pre-establish multiple WebSocket connections
 
 ### Pool Design
 1. **Pool Types**:
@@ -302,7 +365,10 @@ Both TCP and QUIC pools share this philosophy but implement it differently:
      - Minimum capacity set by client, ensuring basic connection guarantee for client
      - Maximum capacity delivered by server during handshake, enabling global resource coordination
    - **Interval Control**: Time-based throttling between connection/stream creations, preventing network resource overload
-   - **Connection Factory**: Customizable connection creation function (TCP) or stream management (QUIC)
+   - **Connection Factory**: Customizable connection creation function
+     - TCP mode: Standard TCP dialing and TLS handshake
+     - QUIC mode: Stream management and multiplexing
+     - WebSocket mode: HTTP upgrade and handshake handling
 
 ### Advanced Design Features
 1. **Zero-Latency Connections**:
@@ -323,6 +389,7 @@ Both TCP and QUIC pools share this philosophy but implement it differently:
    - IDs and connections are stored in the pool with copy-on-write and delayed deletion strategies
    - **TCP Mode**: Creates individual TCP connections with optional TLS
    - **QUIC Mode**: Opens bidirectional streams over shared QUIC connection
+   - **WebSocket Mode**: Establishes WebSocket connections via HTTP upgrade
 
 2. **Connection Acquisition**:
    - Client retrieves connections using connection IDs, supporting precise matching and fast lookups

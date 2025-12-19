@@ -2,31 +2,28 @@
 package internal
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/NodePassProject/conn"
 	"github.com/NodePassProject/logs"
+	"github.com/NodePassProject/nph2"
+	"github.com/NodePassProject/npws"
 	"github.com/NodePassProject/pool"
 	"github.com/NodePassProject/quic"
 )
 
 // Client 实现客户端模式功能
-type Client struct {
-	Common            // 继承共享功能
-	tunnelName string // 隧道名称
-}
+type Client struct{ Common }
 
 // NewClient 创建新的客户端实例
 func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
@@ -51,7 +48,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
-		tunnelName: parsedURL.Hostname(),
 	}
 	if err := client.initConfig(); err != nil {
 		return nil, fmt.Errorf("newClient: initConfig failed: %w", err)
@@ -63,10 +59,10 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 // Run 管理客户端生命周期
 func (c *Client) Run() {
 	logInfo := func(prefix string) {
-		c.logger.Info("%v: client://%v@%v/%v?dns=%v&min=%v&mode=%v&quic=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&notcp=%v&noudp=%v",
-			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), c.dnsCacheTTL, c.minPoolCapacity,
-			c.runMode, c.quicMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
-			c.proxyProtocol, c.disableTCP, c.disableUDP)
+		c.logger.Info("%v: client://%v@%v/%v?dns=%v&sni=%v&min=%v&mode=%v&dial=%v&read=%v&rate=%v&slot=%v&proxy=%v&block=%v&notcp=%v&noudp=%v",
+			prefix, c.tunnelKey, c.tunnelTCPAddr, c.getTargetAddrsString(), c.dnsCacheTTL, c.serverName, c.minPoolCapacity,
+			c.runMode, c.dialerIP, c.readTimeout, c.rateLimit/125000, c.slotLimit,
+			c.proxyProtocol, c.blockProtocol, c.disableTCP, c.disableUDP)
 	}
 	logInfo("Client started")
 
@@ -140,51 +136,22 @@ func (c *Client) singleStart() error {
 
 // commonStart 启动双端握手模式
 func (c *Client) commonStart() error {
-	// 与隧道服务端进行握手
+	// 发起隧道握手
+	c.logger.Info("Pending tunnel handshake...")
+	c.handshakeStart = time.Now()
 	if err := c.tunnelHandshake(); err != nil {
 		return fmt.Errorf("commonStart: tunnelHandshake failed: %w", err)
 	}
 
 	// 初始化连接池
-	switch c.quicMode {
-	case "0":
-		tcpPool := pool.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			c.tunnelName,
-			func() (net.Conn, error) {
-				tcpAddr, err := c.getTunnelTCPAddr()
-				if err != nil {
-					return nil, err
-				}
-				return net.DialTimeout("tcp", tcpAddr.String(), tcpDialTimeout)
-			})
-		go tcpPool.ClientManager()
-		c.tunnelPool = tcpPool
-	case "1":
-		udpPool := quic.NewClientPool(
-			c.minPoolCapacity,
-			c.maxPoolCapacity,
-			minPoolInterval,
-			maxPoolInterval,
-			reportInterval,
-			c.tlsCode,
-			c.tunnelName,
-			func() (string, error) {
-				udpAddr, err := c.getTunnelUDPAddr()
-				if err != nil {
-					return "", err
-				}
-				return udpAddr.String(), nil
-			})
-		go udpPool.ClientManager()
-		c.tunnelPool = udpPool
-	default:
-		return fmt.Errorf("commonStart: unknown quic mode: %s", c.quicMode)
+	if err := c.initTunnelPool(); err != nil {
+		return fmt.Errorf("commonStart: initTunnelPool failed: %w", err)
+	}
+
+	// 设置控制连接
+	c.logger.Info("Getting tunnel pool ready...")
+	if err := c.setControlConn(); err != nil {
+		return fmt.Errorf("commonStart: setControlConn failed: %w", err)
 	}
 
 	// 判断数据流向
@@ -199,64 +166,126 @@ func (c *Client) commonStart() error {
 	if err := c.commonControl(); err != nil {
 		return fmt.Errorf("commonStart: commonControl failed: %w", err)
 	}
+
+	return nil
+}
+
+// initTunnelPool 初始化隧道连接池
+func (c *Client) initTunnelPool() error {
+	switch c.poolType {
+	case "0":
+		tcpPool := pool.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.serverName,
+			func() (net.Conn, error) {
+				tcpAddr, err := c.getTunnelTCPAddr()
+				if err != nil {
+					return nil, err
+				}
+				return net.DialTimeout("tcp", tcpAddr.String(), tcpDialTimeout)
+			})
+		go tcpPool.ClientManager()
+		c.tunnelPool = tcpPool
+	case "1":
+		quicPool := quic.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.serverName,
+			func() (string, error) {
+				udpAddr, err := c.getTunnelUDPAddr()
+				if err != nil {
+					return "", err
+				}
+				return udpAddr.String(), nil
+			})
+		go quicPool.ClientManager()
+		c.tunnelPool = quicPool
+	case "2":
+		websocketPool := npws.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.tunnelAddr)
+		go websocketPool.ClientManager()
+		c.tunnelPool = websocketPool
+	case "3":
+		http2Pool := nph2.NewClientPool(
+			c.minPoolCapacity,
+			c.maxPoolCapacity,
+			minPoolInterval,
+			maxPoolInterval,
+			reportInterval,
+			c.tlsCode,
+			c.serverName,
+			func() (string, error) {
+				tcpAddr, err := c.getTunnelTCPAddr()
+				if err != nil {
+					return "", err
+				}
+				return tcpAddr.String(), nil
+			})
+		go http2Pool.ClientManager()
+		c.tunnelPool = http2Pool
+	default:
+		return fmt.Errorf("initTunnelPool: unknown pool type: %s", c.poolType)
+	}
 	return nil
 }
 
 // tunnelHandshake 与隧道服务端进行握手
 func (c *Client) tunnelHandshake() error {
-	// 建立隧道TCP连接
-	tunnelTCPAddr, err := c.getTunnelTCPAddr()
+	scheme := "http"
+	if c.serverPort == "443" {
+		scheme = "https"
+	}
+
+	// 构建请求
+	req, _ := http.NewRequest(http.MethodGet, scheme+"://"+c.tunnelAddr+"/", nil)
+	req.Host = c.serverName
+	req.Header.Set("Authorization", "Bearer "+c.generateAuthToken())
+
+	// 发送请求
+	client := &http.Client{}
+	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("tunnelHandshake: getTunnelTCPAddr failed: %w", err)
+		return fmt.Errorf("tunnelHandshake: %w", err)
 	}
-	tunnelTCPConn, err := net.DialTimeout("tcp", tunnelTCPAddr.String(), tcpDialTimeout)
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: dialTimeout failed: %w", err)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("tunnelHandshake: status %d", resp.StatusCode)
 	}
 
-	c.tunnelTCPConn = tunnelTCPConn.(*net.TCPConn)
-	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.tunnelTCPConn, Timeout: 3 * reportInterval})
-	c.tunnelTCPConn.SetKeepAlive(true)
-	c.tunnelTCPConn.SetKeepAlivePeriod(reportInterval)
-
-	// 发送隧道密钥
-	_, err = c.tunnelTCPConn.Write(c.encode([]byte(c.tunnelKey)))
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: write tunnel key failed: %w", err)
+	// 解析配置
+	var config struct {
+		Flow string `json:"flow"`
+		Max  int    `json:"max"`
+		TLS  string `json:"tls"`
+		Type string `json:"type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
+		return fmt.Errorf("tunnelHandshake: %w", err)
 	}
 
-	// 读取隧道URL
-	rawTunnelURL, err := c.bufReader.ReadBytes('\n')
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: readBytes failed: %w", err)
-	}
+	// 更新配置
+	c.dataFlow = config.Flow
+	c.maxPoolCapacity = config.Max
+	c.tlsCode = config.TLS
+	c.poolType = config.Type
 
-	// 解码隧道URL
-	tunnelURLData, err := c.decode(rawTunnelURL)
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: decode tunnel URL failed: %w", err)
-	}
-
-	// 解析隧道URL
-	tunnelURL, err := url.Parse(string(tunnelURLData))
-	if err != nil {
-		return fmt.Errorf("tunnelHandshake: parse tunnel URL failed: %w", err)
-	}
-
-	// 更新客户端配置
-	if tunnelURL.User.Username() == "" || tunnelURL.Host == "" || tunnelURL.Path == "" || tunnelURL.Fragment == "" {
-		return net.UnknownNetworkError(tunnelURL.String())
-	}
-	c.quicMode = tunnelURL.User.Username()
-	if max, err := strconv.Atoi(tunnelURL.Host); err != nil {
-		return fmt.Errorf("tunnelHandshake: parse max pool capacity failed: %w", err)
-	} else {
-		c.maxPoolCapacity = max
-	}
-	c.dataFlow = strings.TrimPrefix(tunnelURL.Path, "/")
-	c.tlsCode = tunnelURL.Fragment
-
-	c.logger.Info("Tunnel signal <- : %v <- %v", tunnelURL.String(), c.tunnelTCPConn.RemoteAddr())
-	c.logger.Info("Tunnel handshaked: %v <-> %v", c.tunnelTCPConn.LocalAddr(), c.tunnelTCPConn.RemoteAddr())
+	c.logger.Info("Loading tunnel config: FLOW=%v|MAX=%v|TLS=%v|TYPE=%v",
+		c.dataFlow, c.maxPoolCapacity, c.tlsCode, c.poolType)
 	return nil
 }

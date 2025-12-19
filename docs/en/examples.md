@@ -137,9 +137,85 @@ This setup:
 - Limits logging to warnings and errors only
 - Maps service A's API to appear as a local service on service B
 
+## Protocol Blocking and Traffic Filtering
+
+### Example 9: Block Proxy Protocols
+
+Prevent SOCKS and HTTP proxy usage through your tunnel:
+
+```bash
+# Server that blocks both SOCKS and HTTP proxy protocols
+nodepass "server://0.0.0.0:10101/app.backend.com:8080?block=12&tls=1"
+
+# Client connecting to the protected server
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
+```
+
+This configuration:
+- Blocks all SOCKS4/4a/5 proxy connections (`block` contains `1`)
+- Blocks all HTTP proxy methods like CONNECT, GET, POST (`block` contains `2`)
+- Allows only application-specific protocols through the tunnel
+- Useful for preventing proxy abuse on application tunnels
+
+### Example 10: Block TLS-in-TLS Scenarios
+
+Prevent nested TLS encryption when outer layer already provides security:
+
+```bash
+# Server with TLS encryption that blocks inner TLS connections
+nodepass "server://0.0.0.0:10101/0.0.0.0:8080?tls=1&block=3"
+
+# Client automatically inherits TLS settings
+nodepass "client://server.example.com:10101/127.0.0.1:8080"
+```
+
+This setup:
+- Encrypts the tunnel itself with TLS (`tls=1`)
+- Blocks TLS handshakes inside the encrypted tunnel (`block=3`)
+- Prevents unnecessary double encryption overhead
+- Helps identify misconfigurations where applications try to add redundant TLS
+
+### Example 11: Comprehensive Security Policy
+
+Enforce strict security policy allowing only application traffic:
+
+```bash
+# Production server with comprehensive protocol blocking
+nodepass "server://0.0.0.0:10101/secure-app.internal:443?tls=2&crt=/path/to/cert.pem&key=/path/to/key.pem&block=123&slot=500"
+
+# Client with enforced encryption
+nodepass "client://prod-server.example.com:10101/127.0.0.1:8443?log=warn"
+```
+
+This configuration:
+- Uses verified custom certificates for maximum security (`tls=2`)
+- Blocks SOCKS proxies (`block` contains `1`)
+- Blocks HTTP proxies (`block` contains `2`)
+- Blocks nested TLS connections (`block` contains `3`)
+- Limits concurrent connections to 500 for resource control
+- Only logs warnings and errors to reduce noise
+
+### Example 12: Selective Protocol Blocking for Development
+
+Allow HTTP traffic while blocking proxies in development environment:
+
+```bash
+# Development server that blocks only SOCKS protocols
+nodepass "server://127.0.0.1:10101/localhost:3000?block=1&log=debug"
+
+# Development client
+nodepass "client://127.0.0.1:10101/localhost:8080"
+```
+
+This setup:
+- Blocks SOCKS protocols but allows HTTP requests
+- Useful for testing web applications that need HTTP methods
+- Prevents developers from tunneling SOCKS proxy traffic
+- Enables debug logging for troubleshooting
+
 ## Bandwidth Rate Limiting
 
-### Example 9: File Transfer Server with Rate Limit
+### Example 13: File Transfer Server with Rate Limit
 
 Control bandwidth usage for file transfer services:
 
@@ -157,7 +233,7 @@ This configuration:
 - Allows file transfers while preserving bandwidth for other services
 - Uses TLS encryption for secure file transfer
 
-### Example 10: IoT Sensor Data Collection with Conservative Limits
+### Example 14: IoT Sensor Data Collection with Conservative Limits
 
 For IoT devices with limited bandwidth or metered connections:
 
@@ -175,7 +251,7 @@ This setup:
 - Minimal logging (warn/error) to reduce resource usage on IoT devices
 - Efficient for MQTT or other IoT protocols
 
-### Example 11: Development Environment Rate Control
+### Example 15: Development Environment Rate Control
 
 Testing applications under bandwidth constraints:
 
@@ -194,7 +270,7 @@ This configuration:
 
 ## IoT Device Management
 
-### Example 12: IoT Gateway
+### Example 16: IoT Gateway
 
 Create a central access point for IoT devices:
 
@@ -215,7 +291,7 @@ This configuration:
 
 ## Multi-Homed Systems and Source IP Control
 
-### Example 13: Specific Network Interface Selection
+### Example 17: Specific Network Interface Selection
 
 Control which network interface is used for outbound connections on multi-homed systems:
 
@@ -234,7 +310,7 @@ This configuration:
 - Automatically falls back to system-selected IP if specified address fails
 - Supports both IPv4 and IPv6 addresses
 
-### Example 14: Network Segmentation and VLAN Routing
+### Example 18: Network Segmentation and VLAN Routing
 
 Direct traffic through specific network segments or VLANs:
 
@@ -265,7 +341,7 @@ This setup:
 
 ## DNS Cache TTL Configuration
 
-### Example 15: Stable Corporate Network
+### Example 19: Stable Corporate Network
 
 Use longer TTL for stable internal services:
 
@@ -283,7 +359,7 @@ This configuration:
 - Improves connection performance by minimizing DNS lookups
 - Suitable for production environments with stable DNS
 
-### Example 16: Dynamic DNS Environments
+### Example 20: Dynamic DNS Environments
 
 Use shorter TTL for frequently changing DNS records:
 
@@ -301,7 +377,7 @@ This setup:
 - Ensures connections use current DNS records
 - Ideal for cloud environments with frequent IP changes
 
-### Example 17: Development and Testing
+### Example 21: Development and Testing
 
 Disable caching for development environments:
 
@@ -319,7 +395,7 @@ This configuration:
 - Useful during development when DNS records change frequently
 - Helps identify DNS-related issues during testing
 
-### Example 18: Mixed Environment with Custom TTL
+### Example 22: Mixed Environment with Custom TTL
 
 Balance performance and freshness with moderate TTL:
 
@@ -349,7 +425,7 @@ This setup:
 
 ## High Availability and Load Balancing
 
-### Example 19: Multi-Backend Server Load Balancing
+### Example 23: Multi-Backend Server Load Balancing
 
 Use target address groups for even traffic distribution and automatic failover:
 
@@ -367,7 +443,7 @@ This configuration:
 - Automatically resumes sending traffic to recovered servers
 - Uses TLS encryption to secure the tunnel
 
-### Example 20: Database Primary-Replica Failover
+### Example 24: Database Primary-Replica Failover
 
 Configure primary and replica database instances for high availability access:
 
@@ -382,7 +458,7 @@ This setup:
 - Application requires no modification for transparent failover
 - Logs only warnings and errors to reduce output
 
-### Example 21: API Gateway Backend Pool
+### Example 25: API Gateway Backend Pool
 
 Configure multiple backend service instances for an API gateway:
 
@@ -400,7 +476,7 @@ This configuration:
 - Client limits bandwidth to 100 Mbps with maximum 2000 concurrent connections
 - Single instance failure doesn't affect overall service availability
 
-### Example 22: Geo-Distributed Services
+### Example 26: Geo-Distributed Services
 
 Configure multi-region service nodes to optimize network latency:
 
@@ -424,7 +500,7 @@ This setup:
 
 ## PROXY Protocol Integration
 
-### Example 23: Load Balancer Integration with PROXY Protocol
+### Example 27: Load Balancer Integration with PROXY Protocol
 
 Enable PROXY protocol support for integration with load balancers and reverse proxies:
 
@@ -443,7 +519,7 @@ This configuration:
 - Compatible with HAProxy, Nginx, and other PROXY protocol aware services
 - Useful for maintaining accurate access logs and IP-based access controls
 
-### Example 24: Reverse Proxy Support for Web Applications
+### Example 28: Reverse Proxy Support for Web Applications
 
 Enable web applications behind NodePass to receive original client information:
 
@@ -467,7 +543,7 @@ This setup:
 - Supports compliance requirements for connection auditing
 - Works with web servers that support PROXY protocol (Nginx, HAProxy, etc.)
 
-### Example 25: Database Access with Client IP Preservation
+### Example 29: Database Access with Client IP Preservation
 
 Maintain client IP information for database access logging and security:
 
@@ -494,7 +570,7 @@ Benefits:
 
 ## Container Deployment
 
-### Example 26: Containerized NodePass
+### Example 30: Containerized NodePass
 
 Deploy NodePass in a Docker environment:
 
@@ -529,7 +605,7 @@ This configuration:
 
 ## Master API Management
 
-### Example 27: Centralized Management
+### Example 31: Centralized Management
 
 Set up a central controller for multiple NodePass instances:
 
@@ -566,7 +642,7 @@ This setup:
 - Offers a RESTful API for automation and integration
 - Includes a built-in Swagger UI at http://localhost:9090/api/v1/docs
 
-### Example 28: Custom API Prefix
+### Example 32: Custom API Prefix
 
 Use a custom API prefix for the master mode:
 
@@ -585,7 +661,7 @@ This allows:
 - Custom URL paths for security or organizational purposes
 - Swagger UI access at http://localhost:9090/admin/v1/docs
 
-### Example 29: Real-time Connection and Traffic Monitoring
+### Example 33: Real-time Connection and Traffic Monitoring
 
 Monitor instance connection counts and traffic statistics through the master API:
 
@@ -623,17 +699,17 @@ This monitoring setup provides:
 - **Capacity planning**: Resource planning based on historical connection data
 - **Troubleshooting**: Abnormal connection count changes may indicate network issues
 
-## QUIC Transport Protocol
+## Connection Pool Types
 
-### Example 30: QUIC-based Tunnel with Stream Multiplexing
+### Example 34: QUIC-based Tunnel with Stream Multiplexing
 
 Use QUIC protocol for connection pooling with improved performance in high-latency networks:
 
 ```bash
-# Server side: Enable QUIC transport
-nodepass "server://0.0.0.0:10101/remote.example.com:8080?quic=1&mode=2&tls=1&log=debug"
+# Server side: Enable QUIC pool
+nodepass "server://0.0.0.0:10101/remote.example.com:8080?type=1&mode=2&tls=1&log=debug"
 
-# Client side: Automatically receives QUIC configuration from server
+# Client side: Automatically receives pool type configuration from server
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=debug"
 ```
 
@@ -643,17 +719,17 @@ This configuration:
 - Mandatory TLS 1.3 encryption (automatically enabled)
 - Better performance in packet loss scenarios (no head-of-line blocking)
 - Improved connection establishment with 0-RTT support
-- Client automatically receives QUIC configuration from server during handshake
+- Client automatically receives pool type configuration from server during handshake
 
-### Example 31: QUIC with Custom TLS Certificate
+### Example 35: QUIC Pool with Custom TLS Certificate
 
 Deploy QUIC tunnel with verified certificates for production:
 
 ```bash
-# Server side: QUIC with custom certificate
-nodepass "server://0.0.0.0:10101/backend.internal:8080?quic=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
+# Server side: QUIC pool with custom certificate
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=1&mode=2&tls=2&crt=/etc/nodepass/cert.pem&key=/etc/nodepass/key.pem"
 
-# Client side: Automatically receives QUIC configuration with certificate verification
+# Client side: Automatically receives pool type configuration with certificate verification
 nodepass "client://tunnel.example.com:10101/127.0.0.1:8080?mode=2&min=64&log=info"
 ```
 
@@ -662,17 +738,62 @@ This setup:
 - QUIC protocol provides mandatory TLS 1.3 encryption
 - Suitable for production environments
 - Full certificate validation on client side
-- QUIC configuration automatically delivered from server
+- Pool type configuration automatically delivered from server
 
-### Example 32: QUIC for Mobile/High-Latency Networks
+### Example 36: WebSocket Pool for Proxy Traversal
+
+Use WebSocket pool behind enterprise firewalls:
+
+```bash
+# Server side: Enable WebSocket pool (TLS required)
+nodepass "server://0.0.0.0:10101/internal.backend:8080?type=2&mode=2&tls=1&log=info"
+
+# Client side: Automatically receives WebSocket configuration
+nodepass "client://wss.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+This configuration:
+- Uses WebSocket protocol to traverse HTTP proxies and CDNs
+- **Requires TLS encryption** - minimum `tls=1`, use `tls=2` with certificates for production
+- Uses standard HTTPS ports, easily passes through firewalls
+- Compatible with existing web infrastructure
+- Supports full-duplex communication
+- Suitable for enterprise environments allowing only HTTP/HTTPS traffic
+- Client automatically adopts server's pool type configuration
+- **Note**: WebSocket pool does not support unencrypted mode (tls=0)
+
+### Example 37: HTTP/2 Pool for High-Concurrency Environments
+
+Use HTTP/2 pool for efficient multiplexed streams with protocol optimization:
+
+```bash
+# Server side: Enable HTTP/2 pool (TLS required)
+nodepass "server://0.0.0.0:10101/backend.internal:8080?type=3&mode=2&tls=1&log=info"
+
+# Client side: Automatically receives HTTP/2 configuration
+nodepass "client://h2.tunnel.com:10101/127.0.0.1:8080?mode=2&min=64"
+```
+
+This configuration:
+- Uses HTTP/2 protocol for multiplexed streams over a single TLS connection
+- **Requires TLS encryption** - minimum `tls=1`, use `tls=2` with certificates for production
+- HPACK header compression reduces bandwidth usage
+- Binary framing protocol with efficient parsing
+- Per-stream flow control for optimal resource utilization
+- Works with HTTP/2-aware proxies and load balancers
+- Suitable for HTTP/HTTPS-only policy environments
+- Client automatically adopts server's pool type configuration
+- Ideal for high-concurrency scenarios benefiting from stream multiplexing
+
+### Example 38: QUIC Pool for Mobile/High-Latency Networks
 
 Optimize for mobile networks or satellite connections:
 
 ```bash
-# Server side: QUIC with adaptive pool sizing
-nodepass "server://0.0.0.0:10101/api.backend:443?quic=1&mode=2&max=512&tls=1&log=info"
+# Server side: QUIC pool with adaptive pool sizing
+nodepass "server://0.0.0.0:10101/api.backend:443?type=1&mode=2&max=512&tls=1&log=info"
 
-# Client side: Automatically receives QUIC, configure larger minimum pool for mobile
+# Client side: Automatically receives pool type, configure larger minimum pool for mobile
 nodepass "client://mobile.tunnel.com:10101/127.0.0.1:8080?mode=2&min=256&log=warn"
 ```
 
@@ -682,20 +803,28 @@ This configuration:
 - Stream multiplexing reduces connection overhead
 - Better handling of packet loss and jitter
 - 0-RTT reconnection for faster recovery after network changes
-- Client automatically adopts QUIC from server
+- Client automatically adopts pool type from server
 
-### Example 33: QUIC vs TCP Pool Performance Comparison
+### Example 39: Pool Type Performance Comparison
 
-Side-by-side comparison of QUIC and TCP pools:
+Side-by-side comparison of TCP, QUIC, WebSocket, and HTTP/2 pools:
 
 ```bash
 # Traditional TCP pool (default)
-nodepass "server://0.0.0.0:10101/backend.example.com:8080?quic=0&mode=2&tls=1&log=event"
+nodepass "server://0.0.0.0:10101/backend.example.com:8080?type=0&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10101/127.0.0.1:8080?mode=2&min=128&log=event"
 
 # QUIC pool (modern approach)
-nodepass "server://0.0.0.0:10102/backend.example.com:8080?quic=1&mode=2&tls=1&log=event"
+nodepass "server://0.0.0.0:10102/backend.example.com:8080?type=1&mode=2&tls=1&log=event"
 nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=event"
+
+# WebSocket pool (proxy traversal)
+nodepass "server://0.0.0.0:10103/backend.example.com:8080?type=2&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10103/127.0.0.1:8082?mode=2&min=128&log=event"
+
+# HTTP/2 pool (multiplexed streams)
+nodepass "server://0.0.0.0:10104/backend.example.com:8080?type=3&mode=2&tls=1&log=event"
+nodepass "client://server.example.com:10104/127.0.0.1:8083?mode=2&min=128&log=event"
 ```
 
 **TCP Pool Advantages**:
@@ -710,15 +839,29 @@ nodepass "client://server.example.com:10102/127.0.0.1:8081?mode=2&min=128&log=ev
 - Improved NAT traversal capabilities
 - Single UDP socket reduces resource usage
 
-### Example 34: QUIC for Real-Time Applications
+**WebSocket Pool Advantages**:
+- Can traverse HTTP proxies and CDNs
+- Uses standard HTTP/HTTPS ports
+- Integrates with existing web infrastructure
+- Suitable for enterprise firewall environments
+
+**HTTP/2 Pool Advantages**:
+- Efficient stream multiplexing over single TCP connection
+- HPACK header compression reduces bandwidth
+- Binary protocol with efficient parsing
+- Per-stream flow control for resource optimization
+- Works with HTTP/2-aware infrastructure
+- Ideal for HTTP/HTTPS-only policy environments
+
+### Example 40: QUIC Pool for Real-Time Applications
 
 Configure QUIC tunnel for gaming, VoIP, or video streaming:
 
 ```bash
-# Server side: QUIC with optimized settings for real-time traffic
-nodepass "server://0.0.0.0:10101/gameserver.local:7777?quic=1&mode=2&tls=1&read=30s&slot=10000"
+# Server side: QUIC pool with optimized settings for real-time traffic
+nodepass "server://0.0.0.0:10101/gameserver.local:7777?type=1&mode=2&tls=1&read=30s&slot=10000"
 
-# Client side: Automatically receives QUIC configuration from server
+# Client side: Automatically receives pool type configuration from server
 nodepass "client://game.tunnel.com:10101/127.0.0.1:7777?mode=2&min=64&read=30s"
 ```
 
@@ -728,14 +871,13 @@ This setup:
 - 30-second read timeout for quick detection of stale connections
 - Large slot limit supports many concurrent players/streams
 - Reduced connection establishment overhead
-- Client automatically adopts server's QUIC configuration
+- Client automatically adopts server's pool type configuration
 
-**QUIC Use Case Summary**:
-- **Mobile Networks**: Better handling of network transitions and packet loss
-- **High-Latency Links**: Reduced overhead from 0-RTT and multiplexing
-- **Real-Time Apps**: Stream independence prevents head-of-line blocking
-- **NAT-Heavy Environments**: UDP-based protocol traverses NATs more reliably
-- **Concurrent Streams**: Efficient bandwidth sharing across parallel flows
+**Connection Pool Type Use Case Summary**:
+- **TCP Pool**: Standard enterprise environments, maximum compatibility, stable networks
+- **QUIC Pool**: Mobile networks, high-latency links, real-time apps, complex NAT environments
+- **WebSocket Pool**: HTTP proxy traversal, enterprise firewall restrictions, web infrastructure integration
+- **HTTP/2 Pool**: High-concurrency HTTP/HTTPS services, bandwidth optimization, HTTP/2-aware environments
 
 ## Next Steps
 

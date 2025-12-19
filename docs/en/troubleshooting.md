@@ -370,11 +370,11 @@ This guide helps you diagnose and resolve common issues you might encounter when
 - In production environments, recommend regularly backing up `nodepass.gob` to different storage locations
 - Use configuration management tools to save text-form backups of instance configurations
 
-## QUIC-Specific Issues
+## Connection Pool Type Issues
 
-### QUIC Connection Failures
+### QUIC Pool Connection Failures
 
-**Symptoms**: QUIC tunnel fails to establish when `quic=1` is enabled.
+**Symptoms**: QUIC pool tunnel fails to establish when `type=1` is enabled.
 
 **Possible Causes and Solutions**:
 
@@ -386,14 +386,14 @@ This guide helps you diagnose and resolve common issues you might encounter when
 
 2. **TLS Configuration Issues**
    - QUIC requires TLS to be enabled (minimum `tls=1`)
-   - If `quic=1` is set but TLS is disabled, system auto-enables `tls=1`
+   - If `type=1` is set but TLS is disabled, system auto-enables `tls=1`
    - For production, use `tls=2` with valid certificates
    - Check certificate validity for QUIC connections
 
-3. **Client-Server QUIC Mismatch**
-   - Both server and client must use same `quic` setting
-   - Server with `quic=1` requires client with `quic=1`
-   - Server with `quic=0` requires client with `quic=0`
+3. **Client-Server Pool Type Mismatch**
+   - Both server and client must use same `type` setting
+   - Server with `type=1` requires client with `type=1`
+   - Server with `type=0` requires client with `type=0`
    - Check logs for "QUIC connection not available" errors
 
 4. **Mode Compatibility**
@@ -401,16 +401,77 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Not available in single-end forwarding mode (mode=1)
    - System will fall back to TCP pool if mode incompatible
 
-### QUIC Performance Issues
+### WebSocket Pool Connection Failures
 
-**Symptoms**: QUIC tunnel has lower performance than expected or worse than TCP pool.
+**Symptoms**: WebSocket pool tunnel fails to establish when `type=2` is enabled.
+
+**Possible Causes and Solutions**:
+
+1. **HTTP/WebSocket Port Blocked**
+   - Verify TCP port is accessible with WebSocket protocol support
+   - Check firewall rules and proxy configurations
+   - Some proxies or CDNs may interfere with WebSocket upgrade
+   - Test connectivity with WebSocket client tools
+
+2. **TLS Configuration Issues**
+   - WebSocket Secure (WSS) requires TLS to be enabled (minimum `tls=1`)
+   - **WebSocket pool does NOT support unencrypted mode** - `tls=0` is not allowed for type=2
+   - If `type=2` is set but TLS is disabled, system will automatically enforce `tls=1`
+   - For production, use `tls=2` with valid certificates
+   - Check certificate validity for WSS connections
+
+3. **Client-Server Pool Type Mismatch**
+   - Both server and client must use same `type` setting
+   - Server with `type=2` requires client with `type=2`
+   - Configuration is automatically delivered during handshake
+   - Check logs for "WebSocket connection not available" errors
+
+### HTTP/2 Pool Connection Failures
+
+**Symptoms**: HTTP/2 pool tunnel fails to establish when `type=3` is enabled.
+
+**Possible Causes and Solutions**:
+
+1. **TCP Port or HTTP/2 Protocol Blocked**
+   - Verify TCP port is accessible with HTTP/2 protocol support
+   - Check firewall rules and network policies
+   - Some networks may block or inspect HTTPS traffic
+   - Test connectivity with HTTP/2-capable client tools
+
+2. **TLS Configuration Issues**
+   - HTTP/2 requires TLS to be enabled (minimum `tls=1`)
+   - If `type=3` is set but TLS is disabled, system will automatically enforce `tls=1`
+   - For production, use `tls=2` with valid certificates
+   - HTTP/2 requires TLS 1.3 with ALPN (Application-Layer Protocol Negotiation)
+   - Check certificate validity and ALPN configuration
+
+3. **Client-Server Pool Type Mismatch**
+   - Both server and client must use same `type` setting
+   - Server with `type=3` requires client with `type=3`
+   - Configuration is automatically delivered during handshake
+   - Check logs for "HTTP/2 connection not available" errors
+
+4. **Mode Compatibility**
+   - HTTP/2 pool only works in dual-end handshake mode (mode=2)
+   - Not available in single-end forwarding mode (mode=1)
+   - System will fall back to TCP pool if mode incompatible
+
+5. **HTTP/2 Protocol Negotiation Failures**
+   - Verify ALPN extension is enabled and negotiates "h2" protocol
+   - Some older TLS implementations may not support ALPN
+   - Check logs for protocol negotiation errors
+   - Ensure both endpoints support HTTP/2 over TLS
+
+### QUIC Pool Performance Issues
+
+**Symptoms**: QUIC pool tunnel has lower performance than expected or worse than TCP pool.
 
 **Possible Causes and Solutions**:
 
 1. **Network Path Issues**
    - Some networks deprioritize or shape UDP traffic
    - Check if network middleboxes are interfering with QUIC
-   - Consider testing with TCP pool (`quic=0`) for comparison
+   - Consider testing with TCP pool (`type=0`) for comparison
    - Monitor packet loss rates - QUIC performs better with low loss
 
 2. **Pool Capacity Configuration**
@@ -428,6 +489,29 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - Some applications may not work optimally over QUIC streams
    - Test with both TCP and QUIC pools to compare performance
    - Consider TCP pool for applications requiring strict ordering
+
+### WebSocket Pool Performance Issues
+
+**Symptoms**: WebSocket pool tunnel has lower performance than expected.
+
+**Possible Causes and Solutions**:
+
+1. **Proxy/CDN Overhead**
+   - WebSocket connections through proxies may add latency
+   - Check if intermediate proxies are buffering traffic
+   - Consider using TCP pool (`type=0`) or QUIC pool (`type=1`) for comparison
+   - Direct connections usually perform better than proxied
+
+2. **Frame Overhead**
+   - WebSocket protocol adds framing overhead to each message
+   - Larger message sizes reduce relative overhead
+   - Monitor frame sizes and adjust application behavior if needed
+   - Balance between latency and throughput
+
+3. **TLS Handshake Overhead**
+   - WSS requires TLS handshake for each connection
+   - Use connection pooling to amortize handshake costs
+   - Increase `min` and `max` parameters for better performance
 
 ### QUIC Stream Exhaustion
 
@@ -453,16 +537,23 @@ This guide helps you diagnose and resolve common issues you might encounter when
    - NAT timeout may drop UDP connection - adjust NAT settings
    - Increase connection timeout if network latency is high
 
-### QUIC vs TCP Pool Decision
+### Connection Pool Type Decision
 
-**When to Use QUIC** (`quic=1`):
+**When to Use QUIC Pool** (`type=1`):
 - Mobile networks or frequently changing network conditions
 - High-latency connections (satellite, long-distance)
 - NAT-heavy environments where UDP traversal is better
 - Real-time applications benefiting from stream independence
 - Scenarios where 0-RTT reconnection provides value
 
-**When to Use TCP Pool** (`quic=0`):
+**When to Use WebSocket Pool** (`type=2`):
+- Need to traverse HTTP proxies or CDNs
+- Corporate environments allowing only HTTP/HTTPS traffic
+- Environments where firewalls block raw TCP connections
+- Need compatibility with existing web infrastructure
+- Web proxy or VPN alternative solutions
+
+**When to Use TCP Pool** (`type=0`):
 - Networks that block or severely throttle UDP traffic
 - Applications requiring strict TCP semantics
 - Corporate environments with UDP restrictions
@@ -472,12 +563,16 @@ This guide helps you diagnose and resolve common issues you might encounter when
 **Comparison Testing**:
 ```bash
 # Test TCP pool performance
-nodepass "server://0.0.0.0:10101/backend:8080?quic=0&mode=2&log=event"
-nodepass "client://server:10101/127.0.0.1:8080?quic=0&mode=2&log=event"
+nodepass "server://0.0.0.0:10101/backend:8080?type=0&mode=2&log=event"
+nodepass "client://server:10101/127.0.0.1:8080?mode=2&log=event"
 
 # Test QUIC pool performance
-nodepass "server://0.0.0.0:10102/backend:8080?quic=1&mode=2&log=event"
-nodepass "client://server:10102/127.0.0.1:8081?quic=1&mode=2&log=event"
+nodepass "server://0.0.0.0:10102/backend:8080?type=1&mode=2&log=event"
+nodepass "client://server:10102/127.0.0.1:8081?mode=2&log=event"
+
+# Test WebSocket pool performance
+nodepass "server://0.0.0.0:10103/backend:8080?type=2&mode=2&log=event"
+nodepass "client://server:10103/127.0.0.1:8082?mode=2&log=event"
 ```
 
 Monitor traffic statistics and choose based on observed performance.
