@@ -284,6 +284,9 @@ func (c *Client) tunnelHandshake() error {
 	c.maxPoolCapacity = config.Max
 	c.tlsCode = config.TLS
 	c.poolType = config.Type
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		c.certVerified = make(chan struct{})
+	}
 
 	c.logger.Info("Loading tunnel config: FLOW=%v|MAX=%v|TLS=%v|TYPE=%v",
 		c.dataFlow, c.maxPoolCapacity, c.tlsCode, c.poolType)

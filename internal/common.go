@@ -75,6 +75,7 @@ type Common struct {
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan string        // 信号通道
+	certVerified     chan struct{}      // 证书验证通道
 	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
 	flushURL         *url.URL           // 重置信号
@@ -1131,7 +1132,7 @@ func (c *Common) healthCheck() error {
 // incomingVerify 入口连接验证
 func (c *Common) incomingVerify() {
 	for c.ctx.Err() == nil {
-		if c.tunnelPool.Ready() {
+		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
 			break
 		}
 		select {
@@ -1141,29 +1142,38 @@ func (c *Common) incomingVerify() {
 		}
 	}
 
-	if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
-		return
-	}
-
-	cert := c.tlsConfig.Certificates[0]
-	if len(cert.Certificate) == 0 {
-		return
-	}
-
-	// 打印证书指纹
-	c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(cert.Certificate[0]))
-
 	id, testConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
 	if err != nil {
+		c.logger.Error("incomingVerify: incomingGet failed: %v", err)
 		return
 	}
 	defer testConn.Close()
 
+	// 获取证书指纹
+	var fingerprint string
+	switch c.coreType {
+	case "server":
+		if c.tlsConfig != nil && len(c.tlsConfig.Certificates) > 0 {
+			cert := c.tlsConfig.Certificates[0]
+			if len(cert.Certificate) > 0 {
+				fingerprint = c.formatCertFingerprint(cert.Certificate[0])
+			}
+		}
+	case "client":
+		if conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState }); ok {
+			state := conn.ConnectionState()
+			if len(state.PeerCertificates) > 0 {
+				fingerprint = c.formatCertFingerprint(state.PeerCertificates[0].Raw)
+			}
+		}
+	}
+
 	// 构建并发送验证信号
 	verifyURL := &url.URL{
 		Scheme:   "np",
-		Host:     c.controlConn.RemoteAddr().String(),
+		Host:     url.PathEscape(c.controlConn.RemoteAddr().String()),
 		Path:     url.PathEscape(id),
+		RawQuery: "fp=" + url.QueryEscape(fingerprint),
 		Fragment: "v", // TLS验证
 	}
 
@@ -1184,6 +1194,15 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
+			if c.certVerified != nil {
+				select {
+				case <-c.certVerified:
+					// 证书验证完成
+				case <-c.ctx.Done():
+					return
+				}
+			}
+
 			if c.targetListener != nil || c.disableTCP != "1" {
 				go c.commonTCPLoop()
 			}
@@ -1268,7 +1287,7 @@ func (c *Common) commonTCPLoop() {
 			// 构建并发送启动信号
 			launchURL := &url.URL{
 				Scheme:   "np",
-				Host:     targetConn.RemoteAddr().String(),
+				Host:     url.PathEscape(targetConn.RemoteAddr().String()),
 				Path:     url.PathEscape(id),
 				Fragment: "1", // TCP模式
 			}
@@ -1399,7 +1418,7 @@ func (c *Common) commonUDPLoop() {
 			// 构建并发送启动信号
 			launchURL := &url.URL{
 				Scheme:   "np",
-				Host:     clientAddr.String(),
+				Host:     url.PathEscape(clientAddr.String()),
 				Path:     url.PathEscape(id),
 				Fragment: "2", // UDP模式
 			}
@@ -1530,6 +1549,13 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 		}
 	}
 
+	fingerPrint := signalURL.Query().Get("fp")
+	if fingerPrint == "" {
+		c.logger.Error("outgoingVerify: no fingerprint in signal")
+		c.cancel()
+		return
+	}
+
 	id := strings.TrimPrefix(signalURL.Path, "/")
 	if unescapedID, err := url.PathUnescape(id); err != nil {
 		c.logger.Error("outgoingVerify: unescape id failed: %v", err)
@@ -1547,7 +1573,26 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 	}
 	defer testConn.Close()
 
-	if testConn != nil {
+	// 验证证书指纹
+	var serverFingerprint, clientFingerprint string
+	switch c.coreType {
+	case "server":
+		if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
+			c.logger.Error("outgoingVerify: no local certificate")
+			c.cancel()
+			return
+		}
+
+		cert := c.tlsConfig.Certificates[0]
+		if len(cert.Certificate) == 0 {
+			c.logger.Error("outgoingVerify: empty local certificate")
+			c.cancel()
+			return
+		}
+
+		serverFingerprint = c.formatCertFingerprint(cert.Certificate[0])
+		clientFingerprint = fingerPrint
+	case "client":
 		conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState })
 		if !ok {
 			return
@@ -1556,11 +1601,26 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 
 		if len(state.PeerCertificates) == 0 {
 			c.logger.Error("outgoingVerify: no peer certificates found")
+			c.cancel()
 			return
 		}
 
-		// 打印证书指纹
-		c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
+		clientFingerprint = c.formatCertFingerprint(state.PeerCertificates[0].Raw)
+		serverFingerprint = fingerPrint
+	}
+
+	// 验证指纹匹配
+	if serverFingerprint != clientFingerprint {
+		c.logger.Error("outgoingVerify: certificate fingerprint mismatch: server: %v - client: %v", serverFingerprint, clientFingerprint)
+		c.cancel()
+		return
+	}
+
+	c.logger.Info("TLS certificate fingerprint verified: %v", fingerPrint)
+
+	// 通知验证完成
+	if c.certVerified != nil {
+		close(c.certVerified)
 	}
 }
 
@@ -1669,6 +1729,9 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 
 	var targetConn net.Conn
 	sessionKey := signalURL.Host
+	if unescapedHost, err := url.PathUnescape(sessionKey); err == nil {
+		sessionKey = unescapedHost
+	}
 	isNewSession := false
 
 	// 获取或创建目标UDP会话

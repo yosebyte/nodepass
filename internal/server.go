@@ -53,6 +53,9 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
+	if tlsCode == "1" || tlsCode == "2" {
+		server.certVerified = make(chan struct{})
+	}
 	if err := server.initConfig(); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
 	}
