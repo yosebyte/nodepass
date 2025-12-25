@@ -35,7 +35,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsCode:    tlsCode,
 			tlsConfig:  tlsConfig,
 			logger:     logger,
-			signalChan: make(chan string, semaphoreLimit),
+			signalChan: make(chan Signal, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
@@ -48,9 +48,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 					return &buf
 				},
 			},
-			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
-			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
-			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
 	if tlsCode == "1" || tlsCode == "2" {

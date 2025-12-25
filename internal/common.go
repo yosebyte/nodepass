@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -74,13 +75,10 @@ type Common struct {
 	bufReader        *bufio.Reader      // 缓冲读取器
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
-	signalChan       chan string        // 信号通道
+	signalChan       chan Signal        // 信号通道
 	certVerified     chan struct{}      // 证书验证通道
 	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
-	flushURL         *url.URL           // 重置信号
-	pingURL          *url.URL           // PING信号
-	pongURL          *url.URL           // PONG信号
 	slotLimit        int32              // 槽位限制
 	tcpSlot          int32              // TCP连接数
 	udpSlot          int32              // UDP连接数
@@ -123,6 +121,14 @@ type TransportPool interface {
 	AddError()
 	ErrorCount() int
 	ResetError()
+}
+
+// Signal 操作信号结构体
+type Signal struct {
+	ActionType  string `json:"action"`           // 操作类型
+	RemoteAddr  string `json:"remote,omitempty"` // 远程地址
+	PoolConnID  string `json:"id,omitempty"`     // 池连接ID
+	Fingerprint string `json:"fp,omitempty"`     // TLS指纹
 }
 
 // 配置变量，可通过环境变量调整
@@ -1047,7 +1053,18 @@ func (c *Common) commonQueue() error {
 			}
 			continue
 		}
-		signal := string(signalData)
+
+		// 解析JSON信号
+		var signal Signal
+		if err := json.Unmarshal(signalData, &signal); err != nil {
+			c.logger.Error("commonQueue: unmarshal signal failed: %v", err)
+			select {
+			case <-c.ctx.Done():
+				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
+			case <-time.After(contextCheckInterval):
+			}
+			continue
+		}
 
 		// 将信号发送到通道
 		select {
@@ -1090,7 +1107,8 @@ func (c *Common) healthCheck() error {
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
 			if c.ctx.Err() == nil && c.controlConn != nil {
-				_, err := c.controlConn.Write(c.encode([]byte(c.flushURL.String())))
+				signalData, _ := json.Marshal(Signal{ActionType: "flush"})
+				_, err := c.controlConn.Write(c.encode(signalData))
 				if err != nil {
 					c.mu.Unlock()
 					return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
@@ -1111,7 +1129,8 @@ func (c *Common) healthCheck() error {
 		// 发送PING信号
 		c.checkPoint = time.Now()
 		if c.ctx.Err() == nil && c.controlConn != nil {
-			_, err := c.controlConn.Write(c.encode([]byte(c.pingURL.String())))
+			signalData, _ := json.Marshal(Signal{ActionType: "ping"})
+			_, err := c.controlConn.Write(c.encode(signalData))
 			if err != nil {
 				c.mu.Unlock()
 				return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
@@ -1169,17 +1188,14 @@ func (c *Common) incomingVerify() {
 	}
 
 	// 构建并发送验证信号
-	verifyURL := &url.URL{
-		Scheme:   "np",
-		Host:     url.PathEscape(c.controlConn.RemoteAddr().String()),
-		Path:     url.PathEscape(id),
-		RawQuery: "fp=" + url.QueryEscape(fingerprint),
-		Fragment: "v", // TLS验证
-	}
-
 	if c.ctx.Err() == nil && c.controlConn != nil {
 		c.mu.Lock()
-		_, err = c.controlConn.Write(c.encode([]byte(verifyURL.String())))
+		signalData, _ := json.Marshal(Signal{
+			ActionType:  "verify",
+			PoolConnID:  id,
+			Fingerprint: fingerprint,
+		})
+		_, err = c.controlConn.Write(c.encode(signalData))
 		c.mu.Unlock()
 		if err != nil {
 			return
@@ -1285,16 +1301,14 @@ func (c *Common) commonTCPLoop() {
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 			// 构建并发送启动信号
-			launchURL := &url.URL{
-				Scheme:   "np",
-				Host:     url.PathEscape(targetConn.RemoteAddr().String()),
-				Path:     url.PathEscape(id),
-				Fragment: "1", // TCP模式
-			}
-
 			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
+				signalData, _ := json.Marshal(Signal{
+					ActionType: "tcp",
+					RemoteAddr: targetConn.RemoteAddr().String(),
+					PoolConnID: id,
+				})
+				_, err = c.controlConn.Write(c.encode(signalData))
 				c.mu.Unlock()
 
 				if err != nil {
@@ -1416,16 +1430,14 @@ func (c *Common) commonUDPLoop() {
 			}(remoteConn, clientAddr, sessionKey, id)
 
 			// 构建并发送启动信号
-			launchURL := &url.URL{
-				Scheme:   "np",
-				Host:     url.PathEscape(clientAddr.String()),
-				Path:     url.PathEscape(id),
-				Fragment: "2", // UDP模式
-			}
-
 			if c.ctx.Err() == nil && c.controlConn != nil {
 				c.mu.Lock()
-				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
+				signalData, _ := json.Marshal(Signal{
+					ActionType: "udp",
+					RemoteAddr: clientAddr.String(),
+					PoolConnID: id,
+				})
+				_, err = c.controlConn.Write(c.encode(signalData))
 				c.mu.Unlock()
 				if err != nil {
 					c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
@@ -1472,33 +1484,21 @@ func (c *Common) commonOnce() error {
 		case <-c.ctx.Done():
 			return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
 		case signal := <-c.signalChan:
-			// 解析信号URL
-			signalURL, err := url.Parse(signal)
-			if err != nil {
-				c.logger.Error("commonOnce: parse signal failed: %v", err)
-				select {
-				case <-c.ctx.Done():
-					return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-				case <-time.After(contextCheckInterval):
-				}
-				continue
-			}
-
 			// 处理信号
-			switch signalURL.Fragment {
-			case "v": // 验证
+			switch signal.ActionType {
+			case "verify":
 				if c.tlsCode == "1" || c.tlsCode == "2" {
-					go c.outgoingVerify(signalURL)
+					go c.outgoingVerify(signal)
 				}
-			case "1": // TCP
+			case "tcp":
 				if c.disableTCP != "1" {
-					go c.commonTCPOnce(signalURL)
+					go c.commonTCPOnce(signal)
 				}
-			case "2": // UDP
+			case "udp":
 				if c.disableUDP != "1" {
-					go c.commonUDPOnce(signalURL)
+					go c.commonUDPOnce(signal)
 				}
-			case "f": // 连接池刷新
+			case "flush":
 				go func() {
 					c.tunnelPool.Flush()
 					c.tunnelPool.ResetError()
@@ -1511,16 +1511,17 @@ func (c *Common) commonOnce() error {
 
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
-			case "i": // PING
+			case "ping":
 				if c.ctx.Err() == nil && c.controlConn != nil {
 					c.mu.Lock()
-					_, err := c.controlConn.Write(c.encode([]byte(c.pongURL.String())))
+					signalData, _ := json.Marshal(Signal{ActionType: "pong"})
+					_, err := c.controlConn.Write(c.encode(signalData))
 					c.mu.Unlock()
 					if err != nil {
 						return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
 					}
 				}
-			case "o": // PONG
+			case "pong":
 				// 发送检查点事件
 				c.logger.Event("CHECK_POINT|MODE=%v|PING=%vms|POOL=%v|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v",
 					c.runMode, time.Since(c.checkPoint).Milliseconds(), c.tunnelPool.Active(),
@@ -1537,7 +1538,7 @@ func (c *Common) commonOnce() error {
 }
 
 // outgoingVerify 出口连接验证
-func (c *Common) outgoingVerify(signalURL *url.URL) {
+func (c *Common) outgoingVerify(signal Signal) {
 	for c.ctx.Err() == nil {
 		if c.tunnelPool.Ready() {
 			break
@@ -1549,20 +1550,14 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 		}
 	}
 
-	fingerPrint := signalURL.Query().Get("fp")
+	fingerPrint := signal.Fingerprint
 	if fingerPrint == "" {
 		c.logger.Error("outgoingVerify: no fingerprint in signal")
 		c.cancel()
 		return
 	}
 
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("outgoingVerify: unescape id failed: %v", err)
-		return
-	} else {
-		id = unescapedID
-	}
+	id := signal.PoolConnID
 	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
@@ -1625,14 +1620,8 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 }
 
 // commonTCPOnce 共用处理单个TCP请求
-func (c *Common) commonTCPOnce(signalURL *url.URL) {
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("commonTCPOnce: unescape id failed: %v", err)
-		return
-	} else {
-		id = unescapedID
-	}
+func (c *Common) commonTCPOnce(signal Signal) {
+	id := signal.PoolConnID
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 从连接池获取连接
@@ -1680,7 +1669,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 	// 发送PROXY v1
-	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
+	if err := c.sendProxyV1Header(signal.RemoteAddr, targetConn); err != nil {
 		c.logger.Error("commonTCPOnce: sendProxyV1Header failed: %v", err)
 		return
 	}
@@ -1698,14 +1687,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 }
 
 // commonUDPOnce 共用处理单个UDP请求
-func (c *Common) commonUDPOnce(signalURL *url.URL) {
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("commonUDPOnce: unescape id failed: %v", err)
-		return
-	} else {
-		id = unescapedID
-	}
+// commonUDPOnce 共用处理单个UDP请求
+func (c *Common) commonUDPOnce(signal Signal) {
+	id := signal.PoolConnID
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 获取池连接
@@ -1728,10 +1712,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	}()
 
 	var targetConn net.Conn
-	sessionKey := signalURL.Host
-	if unescapedHost, err := url.PathUnescape(sessionKey); err == nil {
-		sessionKey = unescapedHost
-	}
+	sessionKey := signal.RemoteAddr
 	isNewSession := false
 
 	// 获取或创建目标UDP会话

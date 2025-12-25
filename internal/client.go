@@ -31,7 +31,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		Common: Common{
 			parsedURL:  parsedURL,
 			logger:     logger,
-			signalChan: make(chan string, semaphoreLimit),
+			signalChan: make(chan Signal, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
@@ -44,9 +44,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 					return &buf
 				},
 			},
-			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
-			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
-			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
 	if err := client.initConfig(); err != nil {
