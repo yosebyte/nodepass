@@ -73,8 +73,8 @@ The data flow mode is automatically determined based on tunnel address and targe
    ```
    [Server] → [Generate Unique Connection ID] → [Signal Client via Unencrypted TCP Tunnel]
    ```
-   - For TCP: Generates a `//<connection_id>#1` signal
-   - For UDP: Generates a `//<connection_id>#2` signal
+   - For TCP: Generates a `{"action":"tcp","remote":"target_addr","id":"connection_id"}` signal
+   - For UDP: Generates a `{"action":"udp","remote":"client_addr","id":"connection_id"}` signal
 
 3. **Connection Preparation**:
    ```
@@ -95,7 +95,7 @@ The data flow mode is automatically determined based on tunnel address and targe
    ```
    [Client] → [Read Signal from TCP Tunnel] → [Parse Connection ID]
    ```
-   - Client differentiates between TCP and UDP signals based on URL scheme
+   - Client differentiates between signal types based on the action field
 
 2. **Connection Establishment**:
    ```
@@ -163,27 +163,42 @@ The data flow mode is automatically determined based on tunnel address and targe
 
 ## Signal Communication Mechanism
 
-NodePass uses a sophisticated URL-based signaling protocol through the TCP tunnel:
+NodePass uses a JSON-based signaling protocol through the TCP tunnel:
 
 ### Signal Types
-1. **Tunnel Signal**:
-   - Format: `#<tls>`
-   - Purpose: Informs the client about the tls code
-   - Timing: Sent on tunnel handshake
+1. **Flush Signal**:
+   - Format: `{"action":"flush"}`
+   - Purpose: Flushes the connection pool and resets error count
+   - Timing: Sent when connection pool health check fails
 
-2. **TCP Launch Signal**:
-   - Format: `//<connection_id>#1`
+2. **PING Signal**:
+   - Format: `{"action":"ping"}`
+   - Purpose: Checks client connection status and requests PONG response
+   - Timing: Sent during periodic health checks
+
+3. **PONG Signal**:
+   - Format: `{"action":"pong"}`
+   - Purpose: Responds to PING signal and reports system status
+   - Timing: Sent when PING signal is received
+
+4. **Verify Signal**:
+   - Format: `{"action":"verify","id":"connection_id","fp":"tls_fingerprint"}`
+   - Purpose: Verifies TLS certificate fingerprint
+   - Timing: Sent after establishing TLS connection
+
+5. **TCP Launch Signal**:
+   - Format: `{"action":"tcp","remote":"remote_addr","id":"connection_id"}`
    - Purpose: Requests the client to establish a TCP connection for a specific ID
    - Timing: Sent when a new TCP connection to the target service is received
 
-3. **UDP Launch Signal**:
-   - Format: `//<connection_id>#2`
+6. **UDP Launch Signal**:
+   - Format: `{"action":"udp","remote":"remote_addr","id":"connection_id"}`
    - Purpose: Requests the client to handle UDP traffic for a specific ID
    - Timing: Sent when UDP data is received on the target port
 
 ### Signal Flow
 1. **Signal Generation**:
-   - Server creates URL-formatted signals for specific events
+   - Server creates JSON-formatted signals for specific events
    - Signal is terminated with a newline character for proper parsing
 
 2. **Signal Transmission**:
@@ -192,7 +207,7 @@ NodePass uses a sophisticated URL-based signaling protocol through the TCP tunne
 
 3. **Signal Reception**:
    - Client uses a buffered reader to read signals from the tunnel
-   - Signals are trimmed and parsed into URL format
+   - Signals are parsed into JSON format
 
 4. **Signal Processing**:
    - Client places valid signals in a buffered channel (signalChan)
@@ -200,8 +215,8 @@ NodePass uses a sophisticated URL-based signaling protocol through the TCP tunne
    - Semaphore pattern prevents signal overflow
 
 5. **Signal Execution**:
-   - Remote signals update the client's remote address configuration
-   - Launch signals trigger the `clientOnce()` method to establish connections
+   - Dispatches to appropriate handling logic based on the `action` field
+   - Connection launch signals trigger respective methods to establish connections
 
 ### Signal Resilience
 - Buffered channel with configurable capacity prevents signal loss during high load
