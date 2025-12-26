@@ -32,6 +32,7 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 			parsedURL:  parsedURL,
 			logger:     logger,
 			signalChan: make(chan Signal, semaphoreLimit),
+			writeChan:  make(chan []byte, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)

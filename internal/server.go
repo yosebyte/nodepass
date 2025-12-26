@@ -36,6 +36,7 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsConfig:  tlsConfig,
 			logger:     logger,
 			signalChan: make(chan Signal, semaphoreLimit),
+			writeChan:  make(chan []byte, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
