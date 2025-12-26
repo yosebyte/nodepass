@@ -963,6 +963,7 @@ func (c *Common) stop() {
 
 	// 清空通道
 	drain(c.signalChan)
+	drain(c.writeChan)
 
 	// 重置全局限速器
 	if c.rateLimiter != nil {
@@ -1028,6 +1029,9 @@ func (c *Common) setControlConn() error {
 		}
 	}()
 
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		c.logger.Info("TLS certificate fingerprint verifying...")
+	}
 	return nil
 }
 
