@@ -35,7 +35,8 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			tlsCode:    tlsCode,
 			tlsConfig:  tlsConfig,
 			logger:     logger,
-			signalChan: make(chan string, semaphoreLimit),
+			signalChan: make(chan Signal, semaphoreLimit),
+			writeChan:  make(chan []byte, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
@@ -48,9 +49,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 					return &buf
 				},
 			},
-			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
-			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
-			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
 	if err := server.initConfig(); err != nil {
@@ -215,6 +213,10 @@ func (s *Server) initTunnelPool() error {
 
 // tunnelHandshake 与客户端进行HTTP握手
 func (s *Server) tunnelHandshake() error {
+	if s.tlsCode == "1" || s.tlsCode == "2" {
+		s.verifyChan = make(chan struct{})
+	}
+
 	var clientIP string
 	done := make(chan struct{})
 

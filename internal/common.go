@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -28,7 +29,6 @@ import (
 
 // Common 包含所有模式共享的核心功能
 type Common struct {
-	mu               sync.Mutex         // 互斥锁
 	parsedURL        *url.URL           // 解析后的URL
 	logger           *logs.Logger       // 日志记录器
 	dnsCacheTTL      time.Duration      // DNS缓存TTL
@@ -74,12 +74,11 @@ type Common struct {
 	bufReader        *bufio.Reader      // 缓冲读取器
 	tcpBufferPool    *sync.Pool         // TCP缓冲区池
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
-	signalChan       chan string        // 信号通道
+	signalChan       chan Signal        // 信号通道
+	writeChan        chan []byte        // 写入通道
+	verifyChan       chan struct{}      // 证书验证通道
 	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
-	flushURL         *url.URL           // 重置信号
-	pingURL          *url.URL           // PING信号
-	pongURL          *url.URL           // PONG信号
 	slotLimit        int32              // 槽位限制
 	tcpSlot          int32              // TCP连接数
 	udpSlot          int32              // UDP连接数
@@ -122,6 +121,14 @@ type TransportPool interface {
 	AddError()
 	ErrorCount() int
 	ResetError()
+}
+
+// Signal 操作信号结构体
+type Signal struct {
+	ActionType  string `json:"action"`           // 操作类型
+	RemoteAddr  string `json:"remote,omitempty"` // 远程地址
+	PoolConnID  string `json:"id,omitempty"`     // 池连接ID
+	Fingerprint string `json:"fp,omitempty"`     // TLS指纹
 }
 
 // 配置变量，可通过环境变量调整
@@ -956,6 +963,8 @@ func (c *Common) stop() {
 
 	// 清空通道
 	drain(c.signalChan)
+	drain(c.writeChan)
+	drain(c.verifyChan)
 
 	// 重置全局限速器
 	if c.rateLimiter != nil {
@@ -1006,6 +1015,24 @@ func (c *Common) setControlConn() error {
 	c.controlConn = poolConn
 	c.bufReader = bufio.NewReader(&conn.TimeoutReader{Conn: c.controlConn, Timeout: 3 * reportInterval})
 	c.logger.Info("Marking tunnel handshake as complete in %vms", time.Since(c.handshakeStart).Milliseconds())
+
+	go func() {
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			case data := <-c.writeChan:
+				_, err := c.controlConn.Write(data)
+				if err != nil {
+					c.logger.Error("startWriter: write failed: %v", err)
+				}
+			}
+		}
+	}()
+
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		c.logger.Info("TLS certificate fingerprint verifying...")
+	}
 	return nil
 }
 
@@ -1046,7 +1073,18 @@ func (c *Common) commonQueue() error {
 			}
 			continue
 		}
-		signal := string(signalData)
+
+		// 解析JSON信号
+		var signal Signal
+		if err := json.Unmarshal(signalData, &signal); err != nil {
+			c.logger.Error("commonQueue: unmarshal signal failed: %v", err)
+			select {
+			case <-c.ctx.Done():
+				return fmt.Errorf("commonQueue: context error: %w", c.ctx.Err())
+			case <-time.After(contextCheckInterval):
+			}
+			continue
+		}
 
 		// 将信号发送到通道
 		select {
@@ -1080,20 +1118,12 @@ func (c *Common) healthCheck() error {
 	}
 
 	for c.ctx.Err() == nil {
-		// 尝试获取锁
-		if !c.mu.TryLock() {
-			continue
-		}
-
 		// 连接池健康度检查
 		if c.tunnelPool.ErrorCount() > c.tunnelPool.Active()/2 {
 			// 发送刷新信号到对端
 			if c.ctx.Err() == nil && c.controlConn != nil {
-				_, err := c.controlConn.Write(c.encode([]byte(c.flushURL.String())))
-				if err != nil {
-					c.mu.Unlock()
-					return fmt.Errorf("healthCheck: write flush signal failed: %w", err)
-				}
+				signalData, _ := json.Marshal(Signal{ActionType: "flush"})
+				c.writeChan <- c.encode(signalData)
 			}
 			c.tunnelPool.Flush()
 			c.tunnelPool.ResetError()
@@ -1110,14 +1140,9 @@ func (c *Common) healthCheck() error {
 		// 发送PING信号
 		c.checkPoint = time.Now()
 		if c.ctx.Err() == nil && c.controlConn != nil {
-			_, err := c.controlConn.Write(c.encode([]byte(c.pingURL.String())))
-			if err != nil {
-				c.mu.Unlock()
-				return fmt.Errorf("healthCheck: write ping signal failed: %w", err)
-			}
+			signalData, _ := json.Marshal(Signal{ActionType: "ping"})
+			c.writeChan <- c.encode(signalData)
 		}
-
-		c.mu.Unlock()
 		select {
 		case <-c.ctx.Done():
 			return fmt.Errorf("healthCheck: context error: %w", c.ctx.Err())
@@ -1131,7 +1156,7 @@ func (c *Common) healthCheck() error {
 // incomingVerify 入口连接验证
 func (c *Common) incomingVerify() {
 	for c.ctx.Err() == nil {
-		if c.tunnelPool.Ready() {
+		if c.tunnelPool.Ready() && c.tunnelPool.Active() > 0 {
 			break
 		}
 		select {
@@ -1141,39 +1166,41 @@ func (c *Common) incomingVerify() {
 		}
 	}
 
-	if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
-		return
-	}
-
-	cert := c.tlsConfig.Certificates[0]
-	if len(cert.Certificate) == 0 {
-		return
-	}
-
-	// 打印证书指纹
-	c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(cert.Certificate[0]))
-
 	id, testConn, err := c.tunnelPool.IncomingGet(poolGetTimeout)
 	if err != nil {
+		c.logger.Error("incomingVerify: incomingGet failed: %v", err)
+		c.cancel()
 		return
 	}
 	defer testConn.Close()
 
-	// 构建并发送验证信号
-	verifyURL := &url.URL{
-		Scheme:   "np",
-		Host:     c.controlConn.RemoteAddr().String(),
-		Path:     url.PathEscape(id),
-		Fragment: "v", // TLS验证
+	// 获取证书指纹
+	var fingerprint string
+	switch c.coreType {
+	case "server":
+		if c.tlsConfig != nil && len(c.tlsConfig.Certificates) > 0 {
+			cert := c.tlsConfig.Certificates[0]
+			if len(cert.Certificate) > 0 {
+				fingerprint = c.formatCertFingerprint(cert.Certificate[0])
+			}
+		}
+	case "client":
+		if conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState }); ok {
+			state := conn.ConnectionState()
+			if len(state.PeerCertificates) > 0 {
+				fingerprint = c.formatCertFingerprint(state.PeerCertificates[0].Raw)
+			}
+		}
 	}
 
+	// 构建并发送验证信号
 	if c.ctx.Err() == nil && c.controlConn != nil {
-		c.mu.Lock()
-		_, err = c.controlConn.Write(c.encode([]byte(verifyURL.String())))
-		c.mu.Unlock()
-		if err != nil {
-			return
-		}
+		signalData, _ := json.Marshal(Signal{
+			ActionType:  "verify",
+			PoolConnID:  id,
+			Fingerprint: fingerprint,
+		})
+		c.writeChan <- c.encode(signalData)
 	}
 
 	c.logger.Debug("TLS verify signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
@@ -1184,6 +1211,15 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
+			if c.verifyChan != nil {
+				select {
+				case <-c.verifyChan:
+					// 证书验证完成
+				case <-c.ctx.Done():
+					return
+				}
+			}
+
 			if c.targetListener != nil || c.disableTCP != "1" {
 				go c.commonTCPLoop()
 			}
@@ -1266,22 +1302,13 @@ func (c *Common) commonTCPLoop() {
 			c.logger.Debug("Tunnel connection: %v <-> %v", remoteConn.LocalAddr(), remoteConn.RemoteAddr())
 
 			// 构建并发送启动信号
-			launchURL := &url.URL{
-				Scheme:   "np",
-				Host:     targetConn.RemoteAddr().String(),
-				Path:     url.PathEscape(id),
-				Fragment: "1", // TCP模式
-			}
-
 			if c.ctx.Err() == nil && c.controlConn != nil {
-				c.mu.Lock()
-				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
-				c.mu.Unlock()
-
-				if err != nil {
-					c.logger.Error("commonTCPLoop: write launch signal failed: %v", err)
-					return
-				}
+				signalData, _ := json.Marshal(Signal{
+					ActionType: "tcp",
+					RemoteAddr: targetConn.RemoteAddr().String(),
+					PoolConnID: id,
+				})
+				c.writeChan <- c.encode(signalData)
 			}
 
 			c.logger.Debug("TCP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
@@ -1397,21 +1424,13 @@ func (c *Common) commonUDPLoop() {
 			}(remoteConn, clientAddr, sessionKey, id)
 
 			// 构建并发送启动信号
-			launchURL := &url.URL{
-				Scheme:   "np",
-				Host:     clientAddr.String(),
-				Path:     url.PathEscape(id),
-				Fragment: "2", // UDP模式
-			}
-
 			if c.ctx.Err() == nil && c.controlConn != nil {
-				c.mu.Lock()
-				_, err = c.controlConn.Write(c.encode([]byte(launchURL.String())))
-				c.mu.Unlock()
-				if err != nil {
-					c.logger.Error("commonUDPLoop: write launch signal failed: %v", err)
-					continue
-				}
+				signalData, _ := json.Marshal(Signal{
+					ActionType: "udp",
+					RemoteAddr: clientAddr.String(),
+					PoolConnID: id,
+				})
+				c.writeChan <- c.encode(signalData)
 			}
 
 			c.logger.Debug("UDP launch signal: cid %v -> %v", id, c.controlConn.RemoteAddr())
@@ -1453,33 +1472,21 @@ func (c *Common) commonOnce() error {
 		case <-c.ctx.Done():
 			return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
 		case signal := <-c.signalChan:
-			// 解析信号URL
-			signalURL, err := url.Parse(signal)
-			if err != nil {
-				c.logger.Error("commonOnce: parse signal failed: %v", err)
-				select {
-				case <-c.ctx.Done():
-					return fmt.Errorf("commonOnce: context error: %w", c.ctx.Err())
-				case <-time.After(contextCheckInterval):
-				}
-				continue
-			}
-
 			// 处理信号
-			switch signalURL.Fragment {
-			case "v": // 验证
+			switch signal.ActionType {
+			case "verify":
 				if c.tlsCode == "1" || c.tlsCode == "2" {
-					go c.outgoingVerify(signalURL)
+					go c.outgoingVerify(signal)
 				}
-			case "1": // TCP
+			case "tcp":
 				if c.disableTCP != "1" {
-					go c.commonTCPOnce(signalURL)
+					go c.commonTCPOnce(signal)
 				}
-			case "2": // UDP
+			case "udp":
 				if c.disableUDP != "1" {
-					go c.commonUDPOnce(signalURL)
+					go c.commonUDPOnce(signal)
 				}
-			case "f": // 连接池刷新
+			case "flush":
 				go func() {
 					c.tunnelPool.Flush()
 					c.tunnelPool.ResetError()
@@ -1492,16 +1499,12 @@ func (c *Common) commonOnce() error {
 
 					c.logger.Debug("Tunnel pool flushed: %v active connections", c.tunnelPool.Active())
 				}()
-			case "i": // PING
+			case "ping":
 				if c.ctx.Err() == nil && c.controlConn != nil {
-					c.mu.Lock()
-					_, err := c.controlConn.Write(c.encode([]byte(c.pongURL.String())))
-					c.mu.Unlock()
-					if err != nil {
-						return fmt.Errorf("commonOnce: write pong signal failed: %w", err)
-					}
+					signalData, _ := json.Marshal(Signal{ActionType: "pong"})
+					c.writeChan <- c.encode(signalData)
 				}
-			case "o": // PONG
+			case "pong":
 				// 发送检查点事件
 				c.logger.Event("CHECK_POINT|MODE=%v|PING=%vms|POOL=%v|TCPS=%v|UDPS=%v|TCPRX=%v|TCPTX=%v|UDPRX=%v|UDPTX=%v",
 					c.runMode, time.Since(c.checkPoint).Milliseconds(), c.tunnelPool.Active(),
@@ -1518,7 +1521,7 @@ func (c *Common) commonOnce() error {
 }
 
 // outgoingVerify 出口连接验证
-func (c *Common) outgoingVerify(signalURL *url.URL) {
+func (c *Common) outgoingVerify(signal Signal) {
 	for c.ctx.Err() == nil {
 		if c.tunnelPool.Ready() {
 			break
@@ -1530,24 +1533,44 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 		}
 	}
 
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("outgoingVerify: unescape id failed: %v", err)
+	fingerPrint := signal.Fingerprint
+	if fingerPrint == "" {
+		c.logger.Error("outgoingVerify: no fingerprint in signal")
+		c.cancel()
 		return
-	} else {
-		id = unescapedID
 	}
+
+	id := signal.PoolConnID
 	c.logger.Debug("TLS verify signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	testConn, err := c.tunnelPool.OutgoingGet(id, poolGetTimeout)
 	if err != nil {
 		c.logger.Error("outgoingVerify: request timeout: %v", err)
-		c.tunnelPool.AddError()
+		c.cancel()
 		return
 	}
 	defer testConn.Close()
 
-	if testConn != nil {
+	// 验证证书指纹
+	var serverFingerprint, clientFingerprint string
+	switch c.coreType {
+	case "server":
+		if c.tlsConfig == nil || len(c.tlsConfig.Certificates) == 0 {
+			c.logger.Error("outgoingVerify: no local certificate")
+			c.cancel()
+			return
+		}
+
+		cert := c.tlsConfig.Certificates[0]
+		if len(cert.Certificate) == 0 {
+			c.logger.Error("outgoingVerify: empty local certificate")
+			c.cancel()
+			return
+		}
+
+		serverFingerprint = c.formatCertFingerprint(cert.Certificate[0])
+		clientFingerprint = fingerPrint
+	case "client":
 		conn, ok := testConn.(interface{ ConnectionState() tls.ConnectionState })
 		if !ok {
 			return
@@ -1556,23 +1579,32 @@ func (c *Common) outgoingVerify(signalURL *url.URL) {
 
 		if len(state.PeerCertificates) == 0 {
 			c.logger.Error("outgoingVerify: no peer certificates found")
+			c.cancel()
 			return
 		}
 
-		// 打印证书指纹
-		c.logger.Info("TLS cert verified: %v", c.formatCertFingerprint(state.PeerCertificates[0].Raw))
+		clientFingerprint = c.formatCertFingerprint(state.PeerCertificates[0].Raw)
+		serverFingerprint = fingerPrint
+	}
+
+	// 验证指纹匹配
+	if serverFingerprint != clientFingerprint {
+		c.logger.Error("outgoingVerify: certificate fingerprint mismatch: server: %v - client: %v", serverFingerprint, clientFingerprint)
+		c.cancel()
+		return
+	}
+
+	c.logger.Info("TLS certificate fingerprint verified: %v", fingerPrint)
+
+	// 通知验证完成
+	if c.verifyChan != nil {
+		c.verifyChan <- struct{}{}
 	}
 }
 
 // commonTCPOnce 共用处理单个TCP请求
-func (c *Common) commonTCPOnce(signalURL *url.URL) {
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("commonTCPOnce: unescape id failed: %v", err)
-		return
-	} else {
-		id = unescapedID
-	}
+func (c *Common) commonTCPOnce(signal Signal) {
+	id := signal.PoolConnID
 	c.logger.Debug("TCP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 从连接池获取连接
@@ -1620,7 +1652,7 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 	c.logger.Debug("Target connection: %v <-> %v", targetConn.LocalAddr(), targetConn.RemoteAddr())
 
 	// 发送PROXY v1
-	if err := c.sendProxyV1Header(signalURL.Host, targetConn); err != nil {
+	if err := c.sendProxyV1Header(signal.RemoteAddr, targetConn); err != nil {
 		c.logger.Error("commonTCPOnce: sendProxyV1Header failed: %v", err)
 		return
 	}
@@ -1638,14 +1670,9 @@ func (c *Common) commonTCPOnce(signalURL *url.URL) {
 }
 
 // commonUDPOnce 共用处理单个UDP请求
-func (c *Common) commonUDPOnce(signalURL *url.URL) {
-	id := strings.TrimPrefix(signalURL.Path, "/")
-	if unescapedID, err := url.PathUnescape(id); err != nil {
-		c.logger.Error("commonUDPOnce: unescape id failed: %v", err)
-		return
-	} else {
-		id = unescapedID
-	}
+// commonUDPOnce 共用处理单个UDP请求
+func (c *Common) commonUDPOnce(signal Signal) {
+	id := signal.PoolConnID
 	c.logger.Debug("UDP launch signal: cid %v <- %v", id, c.controlConn.RemoteAddr())
 
 	// 获取池连接
@@ -1668,7 +1695,7 @@ func (c *Common) commonUDPOnce(signalURL *url.URL) {
 	}()
 
 	var targetConn net.Conn
-	sessionKey := signalURL.Host
+	sessionKey := signal.RemoteAddr
 	isNewSession := false
 
 	// 获取或创建目标UDP会话

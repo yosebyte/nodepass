@@ -31,7 +31,8 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 		Common: Common{
 			parsedURL:  parsedURL,
 			logger:     logger,
-			signalChan: make(chan string, semaphoreLimit),
+			signalChan: make(chan Signal, semaphoreLimit),
+			writeChan:  make(chan []byte, semaphoreLimit),
 			tcpBufferPool: &sync.Pool{
 				New: func() any {
 					buf := make([]byte, tcpDataBufSize)
@@ -44,9 +45,6 @@ func NewClient(parsedURL *url.URL, logger *logs.Logger) (*Client, error) {
 					return &buf
 				},
 			},
-			flushURL: &url.URL{Scheme: "np", Fragment: "f"},
-			pingURL:  &url.URL{Scheme: "np", Fragment: "i"},
-			pongURL:  &url.URL{Scheme: "np", Fragment: "o"},
 		},
 	}
 	if err := client.initConfig(); err != nil {
@@ -284,6 +282,9 @@ func (c *Client) tunnelHandshake() error {
 	c.maxPoolCapacity = config.Max
 	c.tlsCode = config.TLS
 	c.poolType = config.Type
+	if c.tlsCode == "1" || c.tlsCode == "2" {
+		c.verifyChan = make(chan struct{})
+	}
 
 	c.logger.Info("Loading tunnel config: FLOW=%v|MAX=%v|TLS=%v|TYPE=%v",
 		c.dataFlow, c.maxPoolCapacity, c.tlsCode, c.poolType)
