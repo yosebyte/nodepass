@@ -118,9 +118,15 @@ Project **NodePass** is licensed under the [BSD 3-Clause License](LICENSE).
 
 This project is provided "as is" without any warranties. Users assume all risks and must comply with local laws for legal use only. Developers are not liable for any direct, indirect, incidental, or consequential damages. Secondary development requires commitment to legal use and self-responsibility for legal compliance. Developers reserve the right to modify software features and this disclaimer at any time. Final interpretation rights belong to developers.
 
-## 🔗 NFT Support
+## 🔗 Donation
 
-Support **NodePass** in a unique way by checking out our NFT collection on [OpenSea](https://opensea.io/collection/nodepass).
+**Cryptocurrency:**
+
+- EVM-compatible Address: `0x2ea4Ea9425BEe897ED74fC5512bd13ABC7100000`
+
+**NFT collection:**
+
+- Support **NodePass** in a unique way by checking out our NFT collection on [OpenSea](https://opensea.io/collection/nodepass).
 
 ## 🤝 Sponsors
 

@@ -118,9 +118,15 @@ nodepass "master://:10101/api?log=debug&tls=1"
 
 本项目以"现状"提供，开发者不提供任何明示或暗示的保证。用户使用风险自担，需遵守当地法律法规，仅限合法用途。开发者对任何直接、间接、偶然或后果性损害概不负责。进行二次开发须承诺合法使用并自负法律责任。开发者保留随时修改软件功能及本声明的权利。最终解释权归开发者所有。
 
-## 🔗 NFT 支持
+## 🔗 捐赠
 
-以独特方式支持 **NodePass**，查看我们在 [OpenSea](https://opensea.io/collection/nodepass) 上的 NFT 收藏。
+**加密货币：**
+
+- EVM 兼容地址： `0x2ea4Ea9425BEe897ED74fC5512bd13ABC7100000`
+
+**数字藏品：**
+
+- 以独特方式支持 **NodePass**，查看我们在 [OpenSea](https://opensea.io/collection/nodepass) 上的 NFT 收藏。
 
 ## 🤝 赞助商
 
