@@ -51,9 +51,6 @@ func NewServer(parsedURL *url.URL, tlsCode string, tlsConfig *tls.Config, logger
 			},
 		},
 	}
-	if tlsCode == "1" || tlsCode == "2" {
-		server.certVerified = make(chan struct{})
-	}
 	if err := server.initConfig(); err != nil {
 		return nil, fmt.Errorf("newServer: initConfig failed: %w", err)
 	}
@@ -216,6 +213,10 @@ func (s *Server) initTunnelPool() error {
 
 // tunnelHandshake 与客户端进行HTTP握手
 func (s *Server) tunnelHandshake() error {
+	if s.tlsCode == "1" || s.tlsCode == "2" {
+		s.verifyChan = make(chan struct{})
+	}
+
 	var clientIP string
 	done := make(chan struct{})
 

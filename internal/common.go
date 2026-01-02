@@ -76,7 +76,7 @@ type Common struct {
 	udpBufferPool    *sync.Pool         // UDP缓冲区池
 	signalChan       chan Signal        // 信号通道
 	writeChan        chan []byte        // 写入通道
-	certVerified     chan struct{}      // 证书验证通道
+	verifyChan       chan struct{}      // 证书验证通道
 	handshakeStart   time.Time          // 握手开始时间
 	checkPoint       time.Time          // 检查点时间
 	slotLimit        int32              // 槽位限制
@@ -964,6 +964,7 @@ func (c *Common) stop() {
 	// 清空通道
 	drain(c.signalChan)
 	drain(c.writeChan)
+	drain(c.verifyChan)
 
 	// 重置全局限速器
 	if c.rateLimiter != nil {
@@ -1210,9 +1211,9 @@ func (c *Common) commonLoop() {
 	for c.ctx.Err() == nil {
 		// 等待连接池准备就绪
 		if c.tunnelPool.Ready() {
-			if c.certVerified != nil {
+			if c.verifyChan != nil {
 				select {
-				case <-c.certVerified:
+				case <-c.verifyChan:
 					// 证书验证完成
 				case <-c.ctx.Done():
 					return
@@ -1596,8 +1597,8 @@ func (c *Common) outgoingVerify(signal Signal) {
 	c.logger.Info("TLS certificate fingerprint verified: %v", fingerPrint)
 
 	// 通知验证完成
-	if c.certVerified != nil {
-		c.certVerified <- struct{}{}
+	if c.verifyChan != nil {
+		c.verifyChan <- struct{}{}
 	}
 }
 
